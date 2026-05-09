@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  ci:
+    name: Typecheck · Lint · Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: latest
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build shared types
+        run: pnpm --filter shared build
+
+      - name: Typecheck all packages
+        run: pnpm typecheck
+
+      - name: Lint all packages
+        run: pnpm lint
+
+      - name: Run tests
+        run: pnpm test
+        env:
+          DATABASE_URL: ':memory:'
+          JWT_SECRET: 'ci-test-secret-not-used-in-production'
+          NODE_ENV: test

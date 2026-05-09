@@ -17,7 +17,7 @@ export const users = pgTable('users', {
     .$defaultFn(() => crypto.randomUUID()),
   username: text('username').notNull().unique(),
   passwordHash: text('password_hash').notNull(),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
+  createdAt: timestamp('created_at', { mode: 'string' }).defaultNow().notNull(),
 });
 
 export const games = pgTable('games', {
@@ -25,8 +25,8 @@ export const games = pgTable('games', {
     .primaryKey()
     .$defaultFn(() => crypto.randomUUID()),
   name: text('name').notNull(),
-  startDate: timestamp('start_date').notNull(),
-  endDate: timestamp('end_date').notNull(),
+  startDate: timestamp('start_date', { mode: 'string' }).notNull(),
+  endDate: timestamp('end_date', { mode: 'string' }).notNull(),
   startingBalance: decimal('starting_balance', { precision: 15, scale: 2 })
     .notNull()
     .default('100000'),
@@ -34,7 +34,7 @@ export const games = pgTable('games', {
   createdBy: text('created_by')
     .notNull()
     .references(() => users.id, { onDelete: 'restrict' }),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
+  createdAt: timestamp('created_at', { mode: 'string' }).defaultNow().notNull(),
 });
 
 export const gamePlayers = pgTable(
@@ -50,7 +50,7 @@ export const gamePlayers = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: 'restrict' }),
     cashBalance: decimal('cash_balance', { precision: 15, scale: 2 }).notNull(),
-    joinedAt: timestamp('joined_at').defaultNow().notNull(),
+    joinedAt: timestamp('joined_at', { mode: 'string' }).defaultNow().notNull(),
   },
   (t) => [unique().on(t.gameId, t.userId)],
 );
@@ -82,7 +82,7 @@ export const trades = pgTable('trades', {
   direction: tradeDirectionEnum('direction').notNull(),
   quantity: integer('quantity').notNull(),
   price: decimal('price', { precision: 15, scale: 4 }).notNull(),
-  executedAt: timestamp('executed_at').defaultNow().notNull(),
+  executedAt: timestamp('executed_at', { mode: 'string' }).defaultNow().notNull(),
 });
 
 export const stockPriceCache = pgTable('stock_price_cache', {
@@ -90,5 +90,5 @@ export const stockPriceCache = pgTable('stock_price_cache', {
   price: decimal('price', { precision: 15, scale: 4 }).notNull(),
   change: decimal('change', { precision: 15, scale: 4 }).notNull(),
   changePercent: decimal('change_percent', { precision: 10, scale: 4 }).notNull(),
-  fetchedAt: timestamp('fetched_at').defaultNow().notNull(),
+  fetchedAt: timestamp('fetched_at', { mode: 'string' }).defaultNow().notNull(),
 });

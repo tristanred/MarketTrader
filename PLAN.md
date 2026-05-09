@@ -33,13 +33,13 @@ This file tracks the overall build plan across multiple sessions. Each phase map
 
 **Goal:** Users can register and log in. All subsequent requests authenticate via JWT.
 
-- [ ] `POST /auth/register` — create user, hash password with argon2, return JWT + user
-- [ ] `POST /auth/login` — verify password with argon2, return JWT + user
-- [ ] Refresh token — 7-day HttpOnly cookie, `POST /auth/refresh` endpoint
-- [ ] JWT Fastify plugin (`@fastify/jwt`) registered in `app.ts`
-- [ ] Auth middleware/decorator (`request.user`) for protected routes
-- [ ] DB migration for users table (already in schema, migration needed for prod)
-- [ ] Vitest integration tests for register, login, invalid credentials, duplicate username
+- [x] `POST /auth/register` — create user, hash password with argon2, return JWT + user
+- [x] `POST /auth/login` — verify password with argon2, return JWT + user
+- [x] Refresh token — 7-day HttpOnly cookie, `POST /auth/refresh` endpoint
+- [x] JWT Fastify plugin (`@fastify/jwt`) registered in `app.ts`
+- [x] Auth middleware/decorator (`request.user`) for protected routes
+- [x] DB migration for users table (already in schema, migration needed for prod)
+- [x] Vitest integration tests for register, login, invalid credentials, duplicate username
 
 ---
 
@@ -157,9 +157,9 @@ This file tracks the overall build plan across multiple sessions. Each phase map
 
 ## Current State
 
-**Phase 1 is fully complete.** The monorepo scaffolding is done: types are defined, the server responds to `GET /health`, the frontend renders a placeholder page, CI is green, and Docker Compose works.
+**Phase 2 is fully complete.** The Auth API is implemented: users can register and log in, passwords are hashed with argon2, JWTs are issued with a 15-minute access token and 7-day HttpOnly refresh token cookie, the `@fastify/jwt` plugin is registered, the `request.user` decorator protects routes, and integration tests cover register, login, invalid credentials, and duplicate username.
 
-**Next step:** Implement Phase 2 (Auth API). Create the plan file at `docs/superpowers/plans/2026-05-XX-auth-api.md` before starting implementation.
+**Next step:** Implement Phase 3 (Game & Player API). Create the plan file at `docs/superpowers/plans/2026-05-XX-game-api.md` before starting implementation.
 
 ---
 

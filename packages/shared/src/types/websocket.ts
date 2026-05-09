@@ -15,6 +15,7 @@ export interface WsTradeExecutedEvent {
     direction: TradeDirection;
     quantity: number;
     price: number;
+    executedAt: string;
   };
 }
 

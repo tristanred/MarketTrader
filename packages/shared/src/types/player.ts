@@ -29,5 +29,6 @@ export interface Trade {
 export interface PlaceTradeRequest {
   symbol: string;
   direction: TradeDirection;
+  /** Must be a positive integer ≥ 1. No fractional shares. Validated server-side. */
   quantity: number;
 }

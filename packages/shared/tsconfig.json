@@ -1,4 +1,5 @@
 {
+  "_comment": "Uses NodeNext (not bundler from base) for proper npm package exports compatibility",
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "outDir": "./dist",

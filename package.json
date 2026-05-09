@@ -5,7 +5,7 @@
   "packageManager": "pnpm@11.0.9",
   "scripts": {
     "dev": "pnpm --parallel --filter './packages/*' dev",
-    "build": "pnpm --filter shared build && pnpm --parallel --filter 'server frontend' build",
+    "build": "pnpm --filter shared build && pnpm --parallel --filter server --filter frontend build",
     "test": "pnpm --filter './packages/*' test",
     "typecheck": "pnpm --filter './packages/*' typecheck",
     "lint": "pnpm --filter './packages/*' lint"

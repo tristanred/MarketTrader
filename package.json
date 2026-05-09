@@ -1,0 +1,19 @@
+{
+  "name": "markettrader",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm --parallel --filter './packages/*' dev",
+    "build": "pnpm --filter shared build && pnpm --parallel --filter 'server frontend' build",
+    "test": "pnpm --filter './packages/*' test",
+    "typecheck": "pnpm --filter './packages/*' typecheck",
+    "lint": "pnpm --filter './packages/*' lint"
+  },
+  "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "^8.0.0",
+    "@typescript-eslint/parser": "^8.0.0",
+    "eslint": "^9.0.0",
+    "prettier": "^3.0.0",
+    "typescript": "^5.7.0"
+  }
+}

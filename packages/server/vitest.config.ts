@@ -5,6 +5,7 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     env: {
+      DATABASE_URL: ':memory:',
       JWT_SECRET: 'test-secret-not-used-in-production',
     },
   },

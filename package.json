@@ -2,6 +2,7 @@
   "name": "markettrader",
   "version": "0.0.1",
   "private": true,
+  "packageManager": "pnpm@11.0.9",
   "scripts": {
     "dev": "pnpm --parallel --filter './packages/*' dev",
     "build": "pnpm --filter shared build && pnpm --parallel --filter 'server frontend' build",

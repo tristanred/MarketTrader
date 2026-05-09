@@ -7,6 +7,7 @@ import { registerJwt } from './plugins/jwt.js';
 import { registerRateLimit } from './plugins/rate-limit.js';
 import { healthRoutes } from './routes/health.js';
 import { authRoutes } from './routes/auth.js';
+import { gameRoutes } from './routes/games.js';
 
 export async function buildApp(
   opts: FastifyServerOptions & { db?: Db } = {},
@@ -22,6 +23,7 @@ export async function buildApp(
 
   await app.register(healthRoutes);
   await app.register(authRoutes(db));
+  await app.register(gameRoutes(db));
 
   return app;
 }

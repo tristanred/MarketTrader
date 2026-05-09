@@ -950,10 +950,7 @@ async function createDatabase() {
     const { drizzle } = await import('drizzle-orm/better-sqlite3');
     const Database = (await import('better-sqlite3')).default;
     const schema = await import('./schema.sqlite.js');
-    const dbUrl = env.DATABASE_URL === ':memory:' ? ':memory:' : env.DATABASE_URL;
-    const client = new Database(dbUrl);
-    client.pragma('journal_mode = WAL');
-    client.pragma('foreign_keys = ON');
+    const client = new Database(env.DATABASE_URL);
     return drizzle(client, { schema });
   }
 }
@@ -1413,7 +1410,10 @@ volumes:
 FROM node:22-alpine AS builder
 WORKDIR /app
 
-RUN npm install -g pnpm
+# better-sqlite3 requires native compilation
+RUN apk add --no-cache python3 make g++
+
+RUN corepack enable && corepack prepare pnpm@11.0.9 --activate
 
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
 COPY packages/shared/package.json ./packages/shared/
@@ -1428,19 +1428,14 @@ COPY packages/server/ ./packages/server/
 RUN pnpm --filter shared build
 RUN pnpm --filter server build
 
-# Production stage
+# Production stage — copy compiled node_modules to avoid re-building native addons
 FROM node:22-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 
-RUN npm install -g pnpm
-
-COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
-COPY packages/shared/package.json ./packages/shared/
-COPY packages/server/package.json ./packages/server/
-
-RUN pnpm install --frozen-lockfile --prod
-
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/packages/shared/node_modules ./packages/shared/node_modules
+COPY --from=builder /app/packages/server/node_modules ./packages/server/node_modules
 COPY --from=builder /app/packages/shared/dist ./packages/shared/dist
 COPY --from=builder /app/packages/server/dist ./packages/server/dist
 

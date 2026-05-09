@@ -1,0 +1,14 @@
+{
+  "recommendations": [
+    "dbaeumer.vscode-eslint",
+    "dsznajder.es7-react-js-snippets",
+    "bradlc.vscode-tailwindcss",
+    "drizzle.drizzle",
+    "alexcvzz.vscode-sqlite",
+    "vitest.explorer",
+    "eamodio.gitlens",
+    "esbenp.prettier-vscode",
+    "humao.rest-client",
+    "github.vscode-pull-request-github"
+  ]
+}

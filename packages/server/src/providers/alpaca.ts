@@ -1,0 +1,47 @@
+import type { StockQuote, StockSearchResult } from '@markettrader/shared';
+import type { StockProvider } from './interface.js';
+import { StockProviderError } from './interface.js';
+
+export class AlpacaProvider implements StockProvider {
+  private readonly baseUrl = 'https://data.alpaca.markets/v2';
+
+  constructor(private readonly apiKey: string) {}
+
+  async getQuote(symbol: string): Promise<StockQuote> {
+    const url = `${this.baseUrl}/stocks/${encodeURIComponent(symbol)}/quotes/latest`;
+    const res = await fetch(url, {
+      headers: {
+        'APCA-API-KEY-ID': this.apiKey,
+        Accept: 'application/json',
+      },
+    });
+
+    if (res.status === 404) {
+      throw new StockProviderError('SYMBOL_NOT_FOUND', `Symbol not found: ${symbol}`);
+    }
+    if (res.status === 429) {
+      throw new StockProviderError('RATE_LIMITED', 'Alpaca rate limit exceeded');
+    }
+    if (!res.ok) {
+      throw new StockProviderError('PROVIDER_ERROR', `Alpaca error ${res.status} for ${symbol}`);
+    }
+
+    const data = (await res.json()) as { quote?: { ap?: number } };
+    const price = data.quote?.ap;
+    if (price == null) {
+      throw new StockProviderError('SYMBOL_NOT_FOUND', `No quote data for ${symbol}`);
+    }
+
+    return {
+      symbol,
+      price,
+      change: 0,
+      changePercent: 0,
+      fetchedAt: new Date().toISOString(),
+    };
+  }
+
+  async searchSymbols(_query: string): Promise<StockSearchResult[]> {
+    return [];
+  }
+}

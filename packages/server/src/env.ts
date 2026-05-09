@@ -35,5 +35,6 @@ export const env = {
   PORT: parsePort(optional('PORT', '3000')),
   CORS_ORIGIN: optional('CORS_ORIGIN', 'http://localhost:5173'),
   STOCK_PROVIDER: validatedProvider(),
+  ALPACA_API_KEY: optional('ALPACA_API_KEY', ''),
   NODE_ENV: optional('NODE_ENV', 'development') as 'development' | 'production' | 'test',
 } as const;

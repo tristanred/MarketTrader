@@ -27,5 +27,6 @@ async function createDatabase(): Promise<AppDb> {
 }
 
 export const db = await createDatabase();
+// SQLite schema — used for Drizzle type inference only; see schema.pg.ts for PG migrations
 export const schema = sqliteSchema;
 export type Db = AppDb;

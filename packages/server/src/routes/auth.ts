@@ -4,6 +4,7 @@ import argon2 from 'argon2';
 import { eq } from 'drizzle-orm';
 import type { Db } from '../db/index.js';
 import { schema } from '../db/index.js';
+import { env } from '../env.js';
 
 const registerSchema = z.object({
   username: z.string().min(3).max(30),
@@ -26,21 +27,21 @@ export function authRoutes(db: Db) {
       }
       const { username, password } = parsed.data;
 
-      const existing = await db
-        .select({ id: users.id })
-        .from(users)
-        .where(eq(users.username, username))
-        .limit(1);
-
-      if (existing.length > 0) {
-        return reply.status(409).send({ error: 'Username already taken' });
-      }
-
       const passwordHash = await argon2.hash(password);
-      const [user] = await db
-        .insert(users)
-        .values({ username, passwordHash })
-        .returning({ id: users.id, username: users.username });
+      let user: { id: string; username: string } | undefined;
+      try {
+        const [inserted] = await db
+          .insert(users)
+          .values({ username, passwordHash })
+          .returning({ id: users.id, username: users.username });
+        user = inserted;
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (msg.includes('UNIQUE constraint failed') || msg.includes('unique constraint')) {
+          return reply.status(409).send({ error: 'Username already taken' });
+        }
+        throw err;
+      }
 
       if (!user) {
         return reply.status(500).send({ error: 'Failed to create user' });
@@ -85,13 +86,13 @@ export function authRoutes(db: Db) {
       );
 
       const refreshToken = app.jwt.sign(
-        { id: user.id, username: user.username },
+        { id: user.id, username: user.username, type: 'refresh' as const },
         { expiresIn: '7d' },
       );
 
       reply.setCookie('refreshToken', refreshToken, {
         httpOnly: true,
-        secure: false,
+        secure: env.NODE_ENV === 'production',
         sameSite: 'lax',
         path: '/auth/refresh',
         maxAge: 7 * 24 * 60 * 60,
@@ -109,10 +110,14 @@ export function authRoutes(db: Db) {
         return reply.status(401).send({ error: 'Missing refresh token' });
       }
 
-      let payload: { id: string; username: string };
+      let payload: { id: string; username: string; type?: string };
       try {
-        payload = app.jwt.verify<{ id: string; username: string }>(token);
+        payload = app.jwt.verify<{ id: string; username: string; type?: string }>(token);
       } catch {
+        return reply.status(401).send({ error: 'Invalid refresh token' });
+      }
+
+      if (payload.type !== 'refresh') {
         return reply.status(401).send({ error: 'Invalid refresh token' });
       }
 

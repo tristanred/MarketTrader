@@ -4,8 +4,8 @@ import { env } from '../env.js';
 
 declare module '@fastify/jwt' {
   interface FastifyJWT {
-    payload: { id: string; username: string };
-    user: { id: string; username: string };
+    payload: { id: string; username: string; type?: string };
+    user: { id: string; username: string; type?: string };
   }
 }
 
@@ -23,8 +23,8 @@ export async function registerJwt(app: FastifyInstance): Promise<void> {
     async function (request: FastifyRequest, reply: FastifyReply): Promise<void> {
       try {
         await request.jwtVerify();
-      } catch (err) {
-        reply.send(err);
+      } catch {
+        return reply.code(401).send({ error: 'Unauthorized' });
       }
     },
   );

@@ -128,3 +128,57 @@ describe('POST /auth/login', () => {
     expect(res.statusCode).toBe(400);
   });
 });
+
+describe('POST /auth/refresh', () => {
+  let app: FastifyInstance;
+  let refreshCookieValue: string;
+
+  beforeAll(async () => {
+    app = await createTestApp();
+    await app.inject({
+      method: 'POST',
+      url: '/auth/register',
+      payload: { username: 'eve', password: 'password123' },
+    });
+    const loginRes = await app.inject({
+      method: 'POST',
+      url: '/auth/login',
+      payload: { username: 'eve', password: 'password123' },
+    });
+    const cookie = loginRes.cookies.find((c) => c.name === 'refreshToken');
+    refreshCookieValue = cookie?.value ?? '';
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  it('returns 200 with a new access token when refresh cookie is valid', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/auth/refresh',
+      cookies: { refreshToken: refreshCookieValue },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json<{ token: string; user: { id: string; username: string } }>();
+    expect(typeof body.token).toBe('string');
+    expect(body.user.username).toBe('eve');
+  });
+
+  it('returns 401 when refresh cookie is missing', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/auth/refresh',
+    });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it('returns 401 when refresh cookie is invalid', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/auth/refresh',
+      cookies: { refreshToken: 'not.a.valid.jwt' },
+    });
+    expect(res.statusCode).toBe(401);
+  });
+});

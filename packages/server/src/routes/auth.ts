@@ -102,5 +102,29 @@ export function authRoutes(db: Db) {
         user: { id: user.id, username: user.username },
       });
     });
+
+    app.post('/auth/refresh', async (request, reply) => {
+      const token = request.cookies['refreshToken'];
+      if (!token) {
+        return reply.status(401).send({ error: 'Missing refresh token' });
+      }
+
+      let payload: { id: string; username: string };
+      try {
+        payload = app.jwt.verify<{ id: string; username: string }>(token);
+      } catch {
+        return reply.status(401).send({ error: 'Invalid refresh token' });
+      }
+
+      const accessToken = app.jwt.sign(
+        { id: payload.id, username: payload.username },
+        { expiresIn: '15m' },
+      );
+
+      return reply.status(200).send({
+        token: accessToken,
+        user: { id: payload.id, username: payload.username },
+      });
+    });
   };
 }

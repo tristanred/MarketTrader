@@ -11,6 +11,10 @@ const loggerOptions =
         }
       : { level: 'info' };
 
-const app = await buildApp({ logger: loggerOptions });
-
-await app.listen({ port: env.PORT, host: '0.0.0.0' });
+try {
+  const app = await buildApp({ logger: loggerOptions });
+  await app.listen({ port: env.PORT, host: '0.0.0.0' });
+} catch (err) {
+  console.error(err);
+  process.exit(1);
+}

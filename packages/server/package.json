@@ -20,6 +20,7 @@
     "@fastify/cookie": "^11.0.2",
     "@fastify/cors": "^10.0.0",
     "@fastify/jwt": "^9.0.0",
+    "@fastify/rate-limit": "^10.3.0",
     "@fastify/sensible": "^6.0.0",
     "@fastify/websocket": "^8.0.0",
     "@markettrader/shared": "workspace:*",

@@ -4,6 +4,7 @@ import { registerCors } from './plugins/cors.js';
 import { registerSensible } from './plugins/sensible.js';
 import { registerCookie } from './plugins/cookie.js';
 import { registerJwt } from './plugins/jwt.js';
+import { registerRateLimit } from './plugins/rate-limit.js';
 import { healthRoutes } from './routes/health.js';
 import { authRoutes } from './routes/auth.js';
 
@@ -17,6 +18,7 @@ export async function buildApp(
   await registerSensible(app);
   await registerCookie(app);
   await registerJwt(app);
+  await registerRateLimit(app);
 
   await app.register(healthRoutes);
   await app.register(authRoutes(db));

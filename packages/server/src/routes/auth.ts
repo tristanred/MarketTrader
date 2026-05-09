@@ -20,7 +20,7 @@ export function authRoutes(db: Db) {
   return async function (app: FastifyInstance): Promise<void> {
     const { users } = schema;
 
-    app.post('/auth/register', async (request, reply) => {
+    app.post('/auth/register', { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (request, reply) => {
       const parsed = registerSchema.safeParse(request.body);
       if (!parsed.success) {
         return reply.status(400).send({ error: parsed.error.issues });
@@ -58,7 +58,7 @@ export function authRoutes(db: Db) {
       });
     });
 
-    app.post('/auth/login', async (request, reply) => {
+    app.post('/auth/login', { config: { rateLimit: { max: 5, timeWindow: '1 minute' } } }, async (request, reply) => {
       const parsed = loginSchema.safeParse(request.body);
       if (!parsed.success) {
         return reply.status(400).send({ error: parsed.error.issues });
@@ -104,7 +104,7 @@ export function authRoutes(db: Db) {
       });
     });
 
-    app.post('/auth/refresh', async (request, reply) => {
+    app.post('/auth/refresh', { config: { rateLimit: { max: 20, timeWindow: '1 minute' } } }, async (request, reply) => {
       const token = request.cookies['refreshToken'];
       if (!token) {
         return reply.status(401).send({ error: 'Missing refresh token' });

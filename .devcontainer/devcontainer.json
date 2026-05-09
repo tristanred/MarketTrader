@@ -1,0 +1,39 @@
+{
+  "name": "MarketTrader Dev",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:24-bookworm",
+
+  "forwardPorts": [3000, 5173],
+  "portsAttributes": {
+    "3000": { "label": "Fastify API", "onAutoForward": "notify" },
+    "5173": { "label": "Vite Frontend", "onAutoForward": "openBrowser" }
+  },
+
+  "postCreateCommand": "bash .devcontainer/setup.sh",
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "bradlc.vscode-tailwindcss",
+        "ms-vscode.vscode-typescript-next",
+        "vitest.explorer",
+        "drizzle.drizzle",
+        "alexcvzz.vscode-sqlite",
+        "humao.rest-client",
+        "eamodio.gitlens",
+        "dsznajder.es7-react-js-snippets",
+        "github.vscode-pull-request-github"
+      ],
+      "settings": {
+        "typescript.tsdk": "node_modules/typescript/lib",
+        "typescript.enablePromptUseWorkspaceTsdk": true,
+        "editor.defaultFormatter": "esbenp.prettier-vscode",
+        "editor.formatOnSave": true,
+        "editor.codeActionsOnSave": {
+          "source.fixAll.eslint": "explicit"
+        }
+      }
+    }
+  }
+}

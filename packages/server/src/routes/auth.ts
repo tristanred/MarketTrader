@@ -56,5 +56,51 @@ export function authRoutes(db: Db) {
         user: { id: user.id, username: user.username },
       });
     });
+
+    app.post('/auth/login', async (request, reply) => {
+      const parsed = loginSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.status(400).send({ error: parsed.error.issues });
+      }
+      const { username, password } = parsed.data;
+
+      const [user] = await db
+        .select({ id: users.id, username: users.username, passwordHash: users.passwordHash })
+        .from(users)
+        .where(eq(users.username, username))
+        .limit(1);
+
+      if (!user) {
+        return reply.status(401).send({ error: 'Invalid credentials' });
+      }
+
+      const valid = await argon2.verify(user.passwordHash, password);
+      if (!valid) {
+        return reply.status(401).send({ error: 'Invalid credentials' });
+      }
+
+      const accessToken = app.jwt.sign(
+        { id: user.id, username: user.username },
+        { expiresIn: '15m' },
+      );
+
+      const refreshToken = app.jwt.sign(
+        { id: user.id, username: user.username },
+        { expiresIn: '7d' },
+      );
+
+      reply.setCookie('refreshToken', refreshToken, {
+        httpOnly: true,
+        secure: false,
+        sameSite: 'lax',
+        path: '/auth/refresh',
+        maxAge: 7 * 24 * 60 * 60,
+      });
+
+      return reply.status(200).send({
+        token: accessToken,
+        user: { id: user.id, username: user.username },
+      });
+    });
   };
 }

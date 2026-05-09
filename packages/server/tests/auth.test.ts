@@ -58,3 +58,73 @@ describe('POST /auth/register', () => {
     expect(res.statusCode).toBe(400);
   });
 });
+
+describe('POST /auth/login', () => {
+  let app: FastifyInstance;
+
+  beforeAll(async () => {
+    app = await createTestApp();
+    // seed a user
+    await app.inject({
+      method: 'POST',
+      url: '/auth/register',
+      payload: { username: 'dave', password: 'password123' },
+    });
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  it('returns 200 with token and user on valid credentials', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/auth/login',
+      payload: { username: 'dave', password: 'password123' },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json<{ token: string; user: { id: string; username: string } }>();
+    expect(typeof body.token).toBe('string');
+    expect(body.user.username).toBe('dave');
+  });
+
+  it('sets refreshToken HttpOnly cookie on login', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/auth/login',
+      payload: { username: 'dave', password: 'password123' },
+    });
+    expect(res.statusCode).toBe(200);
+    const cookies = res.cookies;
+    const refreshCookie = cookies.find((c) => c.name === 'refreshToken');
+    expect(refreshCookie).toBeDefined();
+    expect(refreshCookie?.httpOnly).toBe(true);
+  });
+
+  it('returns 401 on wrong password', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/auth/login',
+      payload: { username: 'dave', password: 'wrongpassword' },
+    });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it('returns 401 on unknown username', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/auth/login',
+      payload: { username: 'nobody', password: 'password123' },
+    });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it('returns 400 when body is missing', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/auth/login',
+      payload: {},
+    });
+    expect(res.statusCode).toBe(400);
+  });
+});

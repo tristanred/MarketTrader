@@ -33,7 +33,7 @@ export const games = pgTable('games', {
   status: gameStatusEnum('status').notNull().default('pending'),
   createdBy: text('created_by')
     .notNull()
-    .references(() => users.id),
+    .references(() => users.id, { onDelete: 'restrict' }),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
@@ -45,10 +45,10 @@ export const gamePlayers = pgTable(
       .$defaultFn(() => crypto.randomUUID()),
     gameId: text('game_id')
       .notNull()
-      .references(() => games.id),
+      .references(() => games.id, { onDelete: 'restrict' }),
     userId: text('user_id')
       .notNull()
-      .references(() => users.id),
+      .references(() => users.id, { onDelete: 'restrict' }),
     cashBalance: decimal('cash_balance', { precision: 15, scale: 2 }).notNull(),
     joinedAt: timestamp('joined_at').defaultNow().notNull(),
   },
@@ -63,7 +63,7 @@ export const portfolios = pgTable(
       .$defaultFn(() => crypto.randomUUID()),
     gamePlayerId: text('game_player_id')
       .notNull()
-      .references(() => gamePlayers.id),
+      .references(() => gamePlayers.id, { onDelete: 'restrict' }),
     symbol: text('symbol').notNull(),
     quantity: integer('quantity').notNull(),
     avgCostBasis: decimal('avg_cost_basis', { precision: 15, scale: 2 }).notNull(),
@@ -77,7 +77,7 @@ export const trades = pgTable('trades', {
     .$defaultFn(() => crypto.randomUUID()),
   gamePlayerId: text('game_player_id')
     .notNull()
-    .references(() => gamePlayers.id),
+    .references(() => gamePlayers.id, { onDelete: 'restrict' }),
   symbol: text('symbol').notNull(),
   direction: tradeDirectionEnum('direction').notNull(),
   quantity: integer('quantity').notNull(),
@@ -90,5 +90,5 @@ export const stockPriceCache = pgTable('stock_price_cache', {
   price: decimal('price', { precision: 15, scale: 4 }).notNull(),
   change: decimal('change', { precision: 15, scale: 4 }).notNull(),
   changePercent: decimal('change_percent', { precision: 10, scale: 4 }).notNull(),
-  fetchedAt: timestamp('fetched_at').notNull(),
+  fetchedAt: timestamp('fetched_at').defaultNow().notNull(),
 });

@@ -1,4 +1,4 @@
-import { sqliteTable, text, real, integer } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, real, integer, unique } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
 
 export const users = sqliteTable('users', {
@@ -25,39 +25,47 @@ export const games = sqliteTable('games', {
     .default('pending'),
   createdBy: text('created_by')
     .notNull()
-    .references(() => users.id),
+    .references(() => users.id, { onDelete: 'restrict' }),
   createdAt: text('created_at')
     .default(sql`(datetime('now'))`)
     .notNull(),
 });
 
-export const gamePlayers = sqliteTable('game_players', {
-  id: text('id')
-    .primaryKey()
-    .$defaultFn(() => crypto.randomUUID()),
-  gameId: text('game_id')
-    .notNull()
-    .references(() => games.id),
-  userId: text('user_id')
-    .notNull()
-    .references(() => users.id),
-  cashBalance: real('cash_balance').notNull(),
-  joinedAt: text('joined_at')
-    .default(sql`(datetime('now'))`)
-    .notNull(),
-});
+export const gamePlayers = sqliteTable(
+  'game_players',
+  {
+    id: text('id')
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    gameId: text('game_id')
+      .notNull()
+      .references(() => games.id, { onDelete: 'restrict' }),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+    cashBalance: real('cash_balance').notNull(),
+    joinedAt: text('joined_at')
+      .default(sql`(datetime('now'))`)
+      .notNull(),
+  },
+  (t) => [unique().on(t.gameId, t.userId)],
+);
 
-export const portfolios = sqliteTable('portfolios', {
-  id: text('id')
-    .primaryKey()
-    .$defaultFn(() => crypto.randomUUID()),
-  gamePlayerId: text('game_player_id')
-    .notNull()
-    .references(() => gamePlayers.id),
-  symbol: text('symbol').notNull(),
-  quantity: integer('quantity').notNull(),
-  avgCostBasis: real('avg_cost_basis').notNull(),
-});
+export const portfolios = sqliteTable(
+  'portfolios',
+  {
+    id: text('id')
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    gamePlayerId: text('game_player_id')
+      .notNull()
+      .references(() => gamePlayers.id, { onDelete: 'restrict' }),
+    symbol: text('symbol').notNull(),
+    quantity: integer('quantity').notNull(),
+    avgCostBasis: real('avg_cost_basis').notNull(),
+  },
+  (t) => [unique().on(t.gamePlayerId, t.symbol)],
+);
 
 export const trades = sqliteTable('trades', {
   id: text('id')
@@ -65,7 +73,7 @@ export const trades = sqliteTable('trades', {
     .$defaultFn(() => crypto.randomUUID()),
   gamePlayerId: text('game_player_id')
     .notNull()
-    .references(() => gamePlayers.id),
+    .references(() => gamePlayers.id, { onDelete: 'restrict' }),
   symbol: text('symbol').notNull(),
   direction: text('direction', { enum: ['buy', 'sell'] }).notNull(),
   quantity: integer('quantity').notNull(),
@@ -80,5 +88,7 @@ export const stockPriceCache = sqliteTable('stock_price_cache', {
   price: real('price').notNull(),
   change: real('change').notNull(),
   changePercent: real('change_percent').notNull(),
-  fetchedAt: text('fetched_at').notNull(),
+  fetchedAt: text('fetched_at')
+    .default(sql`(datetime('now'))`)
+    .notNull(),
 });

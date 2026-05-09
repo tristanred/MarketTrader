@@ -49,13 +49,13 @@ This file tracks the overall build plan across multiple sessions. Each phase map
 
 **Goal:** Players can create games, join games, and view the leaderboard.
 
-- [ ] `GET /games` — list games the authenticated user is participating in
-- [ ] `POST /games` — create a game (name, startDate, endDate, startingBalance)
-- [ ] `POST /games/:id/join` — join a game as a player (creates GamePlayer row)
-- [ ] `GET /games/:id` — game details + current leaderboard snapshot
-- [ ] Game status auto-transition logic (pending → active → ended based on dates)
-- [ ] Leaderboard calculation service (`cashBalance + Σ quantity × currentPrice`)
-- [ ] Vitest integration tests for all game endpoints
+- [x] `GET /games` — list games the authenticated user is participating in
+- [x] `POST /games` — create a game (name, startDate, endDate, startingBalance)
+- [x] `POST /games/:id/join` — join a game as a player (creates GamePlayer row)
+- [x] `GET /games/:id` — game details + current leaderboard snapshot
+- [x] Game status auto-transition logic (pending → active → ended based on dates)
+- [x] Leaderboard calculation service (`cashBalance + Σ quantity × currentPrice`)
+- [x] Vitest integration tests for all game endpoints
 
 ---
 
@@ -157,9 +157,9 @@ This file tracks the overall build plan across multiple sessions. Each phase map
 
 ## Current State
 
-**Phase 2 is fully complete.** The Auth API is implemented: users can register and log in, passwords are hashed with argon2, JWTs are issued with a 15-minute access token and 7-day HttpOnly refresh token cookie, the `@fastify/jwt` plugin is registered, the `request.user` decorator protects routes, and integration tests cover register, login, invalid credentials, and duplicate username.
+**Phase 3 is fully complete.** The Game & Player API is implemented: users can create games (auto-joining as the first player), list their games, join existing games, and view game details with a ranked leaderboard. Game status auto-transitions (pending → active → ended) lazily on read. The leaderboard uses live prices from `stockPriceCache` with an `avgCostBasis` fallback (to be replaced in Phase 4).
 
-**Next step:** Implement Phase 3 (Game & Player API). Create the plan file at `docs/superpowers/plans/2026-05-XX-game-api.md` before starting implementation.
+**Next step:** Implement Phase 4 (Trading & Stock Price API). Create the plan file at `docs/superpowers/plans/2026-05-XX-trading-api.md` before starting implementation.
 
 ---
 

@@ -2,7 +2,10 @@ import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastif
 import { db as globalDb, type Db } from './db/index.js';
 import { registerCors } from './plugins/cors.js';
 import { registerSensible } from './plugins/sensible.js';
+import { registerCookie } from './plugins/cookie.js';
+import { registerJwt } from './plugins/jwt.js';
 import { healthRoutes } from './routes/health.js';
+import { authRoutes } from './routes/auth.js';
 
 export async function buildApp(
   opts: FastifyServerOptions & { db?: Db } = {},
@@ -12,7 +15,11 @@ export async function buildApp(
 
   await registerCors(app);
   await registerSensible(app);
+  await registerCookie(app);
+  await registerJwt(app);
+
   await app.register(healthRoutes);
+  await app.register(authRoutes(db));
 
   return app;
 }

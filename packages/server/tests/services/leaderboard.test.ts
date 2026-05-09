@@ -117,8 +117,8 @@ describe('computeLeaderboard', () => {
     const result = await computeLeaderboard(db, game4.id);
     const bob = result.find(e => e.username === 'bob');
     expect(bob).toBeDefined();
-    // 8000 cash + 2 * 300 (avgCostBasis fallback) = 8600
+    // 8000 cash + 0 (no price cache entry = 0 contribution) = 8000
     expect(bob!.cashBalance).toBe(8000);
-    expect(bob!.totalValue).toBe(8600);
+    expect(bob!.totalValue).toBe(8000);
   });
 });

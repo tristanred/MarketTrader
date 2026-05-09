@@ -52,8 +52,7 @@ export async function computeLeaderboard(db: Db, gameId: string): Promise<Leader
       });
     }
     if (row.symbol != null && row.quantity != null) {
-      // TODO(phase-4): remove avgCostBasis fallback once StockProvider cache is populated
-      const price = row.cachedPrice != null ? Number(row.cachedPrice) : Number(row.avgCostBasis);
+      const price = row.cachedPrice != null ? Number(row.cachedPrice) : 0;
       playerMap.get(row.gpId)!.portfolioValue += row.quantity * price;
     }
   }

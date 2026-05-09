@@ -138,7 +138,7 @@ describe('GET /games', () => {
     expect(res.statusCode).toBe(200);
     const games = res.json<Array<{ name: string }>>();
     expect(games).toHaveLength(1);
-    expect(games[0].name).toBe('Alice Game');
+    expect(games[0]!.name).toBe('Alice Game');
   });
 
   it('recomputes status to active for a game with past startDate', async () => {
@@ -279,8 +279,8 @@ describe('GET /games/:id', () => {
     }>();
     expect(body.id).toBe(gameId);
     expect(body.leaderboard).toHaveLength(2);
-    expect(body.leaderboard[0].rank).toBe(1);
-    expect(body.leaderboard[0].totalValue).toBe(10000);
+    expect(body.leaderboard[0]!.rank).toBe(1);
+    expect(body.leaderboard[0]!.totalValue).toBe(10000);
   });
 
   it('returns leaderboard sorted by totalValue descending', async () => {
@@ -299,8 +299,10 @@ describe('GET /games/:id', () => {
     });
     const { leaderboard } = res.json<{ leaderboard: Array<{ rank: number; totalValue: number }> }>();
     for (let i = 1; i < leaderboard.length; i++) {
-      expect(leaderboard[i - 1].totalValue).toBeGreaterThanOrEqual(leaderboard[i].totalValue);
-      expect(leaderboard[i - 1].rank).toBeLessThan(leaderboard[i].rank);
+      const prev = leaderboard[i - 1]!;
+      const curr = leaderboard[i]!;
+      expect(prev.totalValue).toBeGreaterThanOrEqual(curr.totalValue);
+      expect(prev.rank).toBeLessThan(curr.rank);
     }
   });
 

@@ -1,8 +1,7 @@
 import { eq } from 'drizzle-orm';
+import type { GameStatus } from '@markettrader/shared';
 import type { Db } from '../db/index.js';
 import { schema } from '../db/index.js';
-
-type GameStatus = 'pending' | 'active' | 'ended';
 type GameRecord = { id: string; startDate: string; endDate: string; status: string };
 
 function computeStatus(game: GameRecord, now: string): GameStatus {

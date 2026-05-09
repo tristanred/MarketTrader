@@ -29,34 +29,36 @@ describe('game-status service', () => {
     return g;
   }
 
+  const NOW = '2026-06-01T00:00:00.000Z';
+
   it('transitions pending → active when startDate has passed', async () => {
     const g = await insertGame('2026-01-01T00:00:00.000Z', '2027-01-01T00:00:00.000Z');
-    const status = await recomputeGameStatus(db, g);
+    const status = await recomputeGameStatus(db, g, NOW);
     expect(status).toBe('active');
   });
 
   it('transitions active → ended when endDate has passed', async () => {
     const g = await insertGame('2026-01-01T00:00:00.000Z', '2026-01-02T00:00:00.000Z', 'active');
-    const status = await recomputeGameStatus(db, g);
+    const status = await recomputeGameStatus(db, g, NOW);
     expect(status).toBe('ended');
   });
 
   it('does not change ended status', async () => {
     const g = await insertGame('2026-01-01T00:00:00.000Z', '2027-01-01T00:00:00.000Z', 'ended');
-    const status = await recomputeGameStatus(db, g);
+    const status = await recomputeGameStatus(db, g, NOW);
     expect(status).toBe('ended');
   });
 
   it('keeps pending when startDate is in the future', async () => {
     const g = await insertGame('2099-01-01T00:00:00.000Z', '2099-06-01T00:00:00.000Z');
-    const status = await recomputeGameStatus(db, g);
+    const status = await recomputeGameStatus(db, g, NOW);
     expect(status).toBe('pending');
   });
 
   it('recomputeMany returns statuses for all games', async () => {
     const g1 = await insertGame('2026-01-01T00:00:00.000Z', '2027-01-01T00:00:00.000Z');
     const g2 = await insertGame('2099-01-01T00:00:00.000Z', '2099-06-01T00:00:00.000Z');
-    const map = await recomputeMany(db, [g1, g2]);
+    const map = await recomputeMany(db, [g1, g2], NOW);
     expect(map.get(g1.id)).toBe('active');
     expect(map.get(g2.id)).toBe('pending');
   });

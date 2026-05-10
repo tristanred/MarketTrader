@@ -52,7 +52,8 @@ export async function computeLeaderboard(db: Db, gameId: string): Promise<Leader
       });
     }
     if (row.symbol != null && row.quantity != null) {
-      const price = row.cachedPrice != null ? Number(row.cachedPrice) : 0;
+      // avgCostBasis is the last known price if the cache entry has expired or hasn't been populated yet
+      const price = row.cachedPrice != null ? Number(row.cachedPrice) : Number(row.avgCostBasis);
       playerMap.get(row.gpId)!.portfolioValue += row.quantity * price;
     }
   }

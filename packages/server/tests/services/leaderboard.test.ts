@@ -92,7 +92,7 @@ describe('computeLeaderboard', () => {
     expect(alice!.totalValue).toBe(11000);
   });
 
-  it('falls back to avgCostBasis when no cache entry exists', async () => {
+  it('falls back to avgCostBasis for portfolio value when no cache entry exists', async () => {
     // Use a separate game and players to avoid shared state with other tests
     const [game4] = await db.insert(schema.games).values({
       name: 'Fallback Test',
@@ -117,8 +117,8 @@ describe('computeLeaderboard', () => {
     const result = await computeLeaderboard(db, game4.id);
     const bob = result.find(e => e.username === 'bob');
     expect(bob).toBeDefined();
-    // 8000 cash + 0 (no price cache entry = 0 contribution) = 8000
+    // 8000 cash + 2 * 300 (avgCostBasis fallback) = 8600
     expect(bob!.cashBalance).toBe(8000);
-    expect(bob!.totalValue).toBe(8000);
+    expect(bob!.totalValue).toBe(8600);
   });
 });

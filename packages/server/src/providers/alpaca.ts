@@ -28,19 +28,22 @@ export class AlpacaProvider implements StockProvider {
 
     const data = (await res.json()) as { quote?: { ap?: number } };
     const price = data.quote?.ap;
-    if (price == null) {
+    if (price == null || price <= 0) {
+      // ap is 0 when markets are closed or no current ask exists; treat as no data
       throw new StockProviderError('SYMBOL_NOT_FOUND', `No quote data for ${symbol}`);
     }
 
     return {
       symbol,
       price,
+      // TODO(alpaca-change): Alpaca quotes/latest does not return daily change; would need prev-close from bars API
       change: 0,
       changePercent: 0,
       fetchedAt: new Date().toISOString(),
     };
   }
 
+  // TODO(alpaca-search): Alpaca Assets API (GET /v2/assets?status=active) can implement symbol search
   async searchSymbols(_query: string): Promise<StockSearchResult[]> {
     return [];
   }

@@ -1,4 +1,5 @@
-const VALID_PROVIDERS = ['yahoo', 'alpaca', 'polygon'] as const;
+// TODO(polygon-provider): add 'polygon' once PolygonProvider is implemented
+const VALID_PROVIDERS = ['yahoo', 'alpaca'] as const;
 type StockProvider = (typeof VALID_PROVIDERS)[number];
 
 function optional(name: string, fallback: string): string {

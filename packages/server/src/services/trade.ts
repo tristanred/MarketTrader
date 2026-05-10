@@ -94,32 +94,33 @@ export async function executeTrade(db: Db, params: ExecuteTradeParams): Promise<
     newAvg = Number(holding?.avgCostBasis ?? 0);
   }
 
-  // better-sqlite3 transactions are synchronous; drizzle QueryPromises execute sync via .run()
-  type SyncQuery = { run(): unknown };
-  type SyncReturning<T> = { all(): T[] };
-  const run = (q: unknown): void => { (q as SyncQuery).run(); };
-  const returning = <T>(q: unknown): T[] => (q as SyncReturning<T>).all();
+  // The project types db as BetterSQLite3Database throughout (PG is cast to it in db/index.ts).
+  // better-sqlite3 transactions are synchronous; Drizzle SQLite query builders expose .run()
+  // and .all() that execute immediately. These helpers avoid casting each call-site to `any`.
+  // TODO(pg-async-tx): If the PG driver is ever un-cast from AppDb, replace with async transaction.
+  const run = (q: { run(): unknown }): void => { q.run(); };
+  const returning = <T>(q: { all(): T[] }): T[] => q.all();
 
   const result = db.transaction((tx: Db) => {
-    run(tx.update(gamePlayers).set({ cashBalance: newCash }).where(eq(gamePlayers.id, gamePlayerId)));
+    run(tx.update(gamePlayers).set({ cashBalance: newCash }).where(eq(gamePlayers.id, gamePlayerId)) as { run(): unknown });
 
     if (direction === 'buy') {
       if (holding) {
-        run(tx.update(portfolios).set({ quantity: newQty, avgCostBasis: newAvg }).where(eq(portfolios.id, holding.id)));
+        run(tx.update(portfolios).set({ quantity: newQty, avgCostBasis: newAvg }).where(eq(portfolios.id, holding.id)) as { run(): unknown });
       } else {
-        run(tx.insert(portfolios).values({ gamePlayerId, symbol, quantity: newQty, avgCostBasis: newAvg }));
+        run(tx.insert(portfolios).values({ gamePlayerId, symbol, quantity: newQty, avgCostBasis: newAvg }) as { run(): unknown });
       }
     } else {
       if (newQty === 0) {
-        run(tx.delete(portfolios).where(and(eq(portfolios.gamePlayerId, gamePlayerId), eq(portfolios.symbol, symbol))));
+        run(tx.delete(portfolios).where(and(eq(portfolios.gamePlayerId, gamePlayerId), eq(portfolios.symbol, symbol))) as { run(): unknown });
       } else {
-        run(tx.update(portfolios).set({ quantity: newQty }).where(and(eq(portfolios.gamePlayerId, gamePlayerId), eq(portfolios.symbol, symbol))));
+        run(tx.update(portfolios).set({ quantity: newQty }).where(and(eq(portfolios.gamePlayerId, gamePlayerId), eq(portfolios.symbol, symbol))) as { run(): unknown });
       }
     }
 
     type TradeRow = typeof schema.trades.$inferSelect;
     const rows = returning<TradeRow>(
-      tx.insert(trades).values({ gamePlayerId, symbol, direction, quantity, price }).returning(),
+      tx.insert(trades).values({ gamePlayerId, symbol, direction, quantity, price }).returning() as { all(): TradeRow[] },
     );
     const trade = rows[0];
 

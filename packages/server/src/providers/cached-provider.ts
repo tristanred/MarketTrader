@@ -4,8 +4,20 @@ import type { Db } from '../db/index.js';
 import { schema } from '../db/index.js';
 import type { StockProvider } from './interface.js';
 
+/** Quotes older than this are re-fetched from the upstream provider. */
 const CACHE_TTL_MS = 30_000;
 
+/**
+ * A {@link StockProvider} decorator that caches quotes in the `stock_price_cache`
+ * database table for {@link CACHE_TTL_MS} milliseconds.
+ *
+ * Cache hits are served directly from the DB; misses delegate to the wrapped
+ * `inner` provider and then upsert the result. This prevents redundant calls to
+ * the upstream API when multiple routes (portfolio, trade, leaderboard) need
+ * the same price within a short window.
+ *
+ * `searchSymbols` is never cached — it always delegates to `inner`.
+ */
 export class CachedProvider implements StockProvider {
   constructor(
     private readonly db: Db,

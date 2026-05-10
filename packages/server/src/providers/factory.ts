@@ -3,6 +3,12 @@ import type { StockProvider } from './interface.js';
 import { YahooProvider } from './yahoo.js';
 import { AlpacaProvider } from './alpaca.js';
 
+/**
+ * Instantiates the correct {@link StockProvider} based on the `STOCK_PROVIDER`
+ * environment variable. Wrapped by {@link CachedProvider} in `app.ts`.
+ *
+ * @throws {Error} if `STOCK_PROVIDER=alpaca` and `ALPACA_API_KEY` is missing.
+ */
 export function createProvider(): StockProvider {
   switch (env.STOCK_PROVIDER) {
     case 'alpaca': {

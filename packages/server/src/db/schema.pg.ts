@@ -8,9 +8,11 @@ import {
   unique,
 } from 'drizzle-orm/pg-core';
 
+// PostgreSQL enums for status and direction fields; the SQLite schema uses text enums instead.
 export const gameStatusEnum = pgEnum('game_status', ['pending', 'active', 'ended']);
 export const tradeDirectionEnum = pgEnum('trade_direction', ['buy', 'sell']);
 
+/** Registered platform accounts. One user can participate in many games. */
 export const users = pgTable('users', {
   id: text('id')
     .primaryKey()
@@ -20,6 +22,10 @@ export const users = pgTable('users', {
   createdAt: timestamp('created_at', { mode: 'string' }).defaultNow().notNull(),
 });
 
+/**
+ * Trading tournament instances. `status` is stored here but always recomputed
+ * from `startDate`/`endDate` at read time via `recomputeGameStatus`.
+ */
 export const games = pgTable('games', {
   id: text('id')
     .primaryKey()
@@ -37,6 +43,11 @@ export const games = pgTable('games', {
   createdAt: timestamp('created_at', { mode: 'string' }).defaultNow().notNull(),
 });
 
+/**
+ * Join table between users and games. Each row represents one player in one game.
+ * `cashBalance` is updated atomically within the trade transaction.
+ * The `(gameId, userId)` unique constraint prevents duplicate enrollments.
+ */
 export const gamePlayers = pgTable(
   'game_players',
   {
@@ -55,6 +66,11 @@ export const gamePlayers = pgTable(
   (t) => [unique().on(t.gameId, t.userId)],
 );
 
+/**
+ * Current stock holdings per player per game. One row per (gamePlayerId, symbol).
+ * `quantity` is always a positive integer; the row is deleted when shares reach 0.
+ * `avgCostBasis` is recalculated as a weighted average on each buy.
+ */
 export const portfolios = pgTable(
   'portfolios',
   {
@@ -71,6 +87,10 @@ export const portfolios = pgTable(
   (t) => [unique().on(t.gamePlayerId, t.symbol)],
 );
 
+/**
+ * Immutable record of every executed trade. Never updated after insert.
+ * `price` is the live market price at the moment of execution (4 decimal places).
+ */
 export const trades = pgTable('trades', {
   id: text('id')
     .primaryKey()
@@ -85,6 +105,11 @@ export const trades = pgTable('trades', {
   executedAt: timestamp('executed_at', { mode: 'string' }).defaultNow().notNull(),
 });
 
+/**
+ * Short-lived quote cache (30-second TTL). Keyed by ticker symbol.
+ * Used by `CachedProvider` to avoid redundant upstream API calls and by
+ * the leaderboard query to value portfolios without hitting the provider.
+ */
 export const stockPriceCache = pgTable('stock_price_cache', {
   symbol: text('symbol').primaryKey(),
   price: decimal('price', { precision: 15, scale: 4 }).notNull(),

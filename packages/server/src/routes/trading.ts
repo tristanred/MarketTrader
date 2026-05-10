@@ -15,6 +15,16 @@ const placeTradeSchema = z.object({
   quantity: z.number().int().min(1),
 });
 
+/**
+ * Registers trading and portfolio routes (all require authentication):
+ * - `POST /games/:id/trades`     — execute a buy or sell at the live market price.
+ * - `GET  /games/:id/trades`     — trade history for the caller in this game, newest first.
+ * - `GET  /games/:id/portfolio`  — current holdings enriched with live prices and P&L.
+ *
+ * Trade execution is atomic: the price is fetched from the provider immediately
+ * before the database transaction so the execution price reflects real market
+ * conditions. Trades are rejected when the game is not `active`.
+ */
 export function tradingRoutes(db: Db, provider: StockProvider) {
   return async function (app: FastifyInstance): Promise<void> {
     const { games, gamePlayers, portfolios, trades } = schema;

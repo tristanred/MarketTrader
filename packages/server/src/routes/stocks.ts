@@ -7,6 +7,14 @@ import { StockProviderError } from '../providers/index.js';
 const symbolSchema = z.string().min(1).max(10).transform((s) => s.toUpperCase());
 const searchSchema = z.object({ q: z.string().min(1).max(50) });
 
+/**
+ * Registers public stock-lookup routes (no authentication required):
+ * - `GET /stocks/search?q=<query>` — symbol autocomplete via the provider.
+ * - `GET /stocks/:symbol`          — current quote for a single ticker.
+ *
+ * Both routes delegate to the injected {@link StockProvider} so the actual
+ * data source can be swapped via `STOCK_PROVIDER` without touching this file.
+ */
 export function stockRoutes(_db: Db, provider: StockProvider) {
   return async function (app: FastifyInstance): Promise<void> {
     app.get('/stocks/search', async (request, reply) => {

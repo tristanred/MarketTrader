@@ -16,6 +16,16 @@ const loginSchema = z.object({
   password: z.string().min(1),
 });
 
+/**
+ * Registers all authentication routes on the Fastify instance:
+ * - `POST /auth/register` — create a new account; returns a 15-minute access token.
+ * - `POST /auth/login`    — verify credentials; sets an HttpOnly refresh-token cookie
+ *   and returns a 15-minute access token.
+ * - `POST /auth/refresh`  — exchange the refresh-token cookie for a new access token.
+ *
+ * Rate limits are applied per-route to slow brute-force attempts.
+ * Passwords are hashed with argon2; never bcrypt.
+ */
 export function authRoutes(db: Db) {
   return async function (app: FastifyInstance): Promise<void> {
     const { users } = schema;
@@ -90,6 +100,7 @@ export function authRoutes(db: Db) {
         { expiresIn: '7d' },
       );
 
+      // Scope the cookie to /auth/refresh so it is never sent on other requests.
       reply.setCookie('refreshToken', refreshToken, {
         httpOnly: true,
         secure: env.NODE_ENV === 'production',

@@ -62,6 +62,25 @@ If a library version is outdated or a better alternative emerges, open an ADR en
 
 ---
 
+## Documentation Conventions
+
+Every exported function, class, and interface must have a JSDoc comment unless the name already makes the purpose completely unambiguous (a trivial getter, a re-export, etc.).
+
+**What to document:**
+
+- Exported functions and classes in `packages/server/src/services/`, `providers/`, and `routes/` — describe what the function does, non-obvious parameters, and what errors it can throw.
+- Exported interfaces and types in `packages/shared/src/types/` — describe the purpose of the type and any fields whose meaning is not self-evident from the name (units, constraints, nullable semantics).
+- Drizzle table definitions in `packages/server/src/db/schema.sqlite.ts` and `schema.pg.ts` — one comment per table describing its role in the data model.
+
+**Rules:**
+
+- Keep JSDoc comments to 1–4 lines. If you need more, the function is probably doing too much.
+- Use `{@link SomeName}` to cross-reference related types or functions where it adds real value.
+- Inline comments (`//`) are for non-obvious *why*: a workaround, a subtle invariant, a surprising constraint. Not for narrating what the next line does.
+- When you add or modify a function/type, update its JSDoc in the same commit.
+
+---
+
 ## Database Rules
 
 - **Schema lives in `packages/server/src/db/schema.ts`** — single source of truth for Drizzle

@@ -18,6 +18,16 @@ const createGameSchema = z
     path: ['endDate'],
   });
 
+/**
+ * Registers game lifecycle routes (all require authentication):
+ * - `GET  /games`        — list every game the caller has joined.
+ * - `POST /games`        — create a new game; creator is automatically enrolled.
+ * - `POST /games/:id/join` — join an existing game (rejected if already ended).
+ * - `GET  /games/:id`    — fetch game details + leaderboard (membership required).
+ *
+ * All routes recompute game status on the fly so `pending`/`active`/`ended`
+ * reflects real time rather than the stored snapshot.
+ */
 export function gameRoutes(db: Db) {
   return async function (app: FastifyInstance): Promise<void> {
     const { games, gamePlayers } = schema;
@@ -115,6 +125,8 @@ export function gameRoutes(db: Db) {
       const [game] = await db.select().from(games).where(eq(games.id, gameId)).limit(1);
       if (!game) return reply.status(404).send({ error: 'Game not found' });
 
+      // Return 404 (not 403) when the caller is not a member so that game IDs
+      // aren't enumerable by non-participants.
       const [membership] = await db
         .select({ id: gamePlayers.id })
         .from(gamePlayers)

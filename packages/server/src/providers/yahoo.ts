@@ -3,8 +3,16 @@ import type { StockQuote, StockSearchResult } from '@markettrader/shared';
 import type { StockProvider } from './interface.js';
 import { StockProviderError } from './interface.js';
 
+// Suppress yahoo-finance2's built-in validation warnings; we handle errors ourselves.
 yahooFinance.setGlobalConfig({ validation: { logErrors: false } });
 
+/**
+ * {@link StockProvider} backed by Yahoo Finance via the `yahoo-finance2` package.
+ * Requires no API key and is the default provider (`STOCK_PROVIDER=yahoo`).
+ *
+ * `searchSymbols` filters results to EQUITY quote types only, so funds and
+ * crypto are excluded from autocomplete suggestions.
+ */
 export class YahooProvider implements StockProvider {
   async getQuote(symbol: string): Promise<StockQuote> {
     let result;

@@ -2,6 +2,16 @@ import type { StockQuote, StockSearchResult } from '@markettrader/shared';
 import type { StockProvider } from './interface.js';
 import { StockProviderError } from './interface.js';
 
+/**
+ * {@link StockProvider} backed by the Alpaca Data API v2.
+ * Requires `ALPACA_API_KEY` env var (`STOCK_PROVIDER=alpaca`).
+ *
+ * Known limitations:
+ * - `getQuote` uses the `ask price` (ap) field from quotes/latest. Daily
+ *   change is not available from this endpoint; change fields are always 0.
+ * - `searchSymbols` is not implemented (always returns empty array).
+ * See the TODO comments for upgrade paths.
+ */
 export class AlpacaProvider implements StockProvider {
   private readonly baseUrl = 'https://data.alpaca.markets/v2';
 

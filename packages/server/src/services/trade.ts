@@ -4,6 +4,11 @@ import { schema } from '../db/index.js';
 import type { TradeDirection, Trade } from '@markettrader/shared';
 import { TradeError } from '../providers/index.js';
 
+/**
+ * Validates that a buy order can be filled given the player's current cash.
+ * Throws {@link TradeError} if quantity is not a positive integer or if the
+ * total cost exceeds `cashBalance`.
+ */
 export function validateBuy(cashBalance: number, price: number, quantity: number): void {
   if (!Number.isInteger(quantity) || quantity < 1) {
     throw new TradeError('INVALID_QUANTITY', 'Quantity must be a positive integer');
@@ -13,6 +18,11 @@ export function validateBuy(cashBalance: number, price: number, quantity: number
   }
 }
 
+/**
+ * Validates that a sell order can be filled given the player's current holding.
+ * Throws {@link TradeError} if quantity is not a positive integer or if it
+ * exceeds the shares currently held.
+ */
 export function validateSell(currentQuantity: number, quantity: number): void {
   if (!Number.isInteger(quantity) || quantity < 1) {
     throw new TradeError('INVALID_QUANTITY', 'Quantity must be a positive integer');
@@ -22,6 +32,14 @@ export function validateSell(currentQuantity: number, quantity: number): void {
   }
 }
 
+/**
+ * Returns the new weighted-average cost basis after buying additional shares.
+ *
+ * @param existingQty - Shares already held before this purchase.
+ * @param existingAvg - Current average cost basis per share.
+ * @param newQty      - Shares being purchased.
+ * @param newPrice    - Price per share for this purchase.
+ */
 export function computeNewAvgCostBasis(
   existingQty: number,
   existingAvg: number,
@@ -33,6 +51,10 @@ export function computeNewAvgCostBasis(
   return (existingQty * existingAvg + newQty * newPrice) / total;
 }
 
+/**
+ * Returns unrealized profit/loss for a holding at the current market price.
+ * Positive means the position is profitable; negative means a loss.
+ */
 export function computeUnrealizedPnL(
   quantity: number,
   avgCostBasis: number,
@@ -41,14 +63,32 @@ export function computeUnrealizedPnL(
   return (currentPrice - avgCostBasis) * quantity;
 }
 
+/** Parameters required to execute a trade against the database. */
 export interface ExecuteTradeParams {
   gamePlayerId: string;
   symbol: string;
   direction: TradeDirection;
   quantity: number;
+  /** Execution price — the last fetched market price at time of trade. */
   price: number;
 }
 
+/**
+ * Atomically executes a trade and updates the player's cash balance and portfolio.
+ *
+ * For a **buy**: deducts `quantity × price` from cash, upserts the portfolio
+ * row with a recalculated average cost basis, and inserts a trade record.
+ *
+ * For a **sell**: credits `quantity × price` to cash, reduces the holding
+ * (deleting the row when quantity reaches zero), and inserts a trade record.
+ *
+ * All mutations run inside a single synchronous SQLite transaction so that a
+ * failure at any step leaves the database unchanged.
+ *
+ * @throws {Error} if the `gamePlayerId` does not exist.
+ * @throws {TradeError} if the order fails validation (see {@link validateBuy} /
+ *   {@link validateSell}).
+ */
 export async function executeTrade(db: Db, params: ExecuteTradeParams): Promise<Trade> {
   const { gamePlayerId, symbol, direction, quantity, price } = params;
   const { gamePlayers, portfolios, trades } = schema;

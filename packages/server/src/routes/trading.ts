@@ -7,7 +7,11 @@ import type { StockProvider } from '../providers/index.js';
 import { StockProviderError, TradeError } from '../providers/index.js';
 import { recomputeGameStatus } from '../services/game-status.js';
 import { executeTrade, computeUnrealizedPnL } from '../services/trade.js';
+import { computeLeaderboard } from '../services/leaderboard.js';
 import type { TradeDirection } from '@markettrader/shared';
+import type { GameClientRegistry } from '../ws/registry.js';
+
+const LEADERBOARD_THROTTLE_MS = 1_000;
 
 const placeTradeSchema = z.object({
   symbol: z.string().min(1).max(10).transform((s) => s.toUpperCase()),
@@ -21,11 +25,19 @@ const placeTradeSchema = z.object({
  * - `GET  /games/:id/trades`     — trade history for the caller in this game, newest first.
  * - `GET  /games/:id/portfolio`  — current holdings enriched with live prices and P&L.
  *
- * Trade execution is atomic: the price is fetched from the provider immediately
- * before the database transaction so the execution price reflects real market
- * conditions. Trades are rejected when the game is not `active`.
+ * When a registry is provided, `trade_executed` and `leaderboard_update` WebSocket
+ * events are broadcast to all connected clients in the game. The leaderboard broadcast
+ * is throttled to at most once per second per game (map lives in this closure).
  */
-export function tradingRoutes(db: Db, provider: StockProvider) {
+export function tradingRoutes(
+  db: Db,
+  provider: StockProvider,
+  registry?: GameClientRegistry,
+  leaderboardThrottleMs = LEADERBOARD_THROTTLE_MS,
+) {
+  // Per-game leaderboard throttle: gameId → timestamp of last broadcast (ms)
+  const lastLeaderboardBroadcast = new Map<string, number>();
+
   return async function (app: FastifyInstance): Promise<void> {
     const { games, gamePlayers, portfolios, trades } = schema;
 
@@ -93,6 +105,37 @@ export function tradingRoutes(db: Db, provider: StockProvider) {
           .from(gamePlayers)
           .where(eq(gamePlayers.id, gamePlayer.id))
           .limit(1);
+
+        // ── WebSocket broadcasts ──────────────────────────────────────────────
+        if (registry) {
+          // Immediate: notify all game clients that a trade occurred
+          registry.broadcast(gameId, {
+            event: 'trade_executed',
+            data: {
+              playerId: gamePlayer.userId,
+              symbol: trade.symbol,
+              direction: trade.direction as TradeDirection,
+              quantity: trade.quantity,
+              price: Number(trade.price),
+              executedAt: trade.executedAt,
+            },
+          });
+
+          // Throttled: leaderboard may recompute at most once per second per game
+          const now = Date.now();
+          const last = lastLeaderboardBroadcast.get(gameId) ?? 0;
+          if (now - last >= leaderboardThrottleMs) {
+            lastLeaderboardBroadcast.set(gameId, now);
+            // Fire-and-forget — do not delay the HTTP response
+            computeLeaderboard(db, gameId)
+              .then((entries) => {
+                registry.broadcast(gameId, { event: 'leaderboard_update', data: entries });
+              })
+              .catch(() => {
+                // Swallow — a failed leaderboard broadcast must not affect the HTTP response
+              });
+          }
+        }
 
         return reply.status(201).send({
           trade,

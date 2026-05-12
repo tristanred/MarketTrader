@@ -21,5 +21,7 @@ export function createTestDb() {
 
 export async function createTestApp(provider?: StockProvider): Promise<FastifyInstance> {
   const db = createTestDb();
-  return buildApp({ logger: false, db, provider: provider ?? new MockStockProvider() });
+  // Always disable the price poller in tests to prevent setInterval from
+  // keeping the Vitest process alive after app.close().
+  return buildApp({ logger: false, db, provider: provider ?? new MockStockProvider(), disablePoller: true, leaderboardThrottleMs: 0 });
 }

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -21,14 +21,21 @@ function useDebouncedValue<T>(value: T, delayMs: number): T {
   return v;
 }
 
+const SYMBOL_RE = /^[A-Z][A-Z0-9.\-]{0,9}$/;
+
 export function TradePanel({ gameId }: { gameId: string }) {
   const [query, setQuery] = useState('');
-  const debounced = useDebouncedValue(query, 250);
-  const [symbol, setSymbol] = useState<string | null>(null);
+  const debouncedQuery = useDebouncedValue(query, 250);
   const [direction, setDirection] = useState<TradeDirection>('buy');
   const [quantity, setQuantity] = useState<number>(1);
+  const [showSuggestions, setShowSuggestions] = useState(true);
 
-  const search = useStockSearch(debounced);
+  const symbol = useMemo(() => {
+    const s = query.trim().toUpperCase();
+    return SYMBOL_RE.test(s) ? s : null;
+  }, [query]);
+
+  const search = useStockSearch(debouncedQuery);
   const quote = useStockQuote(symbol ?? '');
   const livePrice = useLiveStore((s) => (symbol ? s.pricesBySymbol[symbol]?.price : undefined));
   const place = usePlaceTrade(gameId);
@@ -47,13 +54,11 @@ export function TradePanel({ gameId }: { gameId: string }) {
         variant: 'success',
       });
     } catch (err) {
-      const message =
-        err instanceof ApiError && err.body && typeof err.body === 'object' && 'message' in err.body
-          ? String((err.body as { message: unknown }).message)
-          : 'Trade failed';
-      toast({ title: 'Trade failed', description: message, variant: 'destructive' });
+      toast({ title: 'Trade failed', description: extractApiMessage(err), variant: 'destructive' });
     }
   };
+
+  const quoteError = quote.error instanceof ApiError ? quote.error : null;
 
   return (
     <Card>
@@ -66,15 +71,16 @@ export function TradePanel({ gameId }: { gameId: string }) {
             <Label htmlFor="symbol-search">Symbol</Label>
             <Input
               id="symbol-search"
-              placeholder="Search ticker (e.g. AAPL)"
+              placeholder="Type a ticker (e.g. AAPL)"
               value={query}
               onChange={(e) => {
                 setQuery(e.target.value.toUpperCase());
-                setSymbol(null);
+                setShowSuggestions(true);
               }}
+              onFocus={() => setShowSuggestions(true)}
               autoComplete="off"
             />
-            {search.data && search.data.length > 0 && !symbol && (
+            {showSuggestions && search.data && search.data.length > 0 && (
               <ul className="max-h-44 overflow-auto rounded-md border bg-background mt-1">
                 {search.data.slice(0, 8).map((r) => (
                   <li key={r.symbol}>
@@ -82,8 +88,8 @@ export function TradePanel({ gameId }: { gameId: string }) {
                       type="button"
                       className="w-full px-3 py-2 text-left text-sm hover:bg-accent"
                       onClick={() => {
-                        setSymbol(r.symbol);
                         setQuery(r.symbol);
+                        setShowSuggestions(false);
                       }}
                     >
                       <span className="font-medium">{r.symbol}</span>
@@ -93,16 +99,32 @@ export function TradePanel({ gameId }: { gameId: string }) {
                 ))}
               </ul>
             )}
+            {query.length > 0 && !symbol && (
+              <p className="text-xs text-destructive">
+                Tickers are 1–10 letters/digits (e.g. AAPL, BRK.B).
+              </p>
+            )}
           </div>
 
           {symbol && (
             <div className="rounded-md border p-3 text-sm">
               <div className="flex items-center justify-between">
                 <span className="font-medium">{symbol}</span>
-                <span>{displayPrice !== undefined ? formatUSD(displayPrice) : '…'}</span>
+                <span>
+                  {quote.isLoading
+                    ? '…'
+                    : displayPrice !== undefined
+                      ? formatUSD(displayPrice)
+                      : '—'}
+                </span>
               </div>
               {livePrice !== undefined && (
                 <p className="mt-1 text-xs text-muted-foreground">live</p>
+              )}
+              {quoteError && (
+                <p className="mt-1 text-xs text-destructive">
+                  Quote unavailable: {extractApiMessage(quoteError)}
+                </p>
               )}
             </div>
           )}
@@ -143,4 +165,17 @@ export function TradePanel({ gameId }: { gameId: string }) {
       </CardContent>
     </Card>
   );
+}
+
+function extractApiMessage(err: unknown): string {
+  if (err instanceof ApiError) {
+    const body = err.body;
+    if (body && typeof body === 'object') {
+      const rec = body as Record<string, unknown>;
+      if (typeof rec['message'] === 'string') return rec['message'];
+      if (typeof rec['error'] === 'string') return rec['error'];
+    }
+    return `${err.status} ${err.message}`;
+  }
+  return err instanceof Error ? err.message : 'Unknown error';
 }

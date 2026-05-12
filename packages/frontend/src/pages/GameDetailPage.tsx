@@ -4,18 +4,38 @@ import { useGame, useJoinGame } from '@/api/games';
 import { usePortfolio } from '@/api/trades';
 import { useGameSocket } from '@/hooks/useGameSocket';
 import { AppHeader } from '@/components/AppHeader';
-import { PortfolioTable } from '@/components/PortfolioTable';
 import { TradePanel } from '@/components/TradePanel';
 import { TradeHistoryTable } from '@/components/TradeHistoryTable';
-import { Leaderboard } from '@/components/Leaderboard';
 import { StockChart } from '@/components/StockChart';
+import { YourProfileCard } from '@/components/game/YourProfileCard';
+import { AboutThisGameCard } from '@/components/game/AboutThisGameCard';
+import { GameLeaderboardCard } from '@/components/game/GameLeaderboardCard';
+import { HoldingsSidebar } from '@/components/game/HoldingsSidebar';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ApiError } from '@/lib/api';
 import { toast } from '@/components/ui/toast';
-import { cn } from '@/lib/utils';
+
+/**
+ * Returns a human-readable phrase describing how long until `endIso`, e.g.
+ * "Game ends in 16 days", "Game ends in 4 hours", "Game has ended".
+ */
+function timeUntilEnd(status: string | undefined, endIso: string | undefined): string {
+  if (!endIso) return '';
+  if (status === 'ended') return 'Game has ended';
+  const now = Date.now();
+  const end = new Date(endIso).getTime();
+  const ms = end - now;
+  if (ms <= 0) return 'Game has ended';
+  const days = Math.floor(ms / 86_400_000);
+  if (days >= 1) return `Game ends in ${days} day${days === 1 ? '' : 's'}`;
+  const hours = Math.floor(ms / 3_600_000);
+  if (hours >= 1) return `Game ends in ${hours} hour${hours === 1 ? '' : 's'}`;
+  const minutes = Math.max(1, Math.floor(ms / 60_000));
+  return `Game ends in ${minutes} minute${minutes === 1 ? '' : 's'}`;
+}
 
 export function GameDetailPage() {
   const { gameId = '' } = useParams<{ gameId: string }>();
@@ -75,54 +95,53 @@ export function GameDetailPage() {
     <div className="min-h-screen bg-background">
       <AppHeader />
       <main className="mx-auto max-w-6xl p-4 sm:p-6 space-y-4">
-        <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <div>
-            {game.isLoading ? (
-              <Skeleton className="h-7 w-48" />
-            ) : (
-              <h1 className="text-2xl font-semibold tracking-tight">{game.data?.name}</h1>
-            )}
-            {game.data && (
-              <p className="text-sm text-muted-foreground">
-                Status:{' '}
-                <span
-                  className={cn(
-                    game.data.status === 'active' && 'text-green-600 dark:text-green-400 font-medium',
-                  )}
-                >
-                  {game.data.status}
-                </span>
-              </p>
-            )}
-          </div>
+        <div className="flex flex-wrap items-baseline justify-between gap-2 border-b pb-3">
+          {game.isLoading ? (
+            <Skeleton className="h-7 w-48" />
+          ) : (
+            <h1 className="text-2xl font-semibold tracking-tight">{game.data?.name}</h1>
+          )}
+          <p className="text-sm text-muted-foreground">
+            {timeUntilEnd(game.data?.status, game.data?.endDate)}
+          </p>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <div className="lg:col-span-2 space-y-4">
-            <Tabs defaultValue="portfolio">
-              <TabsList>
-                <TabsTrigger value="portfolio">Portfolio</TabsTrigger>
-                <TabsTrigger value="trade">Trade</TabsTrigger>
-                <TabsTrigger value="history">History</TabsTrigger>
-                <TabsTrigger value="chart">Chart</TabsTrigger>
-              </TabsList>
-              <TabsContent value="portfolio">
-                <PortfolioTable gameId={gameId} />
-              </TabsContent>
-              <TabsContent value="trade">
-                <TradePanel gameId={gameId} />
-              </TabsContent>
-              <TabsContent value="history">
-                <TradeHistoryTable gameId={gameId} />
-              </TabsContent>
-              <TabsContent value="chart">
-                <StockChart symbols={heldSymbols} />
-              </TabsContent>
-            </Tabs>
+            <YourProfileCard gameId={gameId} />
+            <AboutThisGameCard gameId={gameId} />
+            <GameLeaderboardCard gameId={gameId} />
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="uppercase tracking-wide text-xs text-muted-foreground">
+                  Trade desk
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <Tabs defaultValue="trade">
+                  <TabsList>
+                    <TabsTrigger value="trade">Trade</TabsTrigger>
+                    <TabsTrigger value="history">History</TabsTrigger>
+                    <TabsTrigger value="chart">Chart</TabsTrigger>
+                  </TabsList>
+                  <TabsContent value="trade" className="pt-3">
+                    <TradePanel gameId={gameId} />
+                  </TabsContent>
+                  <TabsContent value="history" className="pt-3">
+                    <TradeHistoryTable gameId={gameId} />
+                  </TabsContent>
+                  <TabsContent value="chart" className="pt-3">
+                    <StockChart symbols={heldSymbols} />
+                  </TabsContent>
+                </Tabs>
+              </CardContent>
+            </Card>
           </div>
-          <div className="space-y-4">
-            <Leaderboard gameId={gameId} />
-          </div>
+
+          <aside className="space-y-4">
+            <HoldingsSidebar gameId={gameId} />
+          </aside>
         </div>
       </main>
     </div>

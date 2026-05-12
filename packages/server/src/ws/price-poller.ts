@@ -59,9 +59,16 @@ export function startPricePoller(
   provider: StockProvider,
   registry: GameClientRegistry,
 ): ReturnType<typeof setInterval> {
+  let polling = false;
   return setInterval(() => {
-    pollPrices(db, provider, registry).catch(() => {
-      // Swallow per-tick errors — a single failed poll must not crash the server
-    });
+    if (polling) return;
+    polling = true;
+    pollPrices(db, provider, registry)
+      .catch(() => {
+        // Swallow per-tick errors — a single failed poll must not crash the server
+      })
+      .finally(() => {
+        polling = false;
+      });
   }, POLL_INTERVAL_MS);
 }

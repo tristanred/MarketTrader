@@ -1,8 +1,13 @@
 import type { WebSocket } from 'ws';
 import type { WsServerEvent, StockQuote, WsPriceUpdateEvent } from '@markettrader/shared';
 
+/**
+ * Represents a connected player's WebSocket session within a game room.
+ * Tracks identity and per-client symbol subscriptions for filtered price updates.
+ */
 export interface ClientEntry {
   playerId: string;
+  /** Ticker symbols this client has subscribed to via a subscribe event. */
   subscriptions: Set<string>;
 }
 
@@ -27,7 +32,7 @@ export class GameClientRegistry {
     if (clients.size === 0) this.games.delete(gameId);
   }
 
-  getClients(gameId: string): Map<WebSocket, ClientEntry> {
+  getClients(gameId: string): ReadonlyMap<WebSocket, ClientEntry> {
     return this.games.get(gameId) ?? new Map();
   }
 

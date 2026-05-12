@@ -1,4 +1,4 @@
-import type { WebSocket } from '@fastify/websocket';
+import type { WebSocket } from 'ws';
 import type { WsServerEvent, StockQuote, WsPriceUpdateEvent } from '@markettrader/shared';
 
 export interface ClientEntry {

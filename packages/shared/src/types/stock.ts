@@ -9,6 +9,12 @@ export interface StockQuote {
   changePercent: number;
   /** ISO 8601 timestamp of when this quote was fetched from the provider. */
   fetchedAt: string;
+  /**
+   * True when the live provider was rate-limited and this quote came from the
+   * server-side cache. Consumers should warn the user before acting on it.
+   * Undefined or false on fresh quotes.
+   */
+  stale?: boolean;
 }
 
 /** A single result from the symbol autocomplete endpoint. */

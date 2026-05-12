@@ -4,6 +4,8 @@ import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import * as schema from '../../src/db/schema.sqlite.js';
 import { buildApp } from '../../src/app.js';
 import type { FastifyInstance } from 'fastify';
+import type { StockProvider } from '../../src/providers/index.js';
+import { MockStockProvider } from './mock-provider.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -17,7 +19,7 @@ export function createTestDb() {
   return db;
 }
 
-export async function createTestApp(): Promise<FastifyInstance> {
+export async function createTestApp(provider?: StockProvider): Promise<FastifyInstance> {
   const db = createTestDb();
-  return buildApp({ logger: false, db });
+  return buildApp({ logger: false, db, provider: provider ?? new MockStockProvider() });
 }

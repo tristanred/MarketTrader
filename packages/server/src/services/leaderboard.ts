@@ -2,14 +2,30 @@ import { eq } from 'drizzle-orm';
 import type { Db } from '../db/index.js';
 import { schema } from '../db/index.js';
 
+/** A single player's position on the leaderboard for a given game. */
 export interface LeaderboardEntry {
   rank: number;
   playerId: string;
   username: string;
   cashBalance: number;
+  /** Cash balance + current market value of all holdings. */
   totalValue: number;
 }
 
+/**
+ * Computes the current leaderboard for a game by joining all player holdings
+ * with the stock price cache and summing each player's portfolio value.
+ *
+ * Ranking rules:
+ * 1. Descending `totalValue` (cash + portfolio market value).
+ * 2. Ties broken by ascending `joinedAt` (earlier join = higher rank).
+ *
+ * Portfolio value uses the cached price for each symbol. If no cache entry
+ * exists the holding's `avgCostBasis` is used as a fallback so the leaderboard
+ * never shows stale zeros for recently-traded symbols.
+ *
+ * Returns an empty array when no players have joined the game.
+ */
 export async function computeLeaderboard(db: Db, gameId: string): Promise<LeaderboardEntry[]> {
   const { gamePlayers, users, portfolios, stockPriceCache } = schema;
 
@@ -33,6 +49,8 @@ export async function computeLeaderboard(db: Db, gameId: string): Promise<Leader
 
   if (rows.length === 0) return [];
 
+  // Aggregate portfolio value per player; a single player may have multiple
+  // holdings, so one SQL row is returned per (player × symbol) combination.
   const playerMap = new Map<string, {
     playerId: string;
     username: string;
@@ -52,7 +70,7 @@ export async function computeLeaderboard(db: Db, gameId: string): Promise<Leader
       });
     }
     if (row.symbol != null && row.quantity != null) {
-      // TODO(phase-4): remove avgCostBasis fallback once StockProvider cache is populated
+      // avgCostBasis is the last known price if the cache entry has expired or hasn't been populated yet
       const price = row.cachedPrice != null ? Number(row.cachedPrice) : Number(row.avgCostBasis);
       playerMap.get(row.gpId)!.portfolioValue += row.quantity * price;
     }
@@ -70,5 +88,6 @@ export async function computeLeaderboard(db: Db, gameId: string): Promise<Leader
   entries.sort((a, b) => b.totalValue - a.totalValue || a._joinedAt.localeCompare(b._joinedAt));
   entries.forEach((e, i) => { e.rank = i + 1; });
 
+  // Strip the internal _joinedAt field before returning.
   return entries.map(({ _joinedAt: _, ...rest }) => rest);
 }

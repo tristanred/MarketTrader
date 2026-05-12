@@ -1,6 +1,7 @@
 import { sqliteTable, text, real, integer, unique } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
 
+/** Registered platform accounts. One user can participate in many games. */
 export const users = sqliteTable('users', {
   id: text('id')
     .primaryKey()
@@ -12,6 +13,11 @@ export const users = sqliteTable('users', {
     .notNull(),
 });
 
+/**
+ * Trading tournament instances. `status` is stored here but always recomputed
+ * from `startDate`/`endDate` at read time via `recomputeGameStatus`.
+ * Dates are stored as ISO 8601 text (SQLite has no native date type).
+ */
 export const games = sqliteTable('games', {
   id: text('id')
     .primaryKey()
@@ -31,6 +37,11 @@ export const games = sqliteTable('games', {
     .notNull(),
 });
 
+/**
+ * Join table between users and games. Each row represents one player in one game.
+ * `cashBalance` is updated atomically within the trade transaction.
+ * The `(gameId, userId)` unique constraint prevents duplicate enrollments.
+ */
 export const gamePlayers = sqliteTable(
   'game_players',
   {
@@ -51,6 +62,11 @@ export const gamePlayers = sqliteTable(
   (t) => [unique().on(t.gameId, t.userId)],
 );
 
+/**
+ * Current stock holdings per player per game. One row per (gamePlayerId, symbol).
+ * `quantity` is always a positive integer; the row is deleted when shares reach 0.
+ * `avgCostBasis` is recalculated as a weighted average on each buy.
+ */
 export const portfolios = sqliteTable(
   'portfolios',
   {
@@ -67,6 +83,10 @@ export const portfolios = sqliteTable(
   (t) => [unique().on(t.gamePlayerId, t.symbol)],
 );
 
+/**
+ * Immutable record of every executed trade. Never updated after insert.
+ * `price` is the live market price at the moment of execution.
+ */
 export const trades = sqliteTable('trades', {
   id: text('id')
     .primaryKey()
@@ -83,6 +103,11 @@ export const trades = sqliteTable('trades', {
     .notNull(),
 });
 
+/**
+ * Short-lived quote cache (30-second TTL). Keyed by ticker symbol.
+ * Used by `CachedProvider` to avoid redundant upstream API calls and by
+ * the leaderboard query to value portfolios without hitting the provider.
+ */
 export const stockPriceCache = sqliteTable('stock_price_cache', {
   symbol: text('symbol').primaryKey(),
   price: real('price').notNull(),

@@ -92,7 +92,7 @@ describe('computeLeaderboard', () => {
     expect(alice!.totalValue).toBe(11000);
   });
 
-  it('falls back to avgCostBasis when no cache entry exists', async () => {
+  it('falls back to avgCostBasis for portfolio value when no cache entry exists', async () => {
     // Use a separate game and players to avoid shared state with other tests
     const [game4] = await db.insert(schema.games).values({
       name: 'Fallback Test',

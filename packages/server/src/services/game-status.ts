@@ -4,6 +4,10 @@ import type { Db } from '../db/index.js';
 import { schema } from '../db/index.js';
 type GameRecord = { id: string; startDate: string; endDate: string; status: string };
 
+/**
+ * Derives the correct status for a game based on the current time.
+ * Once a game is manually set to `'ended'` it stays ended regardless of dates.
+ */
 function computeStatus(game: GameRecord, now: string): GameStatus {
   if (game.status === 'ended') return 'ended';
   if (now >= game.endDate) return 'ended';
@@ -11,6 +15,14 @@ function computeStatus(game: GameRecord, now: string): GameStatus {
   return 'pending';
 }
 
+/**
+ * Computes the current status for a single game and persists it to the database
+ * if it has changed (e.g., `pending` → `active` when `startDate` passes).
+ *
+ * @param now - ISO 8601 timestamp used as "current time"; defaults to `Date.now()`.
+ *   Overridable in tests to simulate time progression.
+ * @returns The resolved {@link GameStatus}.
+ */
 export async function recomputeGameStatus(
   db: Db,
   game: GameRecord,
@@ -23,6 +35,10 @@ export async function recomputeGameStatus(
   return newStatus;
 }
 
+/**
+ * Batch version of {@link recomputeGameStatus} — runs all games concurrently
+ * and returns a map of `gameId → GameStatus`.
+ */
 export async function recomputeMany(
   db: Db,
   games: GameRecord[],

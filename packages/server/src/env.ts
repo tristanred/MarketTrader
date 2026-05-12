@@ -1,4 +1,5 @@
-const VALID_PROVIDERS = ['yahoo', 'alpaca', 'polygon'] as const;
+// TODO(polygon-provider): add 'polygon' once PolygonProvider is implemented
+const VALID_PROVIDERS = ['yahoo', 'alpaca'] as const;
 type StockProvider = (typeof VALID_PROVIDERS)[number];
 
 function optional(name: string, fallback: string): string {
@@ -35,5 +36,6 @@ export const env = {
   PORT: parsePort(optional('PORT', '3000')),
   CORS_ORIGIN: optional('CORS_ORIGIN', 'http://localhost:5173'),
   STOCK_PROVIDER: validatedProvider(),
+  ALPACA_API_KEY: optional('ALPACA_API_KEY', ''),
   NODE_ENV: optional('NODE_ENV', 'development') as 'development' | 'production' | 'test',
 } as const;

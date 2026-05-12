@@ -59,25 +59,25 @@ This file tracks the overall build plan across multiple sessions. Each phase map
 
 ---
 
-## Phase 4: Trading & Stock Price API
+## Phase 4: Trading & Stock Price API ✅
 
-> Plan file to create: `docs/superpowers/plans/2026-05-XX-trading-api.md`
+> Plan: `docs/superpowers/plans/2026-05-09-trading-api.md`
 
 **Goal:** Players can buy/sell stocks within active games. Prices come from a pluggable provider.
 
-- [ ] `StockProvider` interface (`getQuote`, `streamQuotes`) in `packages/server/src/providers/`
-- [ ] Yahoo Finance provider implementation (default, no key required)
-- [ ] Alpaca Markets provider (optional, behind `STOCK_PROVIDER=alpaca` env var)
-- [ ] `StockPriceCache` write-through layer (30s TTL)
-- [ ] `GET /stocks/:symbol` — return quoted price (cached)
-- [ ] `GET /stocks/search?q=` — ticker search results
-- [ ] `GET /games/:id/portfolio` — player's current holdings with unrealized P&L
-- [ ] `POST /games/:id/trades` — execute buy/sell order
+- [x] `StockProvider` interface (`getQuote`, `searchSymbols`) in `packages/server/src/providers/`
+- [x] Yahoo Finance provider implementation (default, no key required)
+- [x] Alpaca Markets provider (optional, behind `STOCK_PROVIDER=alpaca` env var)
+- [x] `StockPriceCache` write-through layer (30s TTL)
+- [x] `GET /stocks/:symbol` — return quoted price (cached)
+- [x] `GET /stocks/search?q=` — ticker search results
+- [x] `GET /games/:id/portfolio` — player's current holdings with unrealized P&L
+- [x] `POST /games/:id/trades` — execute buy/sell order
   - Validate: game is `active`, direction, quantity ≥ 1 (integer), sufficient cash/shares
   - Fetch current price, update cashBalance, upsert Portfolio row, insert Trade row (atomic)
-- [ ] `GET /games/:id/trades` — player's trade history
-- [ ] Trade service unit tests (business logic: buy/sell validation, P&L math)
-- [ ] Vitest integration tests for all trading endpoints
+- [x] `GET /games/:id/trades` — player's trade history
+- [x] Trade service unit tests (business logic: buy/sell validation, P&L math)
+- [x] Vitest integration tests for all trading endpoints
 
 ---
 
@@ -157,9 +157,9 @@ This file tracks the overall build plan across multiple sessions. Each phase map
 
 ## Current State
 
-**Phase 3 is fully complete.** The Game & Player API is implemented: users can create games (auto-joining as the first player), list their games, join existing games, and view game details with a ranked leaderboard. Game status auto-transitions (pending → active → ended) lazily on read. The leaderboard uses live prices from `stockPriceCache` with an `avgCostBasis` fallback (to be replaced in Phase 4).
+**Phase 4 is fully complete.** Players can buy and sell stocks in active games. Prices are fetched via a pluggable `StockProvider` (Yahoo Finance default, Alpaca optional) with a 30s write-through cache. Trade execution is atomic (cash, portfolio, and trade record updated in a single SQLite transaction). The leaderboard now uses cached prices only (no avgCostBasis fallback).
 
-**Next step:** Implement Phase 4 (Trading & Stock Price API). Create the plan file at `docs/superpowers/plans/2026-05-XX-trading-api.md` before starting implementation.
+**Next step:** Implement Phase 5 (WebSocket Server) for live price updates and leaderboard streaming.
 
 ---
 

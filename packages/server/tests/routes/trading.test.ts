@@ -237,3 +237,108 @@ describe('GET /games/:id/portfolio', () => {
     expect(res.statusCode).toBe(401);
   });
 });
+
+describe('POST /games/:id/trades — provider failure modes', () => {
+  let app: FastifyInstance;
+  let token: string;
+  let gameId: string;
+  let provider: MockStockProvider;
+
+  beforeAll(async () => {
+    provider = new MockStockProvider();
+    provider.setQuote('AAPL', { price: 100 });
+    app = await createTestApp(provider);
+    ({ token } = await registerUser(app, 'trader-rl'));
+    ({ id: gameId } = await createActiveGame(app, token));
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  it('returns 429 with Retry-After when the provider is rate-limited', async () => {
+    provider.setError('AAPL', 'RATE_LIMITED');
+    const res = await app.inject({
+      method: 'POST',
+      url: `/games/${gameId}/trades`,
+      headers: { Authorization: `Bearer ${token}` },
+      payload: { symbol: 'AAPL', direction: 'buy', quantity: 1 },
+    });
+    expect(res.statusCode).toBe(429);
+    expect(res.headers['retry-after']).toBeDefined();
+    expect(res.json<{ code: string }>().code).toBe('RATE_LIMITED');
+    provider.clear();
+    provider.setQuote('AAPL', { price: 100 });
+  });
+
+  it('returns 409 STALE_PRICE_BLOCKED when stale quotes are returned but stale trades are disabled', async () => {
+    // STOCK_ALLOW_STALE_TRADES defaults to false; this test relies on that default.
+    provider.setStale('AAPL', 60_000, { price: 100 });
+    const res = await app.inject({
+      method: 'POST',
+      url: `/games/${gameId}/trades`,
+      headers: { Authorization: `Bearer ${token}` },
+      payload: { symbol: 'AAPL', direction: 'buy', quantity: 1 },
+    });
+    expect(res.statusCode).toBe(409);
+    expect(res.json<{ code: string }>().code).toBe('STALE_PRICE_BLOCKED');
+    provider.clear();
+    provider.setQuote('AAPL', { price: 100 });
+  });
+});
+
+describe('POST /games/:id/trades — stale trades allowed', () => {
+  let app: FastifyInstance;
+  let token: string;
+  let gameId: string;
+  let provider: MockStockProvider;
+  const previousFlag = process.env['STOCK_ALLOW_STALE_TRADES'];
+
+  beforeAll(async () => {
+    process.env['STOCK_ALLOW_STALE_TRADES'] = 'true';
+    const envModule = await import('../../src/env.js');
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (envModule.env as any).STOCK_ALLOW_STALE_TRADES = true;
+    provider = new MockStockProvider();
+    provider.setStale('AAPL', 30_000, { price: 100 });
+    app = await createTestApp(provider);
+    ({ token } = await registerUser(app, 'trader-stale'));
+    ({ id: gameId } = await createActiveGame(app, token));
+  });
+
+  afterAll(async () => {
+    await app.close();
+    const envModule = await import('../../src/env.js');
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (envModule.env as any).STOCK_ALLOW_STALE_TRADES = false;
+    if (previousFlag === undefined) delete process.env['STOCK_ALLOW_STALE_TRADES'];
+    else process.env['STOCK_ALLOW_STALE_TRADES'] = previousFlag;
+  });
+
+  it('fills the trade and returns priceWasStale + priceAgeMs', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: `/games/${gameId}/trades`,
+      headers: { Authorization: `Bearer ${token}` },
+      payload: { symbol: 'AAPL', direction: 'buy', quantity: 1 },
+    });
+    expect(res.statusCode).toBe(201);
+    const body = res.json<{ priceWasStale?: boolean; priceAgeMs?: number; trade: { price: number } }>();
+    expect(body.priceWasStale).toBe(true);
+    expect(body.priceAgeMs).toBeGreaterThanOrEqual(30_000);
+    expect(body.trade.price).toBe(100);
+  });
+
+  it('rejects with STALE_PRICE_TOO_OLD when the cached row is past the cap', async () => {
+    provider.clear();
+    provider.setStale('AAPL', 10 * 60_000, { price: 100 }); // 10 min, max is 5 min default
+    const res = await app.inject({
+      method: 'POST',
+      url: `/games/${gameId}/trades`,
+      headers: { Authorization: `Bearer ${token}` },
+      payload: { symbol: 'AAPL', direction: 'buy', quantity: 1 },
+    });
+    expect(res.statusCode).toBe(409);
+    expect(res.json<{ code: string }>().code).toBe('STALE_PRICE_TOO_OLD');
+  });
+});

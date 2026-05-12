@@ -1,11 +1,17 @@
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import type { Db } from '../db/index.js';
 import type { StockProvider } from '../providers/index.js';
 import { StockProviderError } from '../providers/index.js';
+import { env } from '../env.js';
 
 const symbolSchema = z.string().min(1).max(10).transform((s) => s.toUpperCase());
 const searchSchema = z.object({ q: z.string().min(1).max(50) });
+
+/** Sets a Retry-After header (seconds) based on the configured 429 backoff. */
+function setRetryAfter(reply: FastifyReply): void {
+  reply.header('Retry-After', Math.ceil(env.STOCK_RATE_LIMIT_BACKOFF_MS / 1000));
+}
 
 /**
  * Registers public stock-lookup routes (no authentication required):
@@ -14,6 +20,11 @@ const searchSchema = z.object({ q: z.string().min(1).max(50) });
  *
  * Both routes delegate to the injected {@link StockProvider} so the actual
  * data source can be swapped via `STOCK_PROVIDER` without touching this file.
+ *
+ * Provider errors map to:
+ * - `SYMBOL_NOT_FOUND` → 404
+ * - `RATE_LIMITED`     → 429 (with `Retry-After` header)
+ * - `PROVIDER_ERROR`   → 502
  */
 export function stockRoutes(_db: Db, provider: StockProvider) {
   return async function (app: FastifyInstance): Promise<void> {
@@ -22,8 +33,19 @@ export function stockRoutes(_db: Db, provider: StockProvider) {
       if (!parsed.success) {
         return reply.status(400).send({ error: parsed.error.issues });
       }
-      const results = await provider.searchSymbols(parsed.data.q);
-      return reply.status(200).send(results);
+      try {
+        const results = await provider.searchSymbols(parsed.data.q);
+        return reply.status(200).send(results);
+      } catch (err) {
+        if (err instanceof StockProviderError) {
+          if (err.code === 'RATE_LIMITED') {
+            setRetryAfter(reply);
+            return reply.status(429).send({ code: err.code, message: err.message });
+          }
+          return reply.status(502).send({ code: err.code, message: err.message });
+        }
+        throw err;
+      }
     });
 
     app.get<{ Params: { symbol: string } }>('/stocks/:symbol', async (request, reply) => {
@@ -37,7 +59,10 @@ export function stockRoutes(_db: Db, provider: StockProvider) {
       } catch (err) {
         if (err instanceof StockProviderError) {
           if (err.code === 'SYMBOL_NOT_FOUND') return reply.status(404).send({ error: err.message });
-          if (err.code === 'RATE_LIMITED') return reply.status(429).send({ error: err.message });
+          if (err.code === 'RATE_LIMITED') {
+            setRetryAfter(reply);
+            return reply.status(429).send({ code: err.code, message: err.message });
+          }
           return reply.status(502).send({ error: err.message });
         }
         throw err;

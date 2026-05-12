@@ -10,6 +10,7 @@ import { executeTrade, computeUnrealizedPnL } from '../services/trade.js';
 import { computeLeaderboard } from '../services/leaderboard.js';
 import type { TradeDirection } from '@markettrader/shared';
 import type { GameClientRegistry } from '../ws/registry.js';
+import { env } from '../env.js';
 
 const LEADERBOARD_THROTTLE_MS = 1_000;
 
@@ -78,10 +79,36 @@ export function tradingRoutes(
         } catch (err) {
           if (err instanceof StockProviderError) {
             if (err.code === 'SYMBOL_NOT_FOUND') return reply.status(404).send({ error: err.message });
-            if (err.code === 'RATE_LIMITED') return reply.status(429).send({ error: err.message });
+            if (err.code === 'RATE_LIMITED') {
+              reply.header('Retry-After', Math.ceil(env.STOCK_RATE_LIMIT_BACKOFF_MS / 1000));
+              return reply.status(429).send({
+                code: 'RATE_LIMITED',
+                message: 'Live quote unavailable; market data is rate-limited. Try again in a minute.',
+              });
+            }
             return reply.status(502).send({ error: err.message });
           }
           throw err;
+        }
+
+        // Stale-price gate. CachedProvider sets `stale:true` when it fell back
+        // to a cache row because the live provider was rate-limited.
+        let priceAgeMs = 0;
+        if (quote.stale === true) {
+          priceAgeMs = Date.now() - new Date(quote.fetchedAt).getTime();
+          if (!env.STOCK_ALLOW_STALE_TRADES) {
+            return reply.status(409).send({
+              code: 'STALE_PRICE_BLOCKED',
+              message:
+                'Live quote unavailable and stale-price trades are disabled on this server. Try again in a minute.',
+            });
+          }
+          if (priceAgeMs > env.STOCK_STALE_TRADE_MAX_AGE_MS) {
+            return reply.status(409).send({
+              code: 'STALE_PRICE_TOO_OLD',
+              message: `Last known price is ${Math.round(priceAgeMs / 1000)}s old; refusing to trade.`,
+            });
+          }
         }
 
         let trade;
@@ -137,10 +164,21 @@ export function tradingRoutes(
           }
         }
 
-        return reply.status(201).send({
+        const responseBody: {
+          trade: typeof trade;
+          cashBalance: number;
+          priceWasStale?: true;
+          priceAgeMs?: number;
+        } = {
           trade,
           cashBalance: Number(updatedPlayer?.cashBalance ?? 0),
-        });
+        };
+        if (quote.stale === true) {
+          responseBody.priceWasStale = true;
+          responseBody.priceAgeMs = priceAgeMs;
+        }
+
+        return reply.status(201).send(responseBody);
       },
     );
 

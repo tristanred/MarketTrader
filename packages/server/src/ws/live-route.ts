@@ -14,7 +14,7 @@ export function liveRoute(db: Db, registry: GameClientRegistry) {
   return async function (app: FastifyInstance): Promise<void> {
     app.get<{ Params: { id: string }; Querystring: { token?: string } }>(
       '/games/:id/live',
-      { websocket: true },
+      { websocket: true, config: { rateLimit: { max: 10, timeWindow: '1 minute' } } },
       async (socket, request: FastifyRequest<{ Params: { id: string }; Querystring: { token?: string } }>) => {
         const gameId = request.params.id;
         const { token } = request.query;

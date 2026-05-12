@@ -47,10 +47,17 @@ export function TradePanel({ gameId }: { gameId: string }) {
     e.preventDefault();
     if (!symbol) return;
     try {
-      await place.mutateAsync({ symbol, direction, quantity });
+      const result = await place.mutateAsync({ symbol, direction, quantity });
+      const verb = direction === 'buy' ? 'Bought' : 'Sold';
+      let description: string | undefined =
+        total !== null ? `~ ${formatUSD(total)}` : undefined;
+      if (result.priceWasStale === true) {
+        const ageSec = Math.round((result.priceAgeMs ?? 0) / 1000);
+        description = `Filled at last known price (${ageSec}s old) — live data was rate-limited.`;
+      }
       toast({
-        title: `${direction === 'buy' ? 'Bought' : 'Sold'} ${quantity} ${symbol}`,
-        ...(total !== null ? { description: `~ ${formatUSD(total)}` } : {}),
+        title: `${verb} ${quantity} ${symbol}`,
+        ...(description !== undefined ? { description } : {}),
         variant: 'success',
       });
     } catch (err) {
@@ -59,6 +66,11 @@ export function TradePanel({ gameId }: { gameId: string }) {
   };
 
   const quoteError = quote.error instanceof ApiError ? quote.error : null;
+  const rateLimited = quoteError?.status === 429;
+  const isStale = quote.data?.stale === true;
+  const stalePriceAgeSec = isStale && quote.data
+    ? Math.round((Date.now() - new Date(quote.data.fetchedAt).getTime()) / 1000)
+    : 0;
 
   return (
     <Card>
@@ -110,7 +122,7 @@ export function TradePanel({ gameId }: { gameId: string }) {
             <div className="rounded-md border p-3 text-sm">
               <div className="flex items-center justify-between">
                 <span className="font-medium">{symbol}</span>
-                <span>
+                <span className={cn(isStale && 'text-muted-foreground')}>
                   {quote.isLoading
                     ? '…'
                     : displayPrice !== undefined
@@ -118,10 +130,20 @@ export function TradePanel({ gameId }: { gameId: string }) {
                       : '—'}
                 </span>
               </div>
-              {livePrice !== undefined && (
+              {livePrice !== undefined && !isStale && (
                 <p className="mt-1 text-xs text-muted-foreground">live</p>
               )}
-              {quoteError && (
+              {isStale && (
+                <p className="mt-1 text-xs text-yellow-700 dark:text-yellow-400">
+                  ⚠ Last known price ({stalePriceAgeSec}s old) — live data is rate-limited.
+                </p>
+              )}
+              {rateLimited && (
+                <p className="mt-1 text-xs text-destructive">
+                  Market data rate-limited. Try again in a minute.
+                </p>
+              )}
+              {quoteError && !rateLimited && (
                 <p className="mt-1 text-xs text-destructive">
                   Quote unavailable: {extractApiMessage(quoteError)}
                 </p>

@@ -42,11 +42,21 @@ export function useTradeHistory(gameId: string) {
   });
 }
 
+/** Successful response from `POST /games/:id/trades`. */
+export interface PlaceTradeResponse {
+  trade: Trade;
+  cashBalance: number;
+  /** True when the server filled at a cached price because the live provider was rate-limited. */
+  priceWasStale?: boolean;
+  /** Age of the cached price in milliseconds. Only present when `priceWasStale` is true. */
+  priceAgeMs?: number;
+}
+
 export function usePlaceTrade(gameId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (body: PlaceTradeRequest) =>
-      apiFetch<{ trade: Trade; cashBalance: number }>(`/games/${gameId}/trades`, {
+      apiFetch<PlaceTradeResponse>(`/games/${gameId}/trades`, {
         method: 'POST',
         body,
       }),

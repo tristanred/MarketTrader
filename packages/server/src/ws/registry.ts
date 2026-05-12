@@ -50,7 +50,9 @@ export class GameClientRegistry {
     if (!clients) return;
     const payload = JSON.stringify(event);
     for (const [socket] of clients) {
-      if (socket.readyState === 1 /* OPEN */) socket.send(payload);
+      if (socket.readyState === 1 /* OPEN */) {
+        try { socket.send(payload); } catch { /* socket closed between check and send */ }
+      }
     }
   }
 
@@ -67,7 +69,7 @@ export class GameClientRegistry {
       const relevant = quotes.filter((q) => entry.subscriptions.has(q.symbol));
       if (relevant.length === 0) continue;
       const event: WsPriceUpdateEvent = { event: 'price_update', data: relevant };
-      socket.send(JSON.stringify(event));
+      try { socket.send(JSON.stringify(event)); } catch { /* socket closed between check and send */ }
     }
   }
 }

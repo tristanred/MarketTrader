@@ -17,7 +17,7 @@ export function liveRoute(db: Db, registry: GameClientRegistry) {
       { websocket: true },
       async (socket, request: FastifyRequest<{ Params: { id: string }; Querystring: { token?: string } }>) => {
         const gameId = request.params.id;
-        const { token } = request.query as { token?: string };
+        const { token } = request.query;
 
         if (!token) {
           socket.close(1008, 'Missing token');
@@ -46,19 +46,22 @@ export function liveRoute(db: Db, registry: GameClientRegistry) {
         registry.add(gameId, payload.id, socket);
 
         socket.on('message', (raw: Buffer) => {
-          let event: WsClientEvent;
           try {
-            event = JSON.parse(raw.toString()) as WsClientEvent;
-          } catch {
-            return;
-          }
-          if (event.event === 'subscribe') {
-            const entry = registry.getEntry(gameId, socket);
-            if (entry) {
-              for (const symbol of (event as WsSubscribeEvent).data.symbols) {
-                entry.subscriptions.add(symbol.toUpperCase());
+            const event = JSON.parse(raw.toString()) as WsClientEvent;
+            if (event.event === 'subscribe') {
+              const symbols = (event as WsSubscribeEvent).data?.symbols;
+              if (!Array.isArray(symbols)) return;
+              const entry = registry.getEntry(gameId, socket);
+              if (entry) {
+                for (const symbol of symbols) {
+                  if (typeof symbol === 'string') {
+                    entry.subscriptions.add(symbol.toUpperCase());
+                  }
+                }
               }
             }
+          } catch {
+            // Swallow — malformed client messages must not propagate
           }
         });
 

@@ -82,8 +82,8 @@ export interface ExecuteTradeParams {
  * For a **sell**: credits `quantity × price` to cash, reduces the holding
  * (deleting the row when quantity reaches zero), and inserts a trade record.
  *
- * All mutations run inside a single synchronous SQLite transaction so that a
- * failure at any step leaves the database unchanged.
+ * All mutations run inside a single SQLite transaction so that a failure
+ * at any step leaves the database unchanged.
  *
  * @throws {Error} if the `gamePlayerId` does not exist.
  * @throws {TradeError} if the order fails validation (see {@link validateBuy} /
@@ -134,35 +134,24 @@ export async function executeTrade(db: Db, params: ExecuteTradeParams): Promise<
     newAvg = Number(holding?.avgCostBasis ?? 0);
   }
 
-  // The project types db as BetterSQLite3Database throughout (PG is cast to it in db/index.ts).
-  // better-sqlite3 transactions are synchronous; Drizzle SQLite query builders expose .run()
-  // and .all() that execute immediately. These helpers avoid casting each call-site to `any`.
-  // TODO(pg-async-tx): If the PG driver is ever un-cast from AppDb, replace with async transaction.
-  const run = (q: { run(): unknown }): void => { q.run(); };
-  const returning = <T>(q: { all(): T[] }): T[] => q.all();
-
-  const result = db.transaction((tx: Db) => {
-    run(tx.update(gamePlayers).set({ cashBalance: newCash }).where(eq(gamePlayers.id, gamePlayerId)) as { run(): unknown });
+  return db.transaction(async (tx) => {
+    await tx.update(gamePlayers).set({ cashBalance: newCash }).where(eq(gamePlayers.id, gamePlayerId));
 
     if (direction === 'buy') {
       if (holding) {
-        run(tx.update(portfolios).set({ quantity: newQty, avgCostBasis: newAvg }).where(eq(portfolios.id, holding.id)) as { run(): unknown });
+        await tx.update(portfolios).set({ quantity: newQty, avgCostBasis: newAvg }).where(eq(portfolios.id, holding.id));
       } else {
-        run(tx.insert(portfolios).values({ gamePlayerId, symbol, quantity: newQty, avgCostBasis: newAvg }) as { run(): unknown });
+        await tx.insert(portfolios).values({ gamePlayerId, symbol, quantity: newQty, avgCostBasis: newAvg });
       }
     } else {
       if (newQty === 0) {
-        run(tx.delete(portfolios).where(and(eq(portfolios.gamePlayerId, gamePlayerId), eq(portfolios.symbol, symbol))) as { run(): unknown });
+        await tx.delete(portfolios).where(and(eq(portfolios.gamePlayerId, gamePlayerId), eq(portfolios.symbol, symbol)));
       } else {
-        run(tx.update(portfolios).set({ quantity: newQty }).where(and(eq(portfolios.gamePlayerId, gamePlayerId), eq(portfolios.symbol, symbol))) as { run(): unknown });
+        await tx.update(portfolios).set({ quantity: newQty }).where(and(eq(portfolios.gamePlayerId, gamePlayerId), eq(portfolios.symbol, symbol)));
       }
     }
 
-    type TradeRow = typeof schema.trades.$inferSelect;
-    const rows = returning<TradeRow>(
-      tx.insert(trades).values({ gamePlayerId, symbol, direction, quantity, price }).returning() as { all(): TradeRow[] },
-    );
-    const trade = rows[0];
+    const [trade] = await tx.insert(trades).values({ gamePlayerId, symbol, direction, quantity, price }).returning();
 
     if (!trade) throw new Error('Failed to insert trade');
 
@@ -176,6 +165,4 @@ export async function executeTrade(db: Db, params: ExecuteTradeParams): Promise<
       executedAt: trade.executedAt,
     };
   });
-
-  return Promise.resolve(result);
 }

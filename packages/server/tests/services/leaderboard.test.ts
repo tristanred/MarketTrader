@@ -4,13 +4,13 @@ import { computeLeaderboard } from '../../src/services/leaderboard.js';
 import { schema } from '../../src/db/index.js';
 
 describe('computeLeaderboard', () => {
-  let db: ReturnType<typeof createTestDb>;
+  let db: Awaited<ReturnType<typeof createTestDb>>;
   let gameId: string;
   let aliceId: string;
   let bobId: string;
 
   beforeAll(async () => {
-    db = createTestDb();
+    db = await createTestDb();
 
     const [alice] = await db.insert(schema.users).values({ username: 'alice', passwordHash: 'x' }).returning({ id: schema.users.id });
     const [bob] = await db.insert(schema.users).values({ username: 'bob', passwordHash: 'x' }).returning({ id: schema.users.id });

@@ -87,17 +87,17 @@ This file tracks the overall build plan across multiple sessions. Each phase map
 
 **Goal:** Connected clients receive live price updates and leaderboard changes.
 
-- [ ] `@fastify/websocket` registered before all routes in `app.ts`
-- [ ] WebSocket route: `GET /games/:id/live` (upgrades to WS)
-- [ ] JWT validation on WS upgrade (from `?token=` query param) — reject 401 if invalid
-- [ ] Per-game client registry (track connected sockets by gameId)
-- [ ] Price polling loop — every 5s, fetch prices for all symbols held by players in each active game
-- [ ] Broadcast `price_update` event to all clients in a game (batched, not per-tick)
-- [ ] Broadcast `leaderboard_update` event after each trade (throttled ≤ 1/sec)
-- [ ] Broadcast `trade_executed` event when any player trades
-- [ ] Client `subscribe` event handler — add symbols to per-client watch list
-- [ ] Cleanup on socket `close` and `error` events
-- [ ] Integration tests for WS connection, auth rejection, event delivery
+- [x] `@fastify/websocket` registered before all routes in `app.ts`
+- [x] WebSocket route: `GET /games/:id/live` (upgrades to WS)
+- [x] JWT validation on WS upgrade (from `?token=` query param) — reject 401 if invalid
+- [x] Per-game client registry (track connected sockets by gameId)
+- [x] Price polling loop — every 5s, fetch prices for all symbols held by players in each active game
+- [x] Broadcast `price_update` event to all clients in a game (batched, not per-tick)
+- [x] Broadcast `leaderboard_update` event after each trade (throttled ≤ 1/sec)
+- [x] Broadcast `trade_executed` event when any player trades
+- [x] Client `subscribe` event handler — add symbols to per-client watch list
+- [x] Cleanup on socket `close` and `error` events
+- [x] Integration tests for WS connection, auth rejection, event delivery
 
 ---
 
@@ -108,36 +108,36 @@ This file tracks the overall build plan across multiple sessions. Each phase map
 **Goal:** A working SPA where users can register, create/join games, trade, and watch the leaderboard.
 
 ### Auth
-- [ ] Login page (`/login`)
-- [ ] Register page (`/register`)
-- [ ] Auth store (Zustand) — persist JWT, user info
-- [ ] React Query hooks for auth endpoints
-- [ ] Protected route wrapper (redirect to `/login` if unauthenticated)
+- [x] Login page (`/login`)
+- [x] Register page (`/register`)
+- [x] Auth store (Zustand) — in-memory JWT + user, session restored via `/auth/refresh` on load
+- [x] React Query hooks for auth endpoints
+- [x] Protected route wrapper (redirect to `/login` if unauthenticated)
 
 ### Games
-- [ ] Games list page (`/`) — list of active/pending games
-- [ ] Create game dialog/page
-- [ ] Game detail page (`/:gameId`) — leaderboard, join button
+- [x] Games list page (`/`) — list of active/pending games
+- [x] Create game dialog/page
+- [x] Game detail page (`/:gameId`) — leaderboard, join button
 
 ### Trading UI (game context)
-- [ ] Portfolio view — holdings table with live P&L (updates from WebSocket)
-- [ ] Trade panel — symbol search, buy/sell form, submit
-- [ ] Trade history table
-- [ ] Real-time leaderboard sidebar (updates from WebSocket)
+- [x] Portfolio view — holdings table with live P&L (updates from WebSocket)
+- [x] Trade panel — symbol search, buy/sell form, submit
+- [x] Trade history table
+- [x] Real-time leaderboard sidebar (updates from WebSocket)
 
 ### WebSocket Client
-- [ ] `useGameSocket` hook — connects, authenticates, dispatches incoming events
-- [ ] Zustand store slices for live prices and leaderboard
+- [x] `useGameSocket` hook — connects, authenticates, dispatches incoming events
+- [x] Zustand store slices for live prices and leaderboard
 
 ### Charts
-- [ ] TradingView Lightweight Chart component for price history per held symbol
-- [ ] Candlestick/line chart wired to price data from REST or WebSocket
+- [x] TradingView Lightweight Charts component for price history per held symbol
+- [x] Line chart wired to price data from WebSocket ticks (historical data deferred to a later phase)
 
 ### Polish
-- [ ] Loading and error states on all async operations
-- [ ] Responsive layout (Tailwind breakpoints)
-- [ ] Dark mode support (ShadCN CSS variables already defined)
-- [ ] E2E tests with Playwright (register → join game → buy stock → see leaderboard)
+- [x] Loading and error states on all async operations
+- [x] Responsive layout (Tailwind breakpoints)
+- [x] Dark mode support (ShadCN CSS variables already defined)
+- [x] E2E tests with Playwright (register → join game → buy stock → see leaderboard)
 
 ---
 
@@ -157,9 +157,9 @@ This file tracks the overall build plan across multiple sessions. Each phase map
 
 ## Current State
 
-**Phase 4 is fully complete.** Players can buy and sell stocks in active games. Prices are fetched via a pluggable `StockProvider` (Yahoo Finance default, Alpaca optional) with a 30s write-through cache. Trade execution is atomic (cash, portfolio, and trade record updated in a single SQLite transaction). The leaderboard now uses cached prices only (no avgCostBasis fallback).
+**Phases 1–6 are fully complete.** The React SPA is now a working tournament client: users can register, sign in, create or join games, search tickers, place buy/sell orders, and watch their portfolio and the leaderboard update live via WebSocket. Access tokens live in a non-persisted Zustand store; sessions survive reloads by silently calling `/auth/refresh` against the HttpOnly cookie. Live price ticks feed a TradingView Lightweight Charts line series. Dark mode toggle, responsive layout, loading skeletons, and toast notifications are in place. A Playwright happy-path E2E spec covers register → create game → trade → portfolio.
 
-**Next step:** Implement Phase 5 (WebSocket Server) for live price updates and leaderboard streaming.
+**Next step:** Phase 7 (Production Readiness) — env validation, rate limiting hardening, Helmet, PG migrations on startup, Nginx + EC2 deployment guide.
 
 ---
 

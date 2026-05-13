@@ -35,8 +35,11 @@ export interface CreateGameRequest {
 
 /** A single player's rank entry as returned in the game leaderboard. */
 export interface LeaderboardEntry {
+  /** The player's userId (matches {@link Game.createdBy}). */
   playerId: string;
   username: string;
+  /** Cash currently held (does not include the market value of open positions). */
+  cashBalance: number;
   /** Cash balance + current portfolio market value. */
   totalValue: number;
   /** 1-based rank by descending `totalValue`. */

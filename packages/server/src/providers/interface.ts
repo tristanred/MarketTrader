@@ -1,4 +1,9 @@
-import type { StockQuote, StockSearchResult } from '@markettrader/shared';
+import type {
+  StockHistoryBar,
+  StockHistoryRange,
+  StockQuote,
+  StockSearchResult,
+} from '@markettrader/shared';
 
 /**
  * Abstraction layer for fetching real-time stock data. All price lookups must
@@ -13,6 +18,12 @@ export interface StockProvider {
   getQuote(symbol: string): Promise<StockQuote>;
   /** Returns matching equity symbols for an autocomplete query. */
   searchSymbols(query: string): Promise<StockSearchResult[]>;
+  /**
+   * Returns historical closing prices for the symbol covering the given range.
+   * Bars are sorted by ascending time. Bar resolution is provider-defined per
+   * range — intraday for `1d`/`5d`, daily for longer ranges.
+   */
+  getHistory(symbol: string, range: StockHistoryRange): Promise<StockHistoryBar[]>;
 }
 
 /**

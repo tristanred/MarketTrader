@@ -1,24 +1,47 @@
 import { eq } from 'drizzle-orm';
-import type { StockQuote, StockSearchResult } from '@markettrader/shared';
+import type {
+  MarketState,
+  StockHistoryBar,
+  StockHistoryRange,
+  StockQuote,
+  StockSearchResult,
+} from '@markettrader/shared';
 import type { Db } from '../db/index.js';
 import { schema } from '../db/index.js';
 import type { StockProvider } from './interface.js';
-
-/** Quotes older than this are re-fetched from the upstream provider. */
-const CACHE_TTL_MS = 30_000;
+import { StockProviderError } from './interface.js';
+import { env } from '../env.js';
 
 /**
- * A {@link StockProvider} decorator that caches quotes in the `stock_price_cache`
- * database table for {@link CACHE_TTL_MS} milliseconds.
+ * A {@link StockProvider} decorator that adds two caching layers on top of an
+ * inner provider:
  *
- * Cache hits are served directly from the DB; misses delegate to the wrapped
- * `inner` provider and then upsert the result. This prevents redundant calls to
- * the upstream API when multiple routes (portfolio, trade, leaderboard) need
- * the same price within a short window.
+ *  1. **Quote cache** — persisted in the `stock_price_cache` table. Cache hits
+ *     within `STOCK_CACHE_TTL_MS` skip the upstream fetch entirely. On a fresh
+ *     fetch the cache row is upserted.
+ *  2. **Search cache** — an in-memory `Map<query, results>` with TTL
+ *     `STOCK_SEARCH_CACHE_TTL_MS`. Search responses are static for a query
+ *     within minutes; caching them protects against autocomplete bursts.
  *
- * `searchSymbols` is never cached — it always delegates to `inner`.
+ * The decorator also implements **graceful stale fallback** for `getQuote`:
+ * when the inner provider throws `RATE_LIMITED` and the cache row is no older
+ * than `STOCK_STALE_PRICE_MAX_AGE_MS`, the cached quote is returned with
+ * `stale: true` so callers can warn or refuse. Other error codes propagate
+ * unchanged.
  */
 export class CachedProvider implements StockProvider {
+  private readonly searchCache = new Map<string, { results: StockSearchResult[]; fetchedAt: number }>();
+  private readonly historyCache = new Map<
+    string,
+    { bars: StockHistoryBar[]; fetchedAt: number }
+  >();
+  /**
+   * Shadow cache for `marketState`, which the persisted `stock_price_cache`
+   * table doesn't store. Updated on every successful upstream fetch so cache-
+   * hit reads still surface a recent session label to clients.
+   */
+  private readonly marketStateBySymbol = new Map<string, MarketState>();
+
   constructor(
     private readonly db: Db,
     private readonly inner: StockProvider,
@@ -31,17 +54,48 @@ export class CachedProvider implements StockProvider {
       .where(eq(schema.stockPriceCache.symbol, symbol))
       .limit(1);
 
-    if (cached && Date.now() - new Date(cached.fetchedAt).getTime() < CACHE_TTL_MS) {
+    const cachedAt = cached ? new Date(cached.fetchedAt).getTime() : 0;
+    const ageMs = Date.now() - cachedAt;
+
+    if (cached && ageMs < env.STOCK_CACHE_TTL_MS) {
+      const marketState = this.marketStateBySymbol.get(symbol);
       return {
         symbol,
         price: Number(cached.price),
         change: Number(cached.change),
         changePercent: Number(cached.changePercent),
         fetchedAt: cached.fetchedAt,
+        ...(marketState && { marketState }),
       };
     }
 
-    const quote = await this.inner.getQuote(symbol);
+    let quote: StockQuote;
+    try {
+      quote = await this.inner.getQuote(symbol);
+    } catch (err) {
+      // Graceful degradation: if the upstream is rate-limited and we have a
+      // not-too-old cache row, serve that with stale:true. Older rows or other
+      // errors propagate.
+      if (
+        err instanceof StockProviderError &&
+        err.code === 'RATE_LIMITED' &&
+        cached &&
+        ageMs <= env.STOCK_STALE_PRICE_MAX_AGE_MS
+      ) {
+        const marketState = this.marketStateBySymbol.get(symbol);
+        return {
+          symbol,
+          price: Number(cached.price),
+          change: Number(cached.change),
+          changePercent: Number(cached.changePercent),
+          fetchedAt: cached.fetchedAt,
+          stale: true,
+          ...(marketState && { marketState }),
+        };
+      }
+      throw err;
+    }
+    if (quote.marketState) this.marketStateBySymbol.set(symbol, quote.marketState);
 
     await this.db
       .insert(schema.stockPriceCache)
@@ -65,7 +119,28 @@ export class CachedProvider implements StockProvider {
     return quote;
   }
 
+  async getHistory(symbol: string, range: StockHistoryRange): Promise<StockHistoryBar[]> {
+    const key = `${symbol}|${range}`;
+    const hit = this.historyCache.get(key);
+    if (hit && Date.now() - hit.fetchedAt < env.STOCK_HISTORY_CACHE_TTL_MS) {
+      return hit.bars;
+    }
+    const bars = await this.inner.getHistory(symbol, range);
+    this.historyCache.set(key, { bars, fetchedAt: Date.now() });
+    return bars;
+  }
+
   async searchSymbols(query: string): Promise<StockSearchResult[]> {
-    return this.inner.searchSymbols(query);
+    const key = query.trim().toLowerCase();
+    if (key.length === 0) return [];
+
+    const hit = this.searchCache.get(key);
+    if (hit && Date.now() - hit.fetchedAt < env.STOCK_SEARCH_CACHE_TTL_MS) {
+      return hit.results;
+    }
+
+    const results = await this.inner.searchSymbols(query);
+    this.searchCache.set(key, { results, fetchedAt: Date.now() });
+    return results;
   }
 }

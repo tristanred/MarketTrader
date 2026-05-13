@@ -4,11 +4,11 @@ import { recomputeGameStatus, recomputeMany } from '../../src/services/game-stat
 import { schema } from '../../src/db/index.js';
 
 describe('game-status service', () => {
-  let db: ReturnType<typeof createTestDb>;
+  let db: Awaited<ReturnType<typeof createTestDb>>;
   let userId: string;
 
   beforeAll(async () => {
-    db = createTestDb();
+    db = await createTestDb();
     const rows = await db.insert(schema.users).values({ username: 'alice', passwordHash: 'x' }).returning({ id: schema.users.id });
     const user = rows[0];
     if (!user) throw new Error('Failed to insert test user');

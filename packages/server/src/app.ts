@@ -4,6 +4,7 @@ import { registerCors } from './plugins/cors.js';
 import { registerSensible } from './plugins/sensible.js';
 import { registerCookie } from './plugins/cookie.js';
 import { registerJwt } from './plugins/jwt.js';
+import { registerHelmet } from './plugins/helmet.js';
 import { registerRateLimit } from './plugins/rate-limit.js';
 import { registerWebsocket } from './plugins/websocket.js';
 import { healthRoutes } from './routes/health.js';
@@ -23,6 +24,7 @@ import { env } from './env.js';
 import { GameClientRegistry } from './ws/registry.js';
 import { liveRoute } from './ws/live-route.js';
 import { startPricePoller } from './ws/price-poller.js';
+import { attachSentry } from './observability/sentry.js';
 
 export async function buildApp(
   opts: FastifyServerOptions & {
@@ -55,6 +57,7 @@ export async function buildApp(
   await registerWebsocket(app);
 
   await registerCors(app);
+  await registerHelmet(app);
   await registerSensible(app);
   await registerCookie(app);
   await registerJwt(app);
@@ -76,6 +79,8 @@ export async function buildApp(
       clearInterval(handle);
     });
   }
+
+  attachSentry(app);
 
   return app;
 }

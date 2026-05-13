@@ -28,10 +28,23 @@ services:
       DATABASE_URL: postgres://markettrader:markettrader@db:5432/markettrader
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       PORT: 3000
-      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:5173}
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost}
       NODE_ENV: production
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      STOCK_PROVIDER: ${STOCK_PROVIDER:-yahoo}
+      ALPACA_API_KEY: ${ALPACA_API_KEY:-}
+    expose:
+      - '3000'
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    restart: unless-stopped
+    depends_on:
+      - server
     ports:
-      - '3000:3000'
+      - '80:80'
 
 volumes:
   postgres_data:

@@ -141,25 +141,28 @@ This file tracks the overall build plan across multiple sessions. Each phase map
 
 ---
 
-## Phase 7: Production Readiness
+## Phase 7: Production Readiness ✅
 
-> Plan file to create when Phase 6 is done.
-
-- [ ] Environment validation — fail fast on missing required env vars in production
-- [ ] Rate limiting (`@fastify/rate-limit`) on auth and trade endpoints
-- [ ] Helmet headers (`@fastify/helmet`)
-- [ ] PostgreSQL migration runner on server startup (or pre-deploy hook)
-- [ ] Nginx config for frontend static files + `/api` proxy
-- [ ] AWS EC2 deployment guide (Docker Compose, Nginx, env setup)
-- [ ] Smoke test against production URL
+- [x] Environment validation — fail fast on missing required env vars in production
+- [x] Rate limiting (`@fastify/rate-limit`) on auth and trade endpoints
+- [x] Helmet headers (`@fastify/helmet`)
+- [x] PostgreSQL migration runner on server startup (drizzle migrations split into `drizzle/pg/` and `drizzle/sqlite/`)
+- [x] Nginx config for frontend static files + `/api` proxy (with WebSocket + refresh-cookie path rewrite)
+- [x] AWS EC2 deployment guide (`docs/deployment.md`) — Docker Compose, Nginx, env setup, TLS pointer
+- [x] Smoke test (`scripts/smoke.sh`) — health probe + register + authenticated request
+- [x] Graceful shutdown — SIGTERM closes server, drains poller, releases DB pool
+- [x] Pino log redaction for `Authorization`, `Cookie`, `Set-Cookie`
+- [x] Sentry integration (optional, behind `SENTRY_DSN`)
 
 ---
 
 ## Current State
 
-**Phases 1–6 are fully complete.** The React SPA is now a working tournament client: users can register, sign in, create or join games, search tickers, place buy/sell orders, and watch their portfolio and the leaderboard update live via WebSocket. Access tokens live in a non-persisted Zustand store; sessions survive reloads by silently calling `/auth/refresh` against the HttpOnly cookie. Live price ticks feed a TradingView Lightweight Charts line series. Dark mode toggle, responsive layout, loading skeletons, and toast notifications are in place. A Playwright happy-path E2E spec covers register → create game → trade → portfolio.
+**Phases 1–7 are fully complete.** The React SPA is a working tournament client: users can register, sign in, create or join games, search tickers, place buy/sell orders, and watch their portfolio and the leaderboard update live via WebSocket. Access tokens live in a non-persisted Zustand store; sessions survive reloads by silently calling `/auth/refresh` against the HttpOnly cookie. Live price ticks feed a TradingView Lightweight Charts line series. Dark mode toggle, responsive layout, loading skeletons, and toast notifications are in place. A Playwright happy-path E2E spec covers register → create game → trade → portfolio.
 
-**Next step:** Phase 7 (Production Readiness) — env validation, rate limiting hardening, Helmet, PG migrations on startup, Nginx + EC2 deployment guide.
+Production-readiness work is in: a `docker compose up -d --build` boots Postgres, the Fastify server (with auto-migrations, Helmet, rate-limited auth/trade endpoints, graceful shutdown, redacted logs, optional Sentry), and an Nginx container that serves the SPA and proxies `/api` (with WebSocket upgrade and refresh-cookie path rewrite). The deployment guide at `docs/deployment.md` walks through EC2 setup; `scripts/smoke.sh` validates a deployment with a quick `register → /games` round-trip.
+
+**Next step:** None — the MVP is shippable. Future polish: code-split the frontend bundle (currently 616 kB), tighten the Nginx CSP, add a multi-replica migration story.
 
 ---
 

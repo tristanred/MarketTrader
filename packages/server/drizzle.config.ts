@@ -13,7 +13,7 @@ function normalizeLibsqlUrl(url: string): string {
 
 export default defineConfig({
   schema: isPg ? './src/db/schema.pg.ts' : './src/db/schema.sqlite.ts',
-  out: './drizzle',
+  out: isPg ? './drizzle/pg' : './drizzle/sqlite',
   dialect: isPg ? 'postgresql' : 'turso',
   dbCredentials: { url: isPg ? rawUrl : normalizeLibsqlUrl(rawUrl) },
 });

@@ -12,7 +12,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 
 const __dir = path.dirname(fileURLToPath(import.meta.url));
-const migrationsFolder = path.join(__dir, '../../drizzle');
+const migrationsFolder = path.join(__dir, '../../drizzle/sqlite');
 
 export async function createTestDb() {
   // `cache=shared` is the only in-memory URL form libsql exposes for cross-

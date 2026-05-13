@@ -44,7 +44,10 @@ export function tradingRoutes(
 
     app.post<{ Params: { id: string } }>(
       '/games/:id/trades',
-      { preHandler: app.authenticate },
+      {
+        preHandler: app.authenticate,
+        config: { rateLimit: { max: 30, timeWindow: '1 minute' } },
+      },
       async (request, reply) => {
         const parsed = placeTradeSchema.safeParse(request.body);
         if (!parsed.success) {

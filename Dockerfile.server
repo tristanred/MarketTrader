@@ -30,6 +30,8 @@ COPY --from=builder /app/packages/shared/node_modules ./packages/shared/node_mod
 COPY --from=builder /app/packages/server/node_modules ./packages/server/node_modules
 COPY --from=builder /app/packages/shared/dist ./packages/shared/dist
 COPY --from=builder /app/packages/server/dist ./packages/server/dist
+# Drizzle migrations are read at runtime by runMigrations() in dist/db/migrate.js.
+COPY --from=builder /app/packages/server/drizzle ./packages/server/drizzle
 
 EXPOSE 3000
 CMD ["node", "packages/server/dist/index.js"]

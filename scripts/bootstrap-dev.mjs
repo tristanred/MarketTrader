@@ -86,7 +86,7 @@ async function runMigrations() {
   const { migrate } = await importFromServer('drizzle-orm/libsql/migrator');
   const client = createClient({ url: normalizeLibsqlUrl(dbUrl) });
   const db = drizzle(client);
-  const migrationsFolder = path.join(serverRoot, 'drizzle');
+  const migrationsFolder = path.join(serverRoot, 'drizzle/sqlite');
   await migrate(db, { migrationsFolder });
   client.close();
   console.log('[bootstrap] Migrations up to date.');

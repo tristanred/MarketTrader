@@ -100,4 +100,63 @@ export const env = {
   STOCK_ALLOW_STALE_TRADES: parseBool(optional('STOCK_ALLOW_STALE_TRADES', 'false')),
   /** Trades using a cached price older than this are rejected even when stale trades are allowed. */
   STOCK_STALE_TRADE_MAX_AGE_MS: parsePositiveInt('STOCK_STALE_TRADE_MAX_AGE_MS', optional('STOCK_STALE_TRADE_MAX_AGE_MS', '300000')),
+
+  /**
+   * Sentry DSN. When set, the server initializes @sentry/node and forwards
+   * 5xx errors to Sentry. Empty string disables Sentry entirely (no-op).
+   */
+  SENTRY_DSN: optional('SENTRY_DSN', ''),
 } as const;
+
+export interface ProductionEnvCheck {
+  JWT_SECRET: string;
+  CORS_ORIGIN: string;
+  DATABASE_URL: string;
+  STOCK_PROVIDER: string;
+  ALPACA_API_KEY: string;
+  SENTRY_DSN: string;
+}
+
+/**
+ * Enforces production-only invariants that are too costly to require during
+ * dev/test (e.g., refusing SQLite, demanding a real JWT secret). Throws on
+ * the first failure so the process exits before binding the port.
+ *
+ * Intended caller: `src/index.ts`, only when `NODE_ENV === 'production'`.
+ * The config is passed in (not pulled from {@link env}) so the function is
+ * pure and trivially unit-testable.
+ */
+export function validateProductionEnv(cfg: ProductionEnvCheck = env): void {
+  const errors: string[] = [];
+
+  if (cfg.JWT_SECRET.length < 32) {
+    errors.push(
+      `JWT_SECRET must be at least 32 characters in production (got ${cfg.JWT_SECRET.length}).`,
+    );
+  }
+
+  if (cfg.CORS_ORIGIN === 'http://localhost:5173') {
+    errors.push(
+      'CORS_ORIGIN must be set to your production frontend URL; the dev default is not allowed.',
+    );
+  }
+
+  if (!cfg.DATABASE_URL.startsWith('postgres')) {
+    errors.push('DATABASE_URL must be a postgres:// connection string in production.');
+  }
+
+  if (cfg.STOCK_PROVIDER === 'alpaca' && !cfg.ALPACA_API_KEY) {
+    errors.push('STOCK_PROVIDER=alpaca requires ALPACA_API_KEY to be set.');
+  }
+
+  if (errors.length > 0) {
+    throw new Error(
+      `Invalid production environment:\n  - ${errors.join('\n  - ')}`,
+    );
+  }
+
+  if (!cfg.SENTRY_DSN) {
+    // Non-fatal: surface the gap so operators see it once at boot.
+    console.warn('[env] SENTRY_DSN not set — runtime errors will not be reported.');
+  }
+}

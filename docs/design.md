@@ -102,7 +102,6 @@ These are candidates for future design cycles. None are committed.
 - **Game invite codes** — a shareable token instead of a raw UUID
 - **Limit orders** — place an order at a target price, fill when market crosses it
 - **Short selling** — borrow shares to sell, buy back later
-- **Watchlist** — track symbols without holding them
 - **Admin tools** — game creator can remove players, extend game end date
 - **Game templates** — preset configurations (e.g., "30-day $10k challenge")
 - **Notifications** — push/email when a trade executes or when you move up/down the leaderboard

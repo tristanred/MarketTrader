@@ -14,6 +14,8 @@ import { GameLeaderboardCard } from '@/components/game/GameLeaderboardCard';
 import { HoldingsSidebar } from '@/components/game/HoldingsSidebar';
 import { QuoteInfoDialog } from '@/components/QuoteInfoDialog';
 import { useQuoteDialogStore } from '@/stores/quoteDialogStore';
+import { useWatchlists } from '@/api/watchlists';
+import { useWatchlistUiStore } from '@/stores/watchlistUiStore';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
@@ -51,7 +53,22 @@ export function GameDetailPage() {
     () => portfolio.data?.holdings.map((h) => h.symbol) ?? [],
     [portfolio.data],
   );
-  useGameSocket(gameId, heldSymbols);
+
+  // Include the currently-selected watchlist's symbols in the WS subscription
+  // so watchlist rows tick live alongside Holdings.
+  const watchlists = useWatchlists();
+  const selectedWatchlistId = useWatchlistUiStore((s) => s.selectedWatchlistId);
+  const watchlistSymbols = useMemo(() => {
+    const lists = watchlists.data ?? [];
+    const active = lists.find((l) => l.id === selectedWatchlistId) ?? lists[0];
+    return active?.symbols ?? [];
+  }, [watchlists.data, selectedWatchlistId]);
+
+  const subscribedSymbols = useMemo(
+    () => [...new Set([...heldSymbols, ...watchlistSymbols])],
+    [heldSymbols, watchlistSymbols],
+  );
+  useGameSocket(gameId, subscribedSymbols);
 
   // 404 => either game doesn't exist or caller isn't a member.
   if (game.isError && game.error instanceof ApiError && game.error.status === 404) {

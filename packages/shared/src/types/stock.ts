@@ -1,3 +1,12 @@
+/**
+ * The trading session the quote was captured in, as reported by the upstream
+ * provider. `REGULAR` is 9:30–16:00 ET on US markets; `PRE`/`POST` are extended
+ * hours; `CLOSED` covers nights/weekends/holidays. Used by the chart to decide
+ * whether to extend the price line — outside `REGULAR`, providers echo the last
+ * close indefinitely and the line should freeze.
+ */
+export type MarketState = 'PRE' | 'REGULAR' | 'POST' | 'POSTPOST' | 'PREPRE' | 'CLOSED';
+
 /** Real-time stock quote as returned by the active {@link StockProvider}. */
 export interface StockQuote {
   symbol: string;
@@ -9,6 +18,11 @@ export interface StockQuote {
   changePercent: number;
   /** ISO 8601 timestamp of when this quote was fetched from the provider. */
   fetchedAt: string;
+  /**
+   * Trading session at fetch time. Undefined when the provider didn't report it
+   * (e.g. older cache rows). Treat undefined as "unknown" — neither open nor closed.
+   */
+  marketState?: MarketState;
   /**
    * True when the live provider was rate-limited and this quote came from the
    * server-side cache. Consumers should warn the user before acting on it.

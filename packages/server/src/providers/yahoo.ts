@@ -1,10 +1,25 @@
 import YahooFinance from 'yahoo-finance2';
 import type {
+  MarketState,
   StockHistoryBar,
   StockHistoryRange,
   StockQuote,
   StockSearchResult,
 } from '@markettrader/shared';
+
+const MARKET_STATES = new Set<MarketState>([
+  'PRE',
+  'PREPRE',
+  'REGULAR',
+  'POST',
+  'POSTPOST',
+  'CLOSED',
+]);
+function asMarketState(raw: unknown): MarketState | undefined {
+  return typeof raw === 'string' && (MARKET_STATES as Set<string>).has(raw)
+    ? (raw as MarketState)
+    : undefined;
+}
 import type { StockProvider } from './interface.js';
 import { StockProviderError } from './interface.js';
 import { env } from '../env.js';
@@ -88,12 +103,14 @@ export class YahooProvider implements StockProvider {
       throw new StockProviderError('SYMBOL_NOT_FOUND', `Symbol not found: ${symbol}`);
     }
 
+    const marketState = asMarketState((row as { marketState?: unknown }).marketState);
     return {
       symbol: typeof row.symbol === 'string' ? row.symbol : symbol,
       price: row.regularMarketPrice as number,
       change: (row.regularMarketChange as number | undefined) ?? 0,
       changePercent: (row.regularMarketChangePercent as number | undefined) ?? 0,
       fetchedAt: new Date().toISOString(),
+      ...(marketState && { marketState }),
     };
   }
 

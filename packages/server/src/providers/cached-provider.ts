@@ -1,5 +1,6 @@
 import { eq } from 'drizzle-orm';
 import type {
+  MarketState,
   StockHistoryBar,
   StockHistoryRange,
   StockQuote,
@@ -34,6 +35,12 @@ export class CachedProvider implements StockProvider {
     string,
     { bars: StockHistoryBar[]; fetchedAt: number }
   >();
+  /**
+   * Shadow cache for `marketState`, which the persisted `stock_price_cache`
+   * table doesn't store. Updated on every successful upstream fetch so cache-
+   * hit reads still surface a recent session label to clients.
+   */
+  private readonly marketStateBySymbol = new Map<string, MarketState>();
 
   constructor(
     private readonly db: Db,
@@ -51,12 +58,14 @@ export class CachedProvider implements StockProvider {
     const ageMs = Date.now() - cachedAt;
 
     if (cached && ageMs < env.STOCK_CACHE_TTL_MS) {
+      const marketState = this.marketStateBySymbol.get(symbol);
       return {
         symbol,
         price: Number(cached.price),
         change: Number(cached.change),
         changePercent: Number(cached.changePercent),
         fetchedAt: cached.fetchedAt,
+        ...(marketState && { marketState }),
       };
     }
 
@@ -73,6 +82,7 @@ export class CachedProvider implements StockProvider {
         cached &&
         ageMs <= env.STOCK_STALE_PRICE_MAX_AGE_MS
       ) {
+        const marketState = this.marketStateBySymbol.get(symbol);
         return {
           symbol,
           price: Number(cached.price),
@@ -80,10 +90,12 @@ export class CachedProvider implements StockProvider {
           changePercent: Number(cached.changePercent),
           fetchedAt: cached.fetchedAt,
           stale: true,
+          ...(marketState && { marketState }),
         };
       }
       throw err;
     }
+    if (quote.marketState) this.marketStateBySymbol.set(symbol, quote.marketState);
 
     await this.db
       .insert(schema.stockPriceCache)

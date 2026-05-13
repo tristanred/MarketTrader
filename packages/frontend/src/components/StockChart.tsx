@@ -16,6 +16,7 @@ const RANGES: { key: StockHistoryRange; label: string }[] = [
   { key: '1y', label: '1Y' },
 ];
 
+
 /**
  * Renders a price line chart for one held symbol. Historical bars are fetched
  * from `/stocks/:symbol/history`; live WebSocket ticks accumulated in the
@@ -89,7 +90,9 @@ function ChartCanvas({ symbol, range }: { symbol: string; range: StockHistoryRan
   const seriesRef = useRef<ISeriesApi<'Line'> | null>(null);
   const history = useStockHistory(symbol, range);
   const liveHistory = useLiveStore((s) => s.historyBySymbol[symbol]);
+  const latestQuote = useLiveStore((s) => s.pricesBySymbol[symbol]);
   const ticks: PriceTick[] = useMemo(() => liveHistory ?? [], [liveHistory]);
+  const marketOpen = latestQuote?.marketState === 'REGULAR';
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -123,17 +126,18 @@ function ChartCanvas({ symbol, range }: { symbol: string; range: StockHistoryRan
     const series = seriesRef.current;
     if (!series) return;
     const historicalBars = history.data?.bars ?? [];
-
-    // Merge history with live ticks. History first, then any live ticks newer
-    // than the last history bar. Deduplicate by `time` and re-sort just in case.
     const lastBar = historicalBars[historicalBars.length - 1];
     const lastHistTime = lastBar ? lastBar.time : 0;
-    const merged = [
-      ...historicalBars.map((b) => ({ time: b.time, value: b.close })),
-      ...ticks
-        .filter((t) => t.time > lastHistTime)
-        .map((t) => ({ time: t.time, value: t.price })),
-    ];
+
+    // After the market closes the upstream just echoes the last regular close
+    // every poll; appending those ticks produces a meaningless horizontal line
+    // that keeps growing. Outside REGULAR hours the chart freezes at the last
+    // historical bar — the latest price still updates elsewhere via the quote.
+    const liveTicks = marketOpen
+      ? ticks.filter((t) => t.time > lastHistTime).map((t) => ({ time: t.time, value: t.price }))
+      : [];
+
+    const merged = [...historicalBars.map((b) => ({ time: b.time, value: b.close })), ...liveTicks];
 
     const seen = new Set<number>();
     const deduped = merged
@@ -146,8 +150,14 @@ function ChartCanvas({ symbol, range }: { symbol: string; range: StockHistoryRan
       .map((p) => ({ time: p.time as never, value: p.value }));
 
     series.setData(deduped);
-    if (deduped.length > 0) chartRef.current?.timeScale().fitContent();
-  }, [history.data, ticks]);
+  }, [history.data, ticks, marketOpen]);
+
+  // Fit the time axis once per (symbol, range) load — not on every tick, which
+  // would reflow the whole chart and look jumpy.
+  useEffect(() => {
+    if (!history.data || history.data.bars.length === 0) return;
+    chartRef.current?.timeScale().fitContent();
+  }, [history.data]);
 
   const empty = (history.data?.bars.length ?? 0) === 0 && ticks.length === 0;
   return (

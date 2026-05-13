@@ -45,6 +45,19 @@ function validatedProvider(): StockProvider {
 const VALID_MARKET_STATUS_PROVIDERS = ['yahoo', 'alpaca', 'static'] as const;
 type MarketStatusProviderName = (typeof VALID_MARKET_STATUS_PROVIDERS)[number];
 
+const VALID_MARKET_HOURS_MODES = ['disabled', 'pending', 'instant'] as const;
+type MarketHoursMode = (typeof VALID_MARKET_HOURS_MODES)[number];
+
+function validatedMarketHoursMode(): MarketHoursMode {
+  const raw = optional('MARKET_HOURS_MODE', 'instant');
+  if (!(VALID_MARKET_HOURS_MODES as readonly string[]).includes(raw)) {
+    throw new Error(
+      `Invalid MARKET_HOURS_MODE: "${raw}". Must be one of: ${VALID_MARKET_HOURS_MODES.join(', ')}`,
+    );
+  }
+  return raw as MarketHoursMode;
+}
+
 /**
  * Pick the market-status provider. Defaults to matching `STOCK_PROVIDER` when
  * unset, so swapping the price provider doesn't silently break the chart's
@@ -100,6 +113,21 @@ export const env = {
   STOCK_ALLOW_STALE_TRADES: parseBool(optional('STOCK_ALLOW_STALE_TRADES', 'false')),
   /** Trades using a cached price older than this are rejected even when stale trades are allowed. */
   STOCK_STALE_TRADE_MAX_AGE_MS: parsePositiveInt('STOCK_STALE_TRADE_MAX_AGE_MS', optional('STOCK_STALE_TRADE_MAX_AGE_MS', '300000')),
+
+  /**
+   * Controls how the trade endpoint behaves when the market is closed.
+   * - `instant`  — fill immediately at the last known price (legacy behavior, default).
+   * - `disabled` — reject with 409 MARKET_CLOSED.
+   * - `pending`  — accept the order, reserve cash/shares, settle at next market open.
+   */
+  MARKET_HOURS_MODE: validatedMarketHoursMode(),
+  /** When true, PRE and POST sessions count as "open" for trading. */
+  MARKET_HOURS_INCLUDE_EXTENDED: parseBool(optional('MARKET_HOURS_INCLUDE_EXTENDED', 'false')),
+  /** How often the pending-orders worker checks for orders to settle, in ms. */
+  PENDING_ORDERS_TICK_MS: parsePositiveInt(
+    'PENDING_ORDERS_TICK_MS',
+    optional('PENDING_ORDERS_TICK_MS', '30000'),
+  ),
 
   /**
    * Sentry DSN. When set, the server initializes @sentry/node and forwards

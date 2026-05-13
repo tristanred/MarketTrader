@@ -11,6 +11,7 @@ import {
 // PostgreSQL enums for status and direction fields; the SQLite schema uses text enums instead.
 export const gameStatusEnum = pgEnum('game_status', ['pending', 'active', 'ended']);
 export const tradeDirectionEnum = pgEnum('trade_direction', ['buy', 'sell']);
+export const tradeStatusEnum = pgEnum('trade_status', ['pending', 'executed', 'cancelled']);
 
 /** Registered platform accounts. One user can participate in many games. */
 export const users = pgTable('users', {
@@ -88,8 +89,8 @@ export const portfolios = pgTable(
 );
 
 /**
- * Immutable record of every executed trade. Never updated after insert.
- * `price` is the live market price at the moment of execution (4 decimal places).
+ * Trade lifecycle record. See the SQLite schema for the full lifecycle
+ * description (pending → executed | cancelled).
  */
 export const trades = pgTable('trades', {
   id: text('id')
@@ -101,8 +102,13 @@ export const trades = pgTable('trades', {
   symbol: text('symbol').notNull(),
   direction: tradeDirectionEnum('direction').notNull(),
   quantity: integer('quantity').notNull(),
-  price: decimal('price', { precision: 15, scale: 4 }).notNull(),
-  executedAt: timestamp('executed_at', { mode: 'string' }).defaultNow().notNull(),
+  status: tradeStatusEnum('status').notNull().default('executed'),
+  reservedPrice: decimal('reserved_price', { precision: 15, scale: 4 }),
+  reservedCash: decimal('reserved_cash', { precision: 15, scale: 2 }),
+  price: decimal('price', { precision: 15, scale: 4 }),
+  placedAt: timestamp('placed_at', { mode: 'string' }).defaultNow().notNull(),
+  executedAt: timestamp('executed_at', { mode: 'string' }),
+  cancelledAt: timestamp('cancelled_at', { mode: 'string' }),
 });
 
 /**

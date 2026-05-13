@@ -84,8 +84,12 @@ export const portfolios = sqliteTable(
 );
 
 /**
- * Immutable record of every executed trade. Never updated after insert.
- * `price` is the live market price at the moment of execution.
+ * Trade lifecycle record. Most rows are `executed` (filled immediately at
+ * `price` and frozen). When `MARKET_HOURS_MODE=pending` is active, orders
+ * placed outside market hours start as `pending`: `reservedPrice` and
+ * `reservedCash` hold the estimate used to lock funds (buys) or shares
+ * (sells), and `price`/`executedAt` stay null until the worker settles them.
+ * A user-cancelled pending becomes `cancelled` with `cancelledAt` set.
  */
 export const trades = sqliteTable('trades', {
   id: text('id')
@@ -97,10 +101,17 @@ export const trades = sqliteTable('trades', {
   symbol: text('symbol').notNull(),
   direction: text('direction', { enum: ['buy', 'sell'] }).notNull(),
   quantity: integer('quantity').notNull(),
-  price: real('price').notNull(),
-  executedAt: text('executed_at')
+  status: text('status', { enum: ['pending', 'executed', 'cancelled'] })
+    .notNull()
+    .default('executed'),
+  reservedPrice: real('reserved_price'),
+  reservedCash: real('reserved_cash'),
+  price: real('price'),
+  placedAt: text('placed_at')
     .default(sql`(datetime('now'))`)
     .notNull(),
+  executedAt: text('executed_at'),
+  cancelledAt: text('cancelled_at'),
 });
 
 /**

@@ -5,6 +5,7 @@ import { usePortfolio } from '@/api/trades';
 import { useGameSocket } from '@/hooks/useGameSocket';
 import { AppHeader } from '@/components/AppHeader';
 import { TradePanel } from '@/components/TradePanel';
+import { PendingOrdersList } from '@/components/PendingOrdersList';
 import { TradeHistoryTable } from '@/components/TradeHistoryTable';
 import { StockChart } from '@/components/StockChart';
 import { YourProfileCard } from '@/components/game/YourProfileCard';
@@ -125,8 +126,9 @@ export function GameDetailPage() {
                     <TabsTrigger value="history">History</TabsTrigger>
                     <TabsTrigger value="chart">Chart</TabsTrigger>
                   </TabsList>
-                  <TabsContent value="trade" className="pt-3">
+                  <TabsContent value="trade" className="pt-3 space-y-4">
                     <TradePanel gameId={gameId} />
+                    <PendingOrdersList gameId={gameId} />
                   </TabsContent>
                   <TabsContent value="history" className="pt-3">
                     <TradeHistoryTable gameId={gameId} />

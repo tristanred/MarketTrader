@@ -48,18 +48,27 @@ export function TradePanel({ gameId }: { gameId: string }) {
     if (!symbol) return;
     try {
       const result = await place.mutateAsync({ symbol, direction, quantity });
-      const verb = direction === 'buy' ? 'Bought' : 'Sold';
-      let description: string | undefined =
-        total !== null ? `~ ${formatUSD(total)}` : undefined;
-      if (result.priceWasStale === true) {
-        const ageSec = Math.round((result.priceAgeMs ?? 0) / 1000);
-        description = `Filled at last known price (${ageSec}s old) — live data was rate-limited.`;
+      if (result.kind === 'pending') {
+        const verb = direction === 'buy' ? 'Buy' : 'Sell';
+        toast({
+          title: `${verb} ${quantity} ${symbol} queued`,
+          description: `Order will execute at next market open (~ ${formatUSD(result.pending.reservedPrice * quantity)}).`,
+          variant: 'success',
+        });
+      } else {
+        const verb = direction === 'buy' ? 'Bought' : 'Sold';
+        let description: string | undefined =
+          total !== null ? `~ ${formatUSD(total)}` : undefined;
+        if (result.priceWasStale === true) {
+          const ageSec = Math.round((result.priceAgeMs ?? 0) / 1000);
+          description = `Filled at last known price (${ageSec}s old) — live data was rate-limited.`;
+        }
+        toast({
+          title: `${verb} ${quantity} ${symbol}`,
+          ...(description !== undefined ? { description } : {}),
+          variant: 'success',
+        });
       }
-      toast({
-        title: `${verb} ${quantity} ${symbol}`,
-        ...(description !== undefined ? { description } : {}),
-        variant: 'success',
-      });
     } catch (err) {
       toast({ title: 'Trade failed', description: extractApiMessage(err), variant: 'destructive' });
     }

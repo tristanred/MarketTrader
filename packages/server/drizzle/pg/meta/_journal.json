@@ -8,6 +8,13 @@
       "when": 1778638945071,
       "tag": "0000_hesitant_rattler",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1778704721523,
+      "tag": "0001_market_hours_gate",
+      "breakpoints": true
     }
   ]
 }

@@ -105,6 +105,7 @@ export class YahooProvider implements StockProvider {
     }
 
     const marketState = asMarketState((row as { marketState?: unknown }).marketState);
+    const volume = (row as { regularMarketVolume?: unknown }).regularMarketVolume;
     return {
       symbol: typeof row.symbol === 'string' ? row.symbol : symbol,
       price: row.regularMarketPrice as number,
@@ -112,6 +113,7 @@ export class YahooProvider implements StockProvider {
       changePercent: (row.regularMarketChangePercent as number | undefined) ?? 0,
       fetchedAt: new Date().toISOString(),
       ...(marketState && { marketState }),
+      ...(typeof volume === 'number' && { volume }),
     };
   }
 

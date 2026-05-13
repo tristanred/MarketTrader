@@ -26,6 +26,9 @@ function fakeProvider(
     async getHistory() {
       return [];
     },
+    async getDetails(symbol: string) {
+      return { symbol, fetchedAt: new Date().toISOString() };
+    },
   };
 }
 
@@ -63,6 +66,9 @@ describe('YahooMarketStatus', () => {
       getQuote: spy,
       async searchSymbols() { return []; },
       async getHistory() { return []; },
+      async getDetails(symbol: string) {
+        return { symbol, fetchedAt: new Date().toISOString() };
+      },
     } as StockProvider;
     await new YahooMarketStatus(inner).getStatus();
     expect(spy).toHaveBeenCalledWith('SPY');

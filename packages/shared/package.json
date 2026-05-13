@@ -15,7 +15,7 @@
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "dev": "tsc --watch",
-    "lint": "echo 'no lint for shared'"
+    "lint": "eslint src"
   },
   "devDependencies": {
     "typescript": "^5.7.0"

@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
 import type {
+  StockDetails,
   StockHistoryRange,
   StockHistoryResponse,
   StockQuote,
@@ -23,6 +24,15 @@ export function useStockQuote(symbol: string) {
     enabled: !!symbol,
     staleTime: 15_000,
     refetchInterval: 30_000,
+  });
+}
+
+export function useStockDetails(symbol: string) {
+  return useQuery({
+    queryKey: ['stocks', 'details', symbol],
+    queryFn: () => apiFetch<StockDetails>(`/stocks/${encodeURIComponent(symbol)}/details`),
+    enabled: !!symbol,
+    staleTime: 30_000,
   });
 }
 

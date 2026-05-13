@@ -8,7 +8,7 @@ import { useStockHistory } from '@/api/stocks';
 import { useMarketStatus } from '@/api/market-status';
 import type { StockHistoryRange } from '@markettrader/shared';
 
-const RANGES: { key: StockHistoryRange; label: string }[] = [
+export const RANGES: { key: StockHistoryRange; label: string }[] = [
   { key: '1d', label: '1D' },
   { key: '5d', label: '5D' },
   { key: '1mo', label: '1M' },
@@ -85,7 +85,7 @@ export function StockChart({ symbols }: { symbols: string[] }) {
   );
 }
 
-function ChartCanvas({ symbol, range }: { symbol: string; range: StockHistoryRange }) {
+export function ChartCanvas({ symbol, range }: { symbol: string; range: StockHistoryRange }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<'Line'> | null>(null);

@@ -85,6 +85,27 @@ export function stockRoutes(_db: Db, provider: StockProvider) {
       },
     );
 
+    app.get<{ Params: { symbol: string } }>('/stocks/:symbol/details', async (request, reply) => {
+      const parsed = symbolSchema.safeParse(request.params.symbol);
+      if (!parsed.success) {
+        return reply.status(400).send({ error: 'Invalid symbol' });
+      }
+      try {
+        const details = await provider.getDetails(parsed.data);
+        return reply.status(200).send(details);
+      } catch (err) {
+        if (err instanceof StockProviderError) {
+          if (err.code === 'SYMBOL_NOT_FOUND') return reply.status(404).send({ error: err.message });
+          if (err.code === 'RATE_LIMITED') {
+            setRetryAfter(reply);
+            return reply.status(429).send({ code: err.code, message: err.message });
+          }
+          return reply.status(502).send({ error: err.message });
+        }
+        throw err;
+      }
+    });
+
     app.get<{ Params: { symbol: string } }>('/stocks/:symbol', async (request, reply) => {
       const parsed = symbolSchema.safeParse(request.params.symbol);
       if (!parsed.success) {

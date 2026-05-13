@@ -1,6 +1,7 @@
 import YahooFinance from 'yahoo-finance2';
 import type {
   MarketState,
+  StockDetails,
   StockHistoryBar,
   StockHistoryRange,
   StockQuote,
@@ -112,6 +113,49 @@ export class YahooProvider implements StockProvider {
       fetchedAt: new Date().toISOString(),
       ...(marketState && { marketState }),
     };
+  }
+
+  async getDetails(symbol: string): Promise<StockDetails> {
+    this.throwIfRateLimited();
+
+    let result: Awaited<ReturnType<typeof this.client.quote>>;
+    try {
+      result = await this.client.quote(symbol);
+    } catch (err) {
+      if (is429(err)) this.trip429();
+      throw new StockProviderError('PROVIDER_ERROR', `Yahoo Finance error for ${symbol}`);
+    }
+
+    const row = Array.isArray(result) ? result[0] : result;
+    if (!row || typeof row !== 'object' || !('regularMarketPrice' in row) || row.regularMarketPrice == null) {
+      throw new StockProviderError('SYMBOL_NOT_FOUND', `Symbol not found: ${symbol}`);
+    }
+
+    const r = row as Record<string, unknown>;
+    const marketState = asMarketState(r.marketState);
+    const num = (v: unknown): number | undefined => (typeof v === 'number' ? v : undefined);
+    const str = (v: unknown): string | undefined =>
+      typeof v === 'string' && v.length > 0 ? v : undefined;
+
+    const details: StockDetails = {
+      symbol: str(r.symbol) ?? symbol,
+      price: r.regularMarketPrice as number,
+      change: num(r.regularMarketChange) ?? 0,
+      changePercent: num(r.regularMarketChangePercent) ?? 0,
+      fetchedAt: new Date().toISOString(),
+    };
+    const previousClose = num(r.regularMarketPreviousClose);
+    if (previousClose !== undefined) details.previousClose = previousClose;
+    const dayVolume = num(r.regularMarketVolume);
+    if (dayVolume !== undefined) details.dayVolume = dayVolume;
+    const avgVolume = num(r.averageDailyVolume3Month);
+    if (avgVolume !== undefined) details.avgVolume = avgVolume;
+    const exchange = str(r.fullExchangeName);
+    if (exchange !== undefined) details.exchange = exchange;
+    const companyName = str(r.longName) ?? str(r.shortName);
+    if (companyName !== undefined) details.companyName = companyName;
+    if (marketState) details.marketState = marketState;
+    return details;
   }
 
   async getHistory(symbol: string, range: StockHistoryRange): Promise<StockHistoryBar[]> {

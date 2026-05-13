@@ -1,4 +1,5 @@
 import type {
+  StockDetails,
   StockHistoryBar,
   StockHistoryRange,
   StockQuote,
@@ -24,6 +25,12 @@ export interface StockProvider {
    * range — intraday for `1d`/`5d`, daily for longer ranges.
    */
   getHistory(symbol: string, range: StockHistoryRange): Promise<StockHistoryBar[]>;
+  /**
+   * Fetches richer, slower-moving information about a symbol — used by the
+   * Quote Information modal and the standalone `/symbols/:symbol` page.
+   * Implementations should fill what they can and leave the rest undefined.
+   */
+  getDetails(symbol: string): Promise<StockDetails>;
 }
 
 /**

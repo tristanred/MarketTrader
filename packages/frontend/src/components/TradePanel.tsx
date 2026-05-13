@@ -7,9 +7,10 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useStockSearch, useStockQuote } from '@/api/stocks';
 import { usePlaceTrade } from '@/api/trades';
 import { useLiveStore } from '@/stores/liveStore';
+import { useQuoteDialogStore } from '@/stores/quoteDialogStore';
 import { toast } from '@/components/ui/toast';
 import { ApiError } from '@/lib/api';
-import { formatUSD, cn } from '@/lib/utils';
+import { formatUSD, cn, SYMBOL_RE } from '@/lib/utils';
 import type { TradeDirection } from '@markettrader/shared';
 
 function useDebouncedValue<T>(value: T, delayMs: number): T {
@@ -20,8 +21,6 @@ function useDebouncedValue<T>(value: T, delayMs: number): T {
   }, [value, delayMs]);
   return v;
 }
-
-const SYMBOL_RE = /^[A-Z][A-Z0-9.\-]{0,9}$/;
 
 export function TradePanel({ gameId }: { gameId: string }) {
   const [query, setQuery] = useState('');
@@ -34,6 +33,17 @@ export function TradePanel({ gameId }: { gameId: string }) {
     const s = query.trim().toUpperCase();
     return SYMBOL_RE.test(s) ? s : null;
   }, [query]);
+
+  // Pre-fill from the Quote Info modal's "Trade" button.
+  const selectedTradeSymbol = useQuoteDialogStore((s) => s.selectedTradeSymbol);
+  const setSelectedTradeSymbol = useQuoteDialogStore((s) => s.setSelectedTradeSymbol);
+  useEffect(() => {
+    if (selectedTradeSymbol) {
+      setQuery(selectedTradeSymbol);
+      setShowSuggestions(false);
+      setSelectedTradeSymbol(null);
+    }
+  }, [selectedTradeSymbol, setSelectedTradeSymbol]);
 
   const search = useStockSearch(debouncedQuery);
   const quote = useStockQuote(symbol ?? '');

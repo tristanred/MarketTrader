@@ -29,6 +29,8 @@ export interface StockQuote {
    * Undefined or false on fresh quotes.
    */
   stale?: boolean;
+  /** Regular-session trading volume (shares), when reported by the provider. */
+  volume?: number;
 }
 
 /** A single result from the symbol autocomplete endpoint. */

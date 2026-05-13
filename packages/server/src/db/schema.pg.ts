@@ -121,5 +121,45 @@ export const stockPriceCache = pgTable('stock_price_cache', {
   price: decimal('price', { precision: 15, scale: 4 }).notNull(),
   change: decimal('change', { precision: 15, scale: 4 }).notNull(),
   changePercent: decimal('change_percent', { precision: 10, scale: 4 }).notNull(),
+  volume: integer('volume'),
   fetchedAt: timestamp('fetched_at', { mode: 'string' }).defaultNow().notNull(),
 });
+
+/**
+ * User-owned watchlists. Each user can have multiple lists with distinct names.
+ * Watchlists are global to a user (not scoped to a single game).
+ */
+export const watchlists = pgTable(
+  'watchlists',
+  {
+    id: text('id')
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    createdAt: timestamp('created_at', { mode: 'string' }).defaultNow().notNull(),
+  },
+  (t) => [unique().on(t.userId, t.name)],
+);
+
+/**
+ * Symbols on a watchlist. Ordered by `addedAt` for stable display.
+ * Cascades on watchlist delete. `(watchlistId, symbol)` is unique so adding
+ * an already-present symbol is a no-op.
+ */
+export const watchlistItems = pgTable(
+  'watchlist_items',
+  {
+    id: text('id')
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    watchlistId: text('watchlist_id')
+      .notNull()
+      .references(() => watchlists.id, { onDelete: 'cascade' }),
+    symbol: text('symbol').notNull(),
+    addedAt: timestamp('added_at', { mode: 'string' }).defaultNow().notNull(),
+  },
+  (t) => [unique().on(t.watchlistId, t.symbol)],
+);

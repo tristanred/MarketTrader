@@ -13,6 +13,7 @@ import { gameRoutes } from './routes/games.js';
 import { stockRoutes } from './routes/stocks.js';
 import { tradingRoutes } from './routes/trading.js';
 import { marketStatusRoutes } from './routes/market-status.js';
+import { watchlistRoutes } from './routes/watchlists.js';
 import type { StockProvider } from './providers/index.js';
 import { CachedProvider, createProvider } from './providers/index.js';
 import type { MarketStatusProvider } from './providers/market-status/index.js';
@@ -74,6 +75,7 @@ export async function buildApp(
     tradingRoutes(db, provider, marketStatusProvider, registry, leaderboardThrottleMs),
   );
   await app.register(marketStatusRoutes(marketStatusProvider));
+  await app.register(watchlistRoutes(db));
   await app.register(liveRoute(db, registry));
 
   if (!disablePoller) {

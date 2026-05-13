@@ -1,15 +1,29 @@
-DROP INDEX IF EXISTS "game_players_game_id_user_id_unique";--> statement-breakpoint
-DROP INDEX IF EXISTS "portfolios_game_player_id_symbol_unique";--> statement-breakpoint
-DROP INDEX IF EXISTS "users_username_unique";--> statement-breakpoint
-ALTER TABLE `trades` ALTER COLUMN "price" TO "price" real;--> statement-breakpoint
-CREATE UNIQUE INDEX `game_players_game_id_user_id_unique` ON `game_players` (`game_id`,`user_id`);--> statement-breakpoint
-CREATE UNIQUE INDEX `portfolios_game_player_id_symbol_unique` ON `portfolios` (`game_player_id`,`symbol`);--> statement-breakpoint
-CREATE UNIQUE INDEX `users_username_unique` ON `users` (`username`);--> statement-breakpoint
-ALTER TABLE `trades` ALTER COLUMN "executed_at" TO "executed_at" text;--> statement-breakpoint
-ALTER TABLE `trades` ADD `status` text DEFAULT 'executed' NOT NULL;--> statement-breakpoint
-ALTER TABLE `trades` ADD `reserved_price` real;--> statement-breakpoint
-ALTER TABLE `trades` ADD `reserved_cash` real;--> statement-breakpoint
-ALTER TABLE `trades` ADD `placed_at` text DEFAULT (datetime('now')) NOT NULL;--> statement-breakpoint
-ALTER TABLE `trades` ADD `cancelled_at` text;--> statement-breakpoint
--- Backfill: legacy trades were all executed; align placed_at with executed_at.
-UPDATE `trades` SET `placed_at` = `executed_at` WHERE `executed_at` IS NOT NULL;
+PRAGMA foreign_keys=OFF;--> statement-breakpoint
+CREATE TABLE `__new_trades` (
+	`id` text PRIMARY KEY NOT NULL,
+	`game_player_id` text NOT NULL,
+	`symbol` text NOT NULL,
+	`direction` text NOT NULL,
+	`quantity` integer NOT NULL,
+	`status` text DEFAULT 'executed' NOT NULL,
+	`reserved_price` real,
+	`reserved_cash` real,
+	`price` real,
+	`placed_at` text DEFAULT (datetime('now')) NOT NULL,
+	`executed_at` text,
+	`cancelled_at` text,
+	FOREIGN KEY (`game_player_id`) REFERENCES `game_players`(`id`) ON UPDATE no action ON DELETE restrict
+);--> statement-breakpoint
+INSERT INTO `__new_trades` (
+	`id`, `game_player_id`, `symbol`, `direction`, `quantity`,
+	`status`, `reserved_price`, `reserved_cash`, `price`,
+	`placed_at`, `executed_at`, `cancelled_at`
+)
+SELECT
+	`id`, `game_player_id`, `symbol`, `direction`, `quantity`,
+	'executed', NULL, NULL, `price`,
+	`executed_at`, `executed_at`, NULL
+FROM `trades`;--> statement-breakpoint
+DROP TABLE `trades`;--> statement-breakpoint
+ALTER TABLE `__new_trades` RENAME TO `trades`;--> statement-breakpoint
+PRAGMA foreign_keys=ON;

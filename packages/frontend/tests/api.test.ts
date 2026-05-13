@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ApiError, apiFetch } from '../src/lib/api';
+import { ApiError, apiFetch, tryRefresh } from '../src/lib/api';
 import { useAuthStore } from '../src/stores/authStore';
 
 describe('apiFetch', () => {
@@ -64,5 +64,51 @@ describe('apiFetch', () => {
 
     await expect(apiFetch('/games')).rejects.toBeInstanceOf(ApiError);
     expect(useAuthStore.getState().token).toBeNull();
+  });
+});
+
+describe('tryRefresh identity check', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    useAuthStore.getState().clear();
+  });
+
+  function stubRefresh(user: { id: string; username: string }) {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(JSON.stringify({ token: 'fresh-token', user }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+      ),
+    );
+  }
+
+  it('succeeds when no previous user is loaded (initial page load)', async () => {
+    useAuthStore.getState().clear();
+    stubRefresh({ id: 'u-new', username: 'newcomer' });
+    const ok = await tryRefresh();
+    expect(ok).toBe(true);
+    expect(useAuthStore.getState().user?.id).toBe('u-new');
+  });
+
+  it('succeeds when the refreshed user matches the previous user', async () => {
+    useAuthStore.setState({ token: 'old', user: { id: 'u1', username: 'alice' }, ready: true });
+    stubRefresh({ id: 'u1', username: 'alice' });
+    const ok = await tryRefresh();
+    expect(ok).toBe(true);
+    expect(useAuthStore.getState().token).toBe('fresh-token');
+  });
+
+  it('rejects and clears the store when the refreshed user differs from the previous one', async () => {
+    // The bleed-through scenario: someone is signed in as alice but the
+    // refresh cookie maps to bob. Refusing the refresh forces re-auth.
+    useAuthStore.setState({ token: 'old', user: { id: 'u1', username: 'alice' }, ready: true });
+    stubRefresh({ id: 'u2', username: 'bob' });
+    const ok = await tryRefresh();
+    expect(ok).toBe(false);
+    expect(useAuthStore.getState().token).toBeNull();
+    expect(useAuthStore.getState().user).toBeNull();
   });
 });

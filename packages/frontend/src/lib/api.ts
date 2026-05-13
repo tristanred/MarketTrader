@@ -71,6 +71,13 @@ export async function apiFetch<T = unknown>(path: string, options: ApiOptions = 
 /**
  * Attempt to refresh the access token using the HttpOnly refresh cookie.
  * On success, writes the new token into the auth store and returns true.
+ *
+ * Defends against cross-session identity bleed: if a session was already
+ * established and the refresh returns a *different* user (e.g. a previous
+ * user's refresh cookie survived a sign-out), treats it as a failed refresh
+ * and clears the store. Force re-auth is safer than silently impersonating
+ * someone else.
+ *
  * On failure, clears the auth store and returns false.
  */
 export async function tryRefresh(): Promise<boolean> {
@@ -84,6 +91,11 @@ export async function tryRefresh(): Promise<boolean> {
       return false;
     }
     const data = (await res.json()) as AuthResponse;
+    const previousUser = useAuthStore.getState().user;
+    if (previousUser && previousUser.id !== data.user.id) {
+      useAuthStore.getState().clear();
+      return false;
+    }
     useAuthStore.getState().setSession(data.token, data.user);
     return true;
   } catch {

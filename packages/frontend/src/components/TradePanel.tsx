@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { SymbolButton } from '@/components/SymbolButton';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -141,12 +141,7 @@ export function TradePanel({ gameId }: { gameId: string }) {
           {symbol && (
             <div className="rounded-md border p-3 text-sm">
               <div className="flex items-center justify-between">
-                <Link
-                  to={`/symbols/${symbol}`}
-                  className="font-medium hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                >
-                  {symbol}
-                </Link>
+                <SymbolButton symbol={symbol} />
                 <span className={cn(isStale && 'text-muted-foreground')}>
                   {quote.isLoading
                     ? '…'

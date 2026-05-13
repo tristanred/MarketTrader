@@ -6,6 +6,7 @@ import { usePortfolio } from '@/api/trades';
 import { useLiveStore } from '@/stores/liveStore';
 import { formatPct, formatUSD, cn } from '@/lib/utils';
 import { SymbolButton } from '@/components/SymbolButton';
+import { WatchlistTab } from '@/components/game/watchlist/WatchlistTab';
 
 type SortKey = 'ticker-asc' | 'value-desc' | 'gain-desc';
 
@@ -42,9 +43,7 @@ export function HoldingsSidebar({ gameId }: { gameId: string }) {
         <Tabs defaultValue="holdings">
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="holdings">Holdings</TabsTrigger>
-            <TabsTrigger value="watchlist" disabled>
-              Watchlist
-            </TabsTrigger>
+            <TabsTrigger value="watchlist">Watchlist</TabsTrigger>
           </TabsList>
           <TabsContent value="holdings" className="space-y-3 pt-3">
             <div className="flex items-center justify-between gap-2">
@@ -124,8 +123,8 @@ export function HoldingsSidebar({ gameId }: { gameId: string }) {
               </table>
             )}
           </TabsContent>
-          <TabsContent value="watchlist" className="py-6 text-center text-xs text-muted-foreground">
-            Watchlist coming soon.
+          <TabsContent value="watchlist">
+            <WatchlistTab />
           </TabsContent>
         </Tabs>
       </CardContent>

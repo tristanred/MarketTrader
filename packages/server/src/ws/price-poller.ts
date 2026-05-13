@@ -8,7 +8,9 @@ const POLL_INTERVAL_MS = 5_000;
 
 /**
  * Fetches current prices for all symbols held by players in active games that
- * have at least one connected client, then broadcasts filtered price_update events.
+ * have at least one connected client, plus any symbols on the watchlists of
+ * users currently connected to those games. Then broadcasts filtered
+ * price_update events (per-client subscription filtering happens in registry).
  * Exported for unit-testing in isolation.
  */
 export async function pollPrices(
@@ -16,7 +18,7 @@ export async function pollPrices(
   provider: StockProvider,
   registry: GameClientRegistry,
 ): Promise<void> {
-  const { games, gamePlayers, portfolios } = schema;
+  const { games, gamePlayers, portfolios, watchlists, watchlistItems } = schema;
 
   const activeGameIds = registry.getActiveGameIds();
   if (activeGameIds.length === 0) return;
@@ -36,7 +38,27 @@ export async function pollPrices(
     .innerJoin(gamePlayers, eq(portfolios.gamePlayerId, gamePlayers.id))
     .where(inArray(gamePlayers.gameId, liveGameIds));
 
-  const allSymbols = [...new Set(holdings.map((h) => h.symbol))];
+  // Collect userIds for all clients currently connected to a live game.
+  // ClientEntry.playerId is the JWT user id (see live-route.ts).
+  const connectedUserIds = new Set<string>();
+  for (const gameId of liveGameIds) {
+    for (const [, entry] of registry.getClients(gameId)) {
+      connectedUserIds.add(entry.playerId);
+    }
+  }
+
+  const watchSymbols =
+    connectedUserIds.size > 0
+      ? await db
+          .select({ symbol: watchlistItems.symbol })
+          .from(watchlistItems)
+          .innerJoin(watchlists, eq(watchlistItems.watchlistId, watchlists.id))
+          .where(inArray(watchlists.userId, [...connectedUserIds]))
+      : [];
+
+  const allSymbols = [
+    ...new Set([...holdings.map((h) => h.symbol), ...watchSymbols.map((w) => w.symbol)]),
+  ];
   if (allSymbols.length === 0) return;
 
   const quotes = await Promise.all(

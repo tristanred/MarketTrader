@@ -15,6 +15,13 @@
       "when": 1778704721523,
       "tag": "0001_market_hours_gate",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1778709735470,
+      "tag": "0002_careless_maelstrom",
+      "breakpoints": true
     }
   ]
 }

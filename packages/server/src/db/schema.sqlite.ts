@@ -124,7 +124,51 @@ export const stockPriceCache = sqliteTable('stock_price_cache', {
   price: real('price').notNull(),
   change: real('change').notNull(),
   changePercent: real('change_percent').notNull(),
+  volume: integer('volume'),
   fetchedAt: text('fetched_at')
     .default(sql`(datetime('now'))`)
     .notNull(),
 });
+
+/**
+ * User-owned watchlists. Each user can have multiple lists with distinct
+ * names. Watchlists are global to a user (not scoped to a single game).
+ */
+export const watchlists = sqliteTable(
+  'watchlists',
+  {
+    id: text('id')
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    createdAt: text('created_at')
+      .default(sql`(datetime('now'))`)
+      .notNull(),
+  },
+  (t) => [unique().on(t.userId, t.name)],
+);
+
+/**
+ * Symbols on a watchlist. Ordered by `addedAt` for stable display.
+ * Cascades on watchlist delete. `(watchlistId, symbol)` is unique so adding
+ * an already-present symbol is a no-op.
+ */
+export const watchlistItems = sqliteTable(
+  'watchlist_items',
+  {
+    id: text('id')
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    watchlistId: text('watchlist_id')
+      .notNull()
+      .references(() => watchlists.id, { onDelete: 'cascade' }),
+    symbol: text('symbol').notNull(),
+    addedAt: text('added_at')
+      .default(sql`(datetime('now'))`)
+      .notNull(),
+  },
+  (t) => [unique().on(t.watchlistId, t.symbol)],
+);

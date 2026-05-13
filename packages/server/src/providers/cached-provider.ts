@@ -1,5 +1,10 @@
 import { eq } from 'drizzle-orm';
-import type { StockQuote, StockSearchResult } from '@markettrader/shared';
+import type {
+  StockHistoryBar,
+  StockHistoryRange,
+  StockQuote,
+  StockSearchResult,
+} from '@markettrader/shared';
 import type { Db } from '../db/index.js';
 import { schema } from '../db/index.js';
 import type { StockProvider } from './interface.js';
@@ -25,6 +30,10 @@ import { env } from '../env.js';
  */
 export class CachedProvider implements StockProvider {
   private readonly searchCache = new Map<string, { results: StockSearchResult[]; fetchedAt: number }>();
+  private readonly historyCache = new Map<
+    string,
+    { bars: StockHistoryBar[]; fetchedAt: number }
+  >();
 
   constructor(
     private readonly db: Db,
@@ -96,6 +105,17 @@ export class CachedProvider implements StockProvider {
       });
 
     return quote;
+  }
+
+  async getHistory(symbol: string, range: StockHistoryRange): Promise<StockHistoryBar[]> {
+    const key = `${symbol}|${range}`;
+    const hit = this.historyCache.get(key);
+    if (hit && Date.now() - hit.fetchedAt < env.STOCK_HISTORY_CACHE_TTL_MS) {
+      return hit.bars;
+    }
+    const bars = await this.inner.getHistory(symbol, range);
+    this.historyCache.set(key, { bars, fetchedAt: Date.now() });
+    return bars;
   }
 
   async searchSymbols(query: string): Promise<StockSearchResult[]> {

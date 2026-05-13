@@ -23,3 +23,23 @@ export interface StockSearchResult {
   /** Human-readable company or fund name. */
   name: string;
 }
+
+/** Time ranges supported by the history endpoint. */
+export type StockHistoryRange = '1d' | '5d' | '1mo' | '3mo' | '6mo' | '1y';
+
+/** A single historical bar — close-only is enough for a line chart. */
+export interface StockHistoryBar {
+  /** Unix epoch seconds — what lightweight-charts expects as its `time` key. */
+  time: number;
+  /** Close price for the bar. */
+  close: number;
+}
+
+/** Response body for GET /stocks/:symbol/history. */
+export interface StockHistoryResponse {
+  symbol: string;
+  range: StockHistoryRange;
+  bars: StockHistoryBar[];
+  /** ISO 8601 timestamp of when the upstream returned this series. */
+  fetchedAt: string;
+}

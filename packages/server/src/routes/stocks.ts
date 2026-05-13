@@ -7,6 +7,10 @@ import { env } from '../env.js';
 
 const symbolSchema = z.string().min(1).max(10).transform((s) => s.toUpperCase());
 const searchSchema = z.object({ q: z.string().min(1).max(50) });
+const HISTORY_RANGES = ['1d', '5d', '1mo', '3mo', '6mo', '1y'] as const;
+const historyQuerySchema = z.object({
+  range: z.enum(HISTORY_RANGES).default('1d'),
+});
 
 /** Sets a Retry-After header (seconds) based on the configured 429 backoff. */
 function setRetryAfter(reply: FastifyReply): void {
@@ -47,6 +51,39 @@ export function stockRoutes(_db: Db, provider: StockProvider) {
         throw err;
       }
     });
+
+    app.get<{ Params: { symbol: string }; Querystring: { range?: string } }>(
+      '/stocks/:symbol/history',
+      async (request, reply) => {
+        const parsedSymbol = symbolSchema.safeParse(request.params.symbol);
+        if (!parsedSymbol.success) {
+          return reply.status(400).send({ error: 'Invalid symbol' });
+        }
+        const parsedQuery = historyQuerySchema.safeParse(request.query);
+        if (!parsedQuery.success) {
+          return reply.status(400).send({ error: parsedQuery.error.issues });
+        }
+        try {
+          const bars = await provider.getHistory(parsedSymbol.data, parsedQuery.data.range);
+          return reply.status(200).send({
+            symbol: parsedSymbol.data,
+            range: parsedQuery.data.range,
+            bars,
+            fetchedAt: new Date().toISOString(),
+          });
+        } catch (err) {
+          if (err instanceof StockProviderError) {
+            if (err.code === 'SYMBOL_NOT_FOUND') return reply.status(404).send({ error: err.message });
+            if (err.code === 'RATE_LIMITED') {
+              setRetryAfter(reply);
+              return reply.status(429).send({ code: err.code, message: err.message });
+            }
+            return reply.status(502).send({ code: err.code, message: err.message });
+          }
+          throw err;
+        }
+      },
+    );
 
     app.get<{ Params: { symbol: string } }>('/stocks/:symbol', async (request, reply) => {
       const parsed = symbolSchema.safeParse(request.params.symbol);

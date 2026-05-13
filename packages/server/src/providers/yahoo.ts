@@ -1,8 +1,29 @@
 import YahooFinance from 'yahoo-finance2';
-import type { StockQuote, StockSearchResult } from '@markettrader/shared';
+import type {
+  StockHistoryBar,
+  StockHistoryRange,
+  StockQuote,
+  StockSearchResult,
+} from '@markettrader/shared';
 import type { StockProvider } from './interface.js';
 import { StockProviderError } from './interface.js';
 import { env } from '../env.js';
+
+/**
+ * Maps the public range key to a (lookback, interval) pair for the Yahoo chart
+ * API. Shorter ranges use intraday bars; longer ranges use daily bars.
+ */
+const RANGE_PARAMS: Record<
+  StockHistoryRange,
+  { lookbackDays: number; interval: '5m' | '15m' | '1h' | '1d' }
+> = {
+  '1d': { lookbackDays: 1, interval: '5m' },
+  '5d': { lookbackDays: 5, interval: '15m' },
+  '1mo': { lookbackDays: 31, interval: '1h' },
+  '3mo': { lookbackDays: 93, interval: '1d' },
+  '6mo': { lookbackDays: 186, interval: '1d' },
+  '1y': { lookbackDays: 366, interval: '1d' },
+};
 
 function is429(err: unknown): boolean {
   if (!(err instanceof Error)) return false;
@@ -74,6 +95,46 @@ export class YahooProvider implements StockProvider {
       changePercent: (row.regularMarketChangePercent as number | undefined) ?? 0,
       fetchedAt: new Date().toISOString(),
     };
+  }
+
+  async getHistory(symbol: string, range: StockHistoryRange): Promise<StockHistoryBar[]> {
+    this.throwIfRateLimited();
+
+    const { lookbackDays, interval } = RANGE_PARAMS[range];
+    const period1 = new Date(Date.now() - lookbackDays * 86_400_000);
+
+    interface ChartBar {
+      date?: Date | string | number;
+      close?: number | null;
+    }
+    interface ChartResult {
+      quotes?: ChartBar[];
+    }
+    let result: ChartResult;
+    try {
+      result = (await this.client.chart(symbol, {
+        period1,
+        interval,
+        return: 'array',
+      })) as ChartResult;
+    } catch (err) {
+      if (is429(err)) this.trip429();
+      throw new StockProviderError(
+        'PROVIDER_ERROR',
+        `Yahoo Finance history failed for ${symbol}`,
+      );
+    }
+
+    const quotes: ChartBar[] = Array.isArray(result.quotes) ? result.quotes : [];
+    const bars: StockHistoryBar[] = [];
+    for (const q of quotes) {
+      if (!q || q.close == null || !q.date) continue;
+      bars.push({
+        time: Math.floor(new Date(q.date).getTime() / 1000),
+        close: q.close,
+      });
+    }
+    return bars;
   }
 
   async searchSymbols(query: string): Promise<StockSearchResult[]> {

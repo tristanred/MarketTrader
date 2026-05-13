@@ -4,7 +4,12 @@ import { StockProviderError } from '../../src/providers/index.js';
 import { createTestDb } from '../helpers/app.js';
 import type { Db } from '../../src/db/index.js';
 import type { StockProvider } from '../../src/providers/index.js';
-import type { StockQuote, StockSearchResult } from '@markettrader/shared';
+import type {
+  StockHistoryBar,
+  StockHistoryRange,
+  StockQuote,
+  StockSearchResult,
+} from '@markettrader/shared';
 
 /**
  * Inner-provider double that lets a test set the next response or error and
@@ -33,6 +38,11 @@ class FakeInner implements StockProvider {
     this.searchCalls += 1;
     if (this.nextError) throw this.nextError;
     return this.nextSearch;
+  }
+
+  async getHistory(_s: string, _r: StockHistoryRange): Promise<StockHistoryBar[]> {
+    if (this.nextError) throw this.nextError;
+    return [];
   }
 }
 

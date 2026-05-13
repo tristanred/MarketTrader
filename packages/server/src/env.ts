@@ -56,6 +56,8 @@ export const env = {
   STOCK_CACHE_TTL_MS: parsePositiveInt('STOCK_CACHE_TTL_MS', optional('STOCK_CACHE_TTL_MS', '60000')),
   /** In-memory cache TTL for `searchSymbols` results, keyed by lowercased query. */
   STOCK_SEARCH_CACHE_TTL_MS: parsePositiveInt('STOCK_SEARCH_CACHE_TTL_MS', optional('STOCK_SEARCH_CACHE_TTL_MS', '300000')),
+  /** In-memory cache TTL for `getHistory` results, keyed by (symbol, range). */
+  STOCK_HISTORY_CACHE_TTL_MS: parsePositiveInt('STOCK_HISTORY_CACHE_TTL_MS', optional('STOCK_HISTORY_CACHE_TTL_MS', '60000')),
   /**
    * When the upstream is rate-limited, fall back to a cached quote if the row
    * is no older than this. Older rows propagate the RATE_LIMITED error.

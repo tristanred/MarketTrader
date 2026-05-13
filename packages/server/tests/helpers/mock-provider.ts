@@ -1,4 +1,9 @@
-import type { StockQuote, StockSearchResult } from '@markettrader/shared';
+import type {
+  StockHistoryBar,
+  StockHistoryRange,
+  StockQuote,
+  StockSearchResult,
+} from '@markettrader/shared';
 import type { StockProvider } from '../../src/providers/index.js';
 import { StockProviderError } from '../../src/providers/index.js';
 
@@ -64,5 +69,15 @@ export class MockStockProvider implements StockProvider {
 
   async searchSymbols(query: string): Promise<StockSearchResult[]> {
     return [{ symbol: query.toUpperCase(), name: `Mock ${query}` }];
+  }
+
+  async getHistory(symbol: string, _range: StockHistoryRange): Promise<StockHistoryBar[]> {
+    // Deterministic flat-ish series so chart-route tests can assert shape.
+    const now = Math.floor(Date.now() / 1000);
+    const base = this.quotes.get(symbol)?.price ?? 100;
+    return Array.from({ length: 10 }, (_, i) => ({
+      time: now - (9 - i) * 300,
+      close: base + Math.sin(i) * 0.5,
+    }));
   }
 }

@@ -1,4 +1,9 @@
-import type { StockQuote, StockSearchResult } from '@markettrader/shared';
+import type {
+  StockHistoryBar,
+  StockHistoryRange,
+  StockQuote,
+  StockSearchResult,
+} from '@markettrader/shared';
 import type { StockProvider } from './interface.js';
 import { StockProviderError } from './interface.js';
 
@@ -56,5 +61,10 @@ export class AlpacaProvider implements StockProvider {
   // TODO(alpaca-search): Alpaca Assets API (GET /v2/assets?status=active) can implement symbol search
   async searchSymbols(_query: string): Promise<StockSearchResult[]> {
     return [];
+  }
+
+  // TODO(alpaca-history): wire to /v2/stocks/{symbol}/bars with timeframe + start derived from range.
+  async getHistory(_symbol: string, _range: StockHistoryRange): Promise<StockHistoryBar[]> {
+    throw new StockProviderError('PROVIDER_ERROR', 'Alpaca history is not implemented yet');
   }
 }

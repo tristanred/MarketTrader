@@ -4,14 +4,26 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useLiveStore, type PriceTick } from '@/stores/liveStore';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { useStockHistory } from '@/api/stocks';
+import type { StockHistoryRange } from '@markettrader/shared';
+
+const RANGES: { key: StockHistoryRange; label: string }[] = [
+  { key: '1d', label: '1D' },
+  { key: '5d', label: '5D' },
+  { key: '1mo', label: '1M' },
+  { key: '3mo', label: '3M' },
+  { key: '6mo', label: '6M' },
+  { key: '1y', label: '1Y' },
+];
 
 /**
- * Renders a live line chart for one held symbol, fed by ticks accumulated in
- * the live store from WebSocket `price_update` events. Historical data is not
- * currently exposed by the backend; this chart populates as new ticks arrive.
+ * Renders a price line chart for one held symbol. Historical bars are fetched
+ * from `/stocks/:symbol/history`; live WebSocket ticks accumulated in the
+ * live store are then appended on top so the right edge stays current.
  */
 export function StockChart({ symbols }: { symbols: string[] }) {
   const [selected, setSelected] = useState<string | null>(symbols[0] ?? null);
+  const [range, setRange] = useState<StockHistoryRange>('1d');
 
   useEffect(() => {
     if (selected && !symbols.includes(selected)) setSelected(symbols[0] ?? null);
@@ -37,31 +49,47 @@ export function StockChart({ symbols }: { symbols: string[] }) {
     <Card>
       <CardHeader className="space-y-2">
         <CardTitle>Price chart</CardTitle>
-        <div className="flex flex-wrap gap-2">
-          {symbols.map((s) => (
-            <Button
-              key={s}
-              size="sm"
-              variant={s === selected ? 'default' : 'outline'}
-              onClick={() => setSelected(s)}
-              className={cn('h-7 px-2 text-xs')}
-            >
-              {s}
-            </Button>
-          ))}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap gap-2">
+            {symbols.map((s) => (
+              <Button
+                key={s}
+                size="sm"
+                variant={s === selected ? 'default' : 'outline'}
+                onClick={() => setSelected(s)}
+                className={cn('h-7 px-2 text-xs')}
+              >
+                {s}
+              </Button>
+            ))}
+          </div>
+          <div className="ml-auto flex flex-wrap gap-1">
+            {RANGES.map((r) => (
+              <Button
+                key={r.key}
+                size="sm"
+                variant={r.key === range ? 'default' : 'ghost'}
+                onClick={() => setRange(r.key)}
+                className="h-7 px-2 text-xs"
+              >
+                {r.label}
+              </Button>
+            ))}
+          </div>
         </div>
       </CardHeader>
-      <CardContent>{selected && <ChartCanvas symbol={selected} />}</CardContent>
+      <CardContent>{selected && <ChartCanvas symbol={selected} range={range} />}</CardContent>
     </Card>
   );
 }
 
-function ChartCanvas({ symbol }: { symbol: string }) {
+function ChartCanvas({ symbol, range }: { symbol: string; range: StockHistoryRange }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<'Line'> | null>(null);
-  const history = useLiveStore((s) => s.historyBySymbol[symbol]);
-  const ticks: PriceTick[] = useMemo(() => history ?? [], [history]);
+  const history = useStockHistory(symbol, range);
+  const liveHistory = useLiveStore((s) => s.historyBySymbol[symbol]);
+  const ticks: PriceTick[] = useMemo(() => liveHistory ?? [], [liveHistory]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -94,28 +122,48 @@ function ChartCanvas({ symbol }: { symbol: string }) {
   useEffect(() => {
     const series = seriesRef.current;
     if (!series) return;
-    if (ticks.length === 0) {
-      series.setData([]);
-      return;
-    }
-    // dedupe by time (lightweight-charts requires strictly ascending time)
+    const historicalBars = history.data?.bars ?? [];
+
+    // Merge history with live ticks. History first, then any live ticks newer
+    // than the last history bar. Deduplicate by `time` and re-sort just in case.
+    const lastBar = historicalBars[historicalBars.length - 1];
+    const lastHistTime = lastBar ? lastBar.time : 0;
+    const merged = [
+      ...historicalBars.map((b) => ({ time: b.time, value: b.close })),
+      ...ticks
+        .filter((t) => t.time > lastHistTime)
+        .map((t) => ({ time: t.time, value: t.price })),
+    ];
+
     const seen = new Set<number>();
-    const data = ticks
-      .filter((t) => {
-        if (seen.has(t.time)) return false;
-        seen.add(t.time);
+    const deduped = merged
+      .filter((p) => {
+        if (seen.has(p.time)) return false;
+        seen.add(p.time);
         return true;
       })
-      .map((t) => ({ time: t.time as never, value: t.price }));
-    series.setData(data);
-  }, [ticks]);
+      .sort((a, b) => a.time - b.time)
+      .map((p) => ({ time: p.time as never, value: p.value }));
 
+    series.setData(deduped);
+    if (deduped.length > 0) chartRef.current?.timeScale().fitContent();
+  }, [history.data, ticks]);
+
+  const empty = (history.data?.bars.length ?? 0) === 0 && ticks.length === 0;
   return (
     <div className="space-y-2">
       <div ref={containerRef} className="w-full" />
-      {ticks.length === 0 && (
+      {history.isLoading && (
+        <p className="text-xs text-muted-foreground">Loading {symbol} history…</p>
+      )}
+      {history.isError && (
+        <p className="text-xs text-destructive">
+          Could not load {symbol} history. Live ticks will still appear.
+        </p>
+      )}
+      {empty && !history.isLoading && !history.isError && (
         <p className="text-xs text-muted-foreground">
-          Waiting for live ticks… {symbol} updates arrive every 5 seconds via WebSocket.
+          No data for {symbol}. Live ticks arrive every 5 seconds via WebSocket.
         </p>
       )}
     </div>

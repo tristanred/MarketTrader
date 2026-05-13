@@ -55,17 +55,20 @@ export function YourProfileCard({ gameId }: { gameId: string }) {
   const livePrices = useLiveStore((s) => s.pricesBySymbol);
   const liveBoard = useLiveStore((s) => s.leaderboard);
 
-  // Recompute holdings + total with live prices when available.
+  // Recompute holdings + total with live prices when available. The server
+  // already includes pending-order reservations in `reservedValue`; pass that
+  // through so a queued buy doesn't masquerade as a loss.
   const computed = useMemo(() => {
     if (!portfolio.data) return null;
-    const { cashBalance, holdings } = portfolio.data;
+    const { cashBalance, holdings, reservedValue } = portfolio.data;
     const enriched = holdings.map((h) => {
       const live = livePrices[h.symbol]?.price;
       const price = live ?? h.currentPrice;
       return { ...h, currentPrice: price, marketValue: price * h.quantity };
     });
-    const totalValue = cashBalance + enriched.reduce((s, h) => s + h.marketValue, 0);
-    return { cashBalance, enriched, totalValue };
+    const totalValue =
+      cashBalance + enriched.reduce((s, h) => s + h.marketValue, 0) + reservedValue;
+    return { cashBalance, enriched, totalValue, reservedValue };
   }, [portfolio.data, livePrices]);
 
   const myRank = useMemo(() => {
@@ -89,7 +92,7 @@ export function YourProfileCard({ gameId }: { gameId: string }) {
     );
   }
 
-  const { cashBalance, enriched, totalValue } = computed;
+  const { cashBalance, enriched, totalValue, reservedValue } = computed;
   const startingBalance = game.data.startingBalance;
   const overallGains = totalValue - startingBalance;
   const overallReturnsPct = startingBalance !== 0 ? (overallGains / startingBalance) * 100 : 0;
@@ -140,7 +143,11 @@ export function YourProfileCard({ gameId }: { gameId: string }) {
             help="Cash available to deploy (no margin in this app)"
             value={formatUSD(cashBalance)}
           />
-          <Metric label="Short Reserve" help="Not used — shorting is disabled" value={formatUSD(0)} />
+          <Metric
+            label="Reserved"
+            help="Cash or shares tied up in pending orders awaiting market open"
+            value={formatUSD(reservedValue)}
+          />
           <Metric label="Cash Borrowed" help="Not used — no margin in this app" value={formatUSD(0)} />
         </div>
 
@@ -148,6 +155,7 @@ export function YourProfileCard({ gameId }: { gameId: string }) {
           <div className="text-xs text-muted-foreground mb-2">Portfolio Allocation</div>
           <AllocationBar
             cash={cashBalance}
+            reserved={reservedValue}
             total={totalValue}
             holdings={enriched.map((h) => ({ symbol: h.symbol, marketValue: h.marketValue }))}
           />
@@ -159,10 +167,12 @@ export function YourProfileCard({ gameId }: { gameId: string }) {
 
 function AllocationBar({
   cash,
+  reserved,
   total,
   holdings,
 }: {
   cash: number;
+  reserved: number;
   total: number;
   holdings: { symbol: string; marketValue: number }[];
 }) {
@@ -171,6 +181,9 @@ function AllocationBar({
   }
   const segments = [
     { key: 'cash', label: 'Cash', value: cash, color: 'hsl(142 70% 42%)' },
+    ...(reserved > 0
+      ? [{ key: 'reserved', label: 'Reserved', value: reserved, color: 'hsl(42 90% 55%)' }]
+      : []),
     ...holdings.map((h) => ({
       key: h.symbol,
       label: h.symbol,

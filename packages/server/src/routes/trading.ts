@@ -382,10 +382,37 @@ export function tradingRoutes(
           }),
         );
 
-        const totalValue =
-          cashBalance + enrichedHoldings.reduce((sum, h) => sum + h.marketValue, 0);
+        // Pending buys: cash already deducted, no shares yet → add reservedCash back.
+        // Pending sells: shares already removed → add quantity × currentPrice back.
+        const pendings = await db
+          .select()
+          .from(trades)
+          .where(and(eq(trades.gamePlayerId, gamePlayer.id), eq(trades.status, 'pending')));
 
-        return reply.status(200).send({ cashBalance, holdings: enrichedHoldings, totalValue });
+        let reservedValue = 0;
+        for (const p of pendings) {
+          if (p.direction === 'buy') {
+            reservedValue += Number(p.reservedCash ?? 0);
+          } else {
+            let price = Number(p.reservedPrice ?? 0);
+            try {
+              const q = await provider.getQuote(p.symbol);
+              price = q.price;
+            } catch {
+              // Fall back to reservedPrice if quote fetch fails
+            }
+            reservedValue += p.quantity * price;
+          }
+        }
+
+        const totalValue =
+          cashBalance +
+          enrichedHoldings.reduce((sum, h) => sum + h.marketValue, 0) +
+          reservedValue;
+
+        return reply
+          .status(200)
+          .send({ cashBalance, holdings: enrichedHoldings, totalValue, reservedValue });
       },
     );
   };

@@ -18,7 +18,13 @@ export interface EnrichedHolding {
 export interface PortfolioResponse {
   cashBalance: number;
   holdings: EnrichedHolding[];
+  /** Cash + held positions + value of any pending-trade reservations. */
   totalValue: number;
+  /**
+   * Value tied up in pending orders: reservedCash for pending buys, plus
+   * (quantity × current price) for pending sells. Already included in `totalValue`.
+   */
+  reservedValue: number;
 }
 
 export const tradeKeys = {

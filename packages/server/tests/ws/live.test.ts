@@ -86,7 +86,7 @@ describe('GET /games/:id/live (WebSocket)', () => {
   beforeAll(async () => {
     const provider = new MockStockProvider();
     provider.setQuote('AAPL', { price: 150 });
-    const db = createTestDb();
+    const db = await createTestDb();
     app = await buildApp({ db, provider, logger: false, disablePoller: true, leaderboardThrottleMs: 0 });
     await app.listen({ port: 0, host: '127.0.0.1' });
     port = (app.server.address() as AddressInfo).port;

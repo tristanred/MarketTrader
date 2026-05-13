@@ -1,5 +1,5 @@
 import { env } from '../env.js';
-import { drizzle as drizzleSqlite, type BetterSQLite3Database } from 'drizzle-orm/better-sqlite3';
+import { drizzle as drizzleLibsql, type LibSQLDatabase } from 'drizzle-orm/libsql';
 import * as sqliteSchema from './schema.sqlite.js';
 
 // PG note: drizzle-orm/postgres-js maps decimal/numeric columns to string at runtime.
@@ -7,10 +7,18 @@ import * as sqliteSchema from './schema.sqlite.js';
 // must parse them: Number(row.cashBalance) or parseFloat(row.price).
 // SQLite real columns return number directly — types align at the application layer.
 //
-// Typing note: db is typed as BetterSQLite3Database (SQLite) throughout.
+// Typing note: db is typed as LibSQLDatabase (SQLite via libsql) throughout.
 // In production (PG), an `as unknown as` cast is used — column names are identical
 // so the generated SQL is the same; only the decimal/string runtime difference applies.
-type AppDb = BetterSQLite3Database<typeof sqliteSchema>;
+type AppDb = LibSQLDatabase<typeof sqliteSchema>;
+
+function normalizeLibsqlUrl(url: string): string {
+  if (url === ':memory:') return url;
+  if (url.startsWith('file:') || url.startsWith('libsql:') || url.startsWith('http:') || url.startsWith('https:') || url.startsWith('ws:') || url.startsWith('wss:')) {
+    return url;
+  }
+  return `file:${url}`;
+}
 
 async function createDatabase(): Promise<AppDb> {
   if (env.DATABASE_URL.startsWith('postgres')) {
@@ -20,9 +28,9 @@ async function createDatabase(): Promise<AppDb> {
     const client = postgres(env.DATABASE_URL);
     return drizzle(client, { schema: pgSchema }) as unknown as AppDb;
   } else {
-    const Database = (await import('better-sqlite3')).default;
-    const client = new Database(env.DATABASE_URL);
-    return drizzleSqlite(client, { schema: sqliteSchema });
+    const { createClient } = await import('@libsql/client');
+    const client = createClient({ url: normalizeLibsqlUrl(env.DATABASE_URL) });
+    return drizzleLibsql(client, { schema: sqliteSchema });
   }
 }
 

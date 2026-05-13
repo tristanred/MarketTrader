@@ -52,25 +52,26 @@ pnpm workspace monorepo. The `shared` package is the single source of truth for 
 
 ### Prerequisites
 
-- Node.js 22+
+- Node.js 22+ (an `.nvmrc` is provided — `nvm use` picks it up)
 - pnpm (via corepack): `corepack enable`
-- g++ 10+ (for `better-sqlite3` native compilation)
 - Docker (optional, for PostgreSQL in dev)
 
 ### Local development with SQLite
 
 ```bash
-# Install dependencies
 pnpm install
-
-# Start the server (SQLite, no Docker needed)
-DATABASE_URL=./dev.db JWT_SECRET=$(openssl rand -hex 32) pnpm --filter server dev
-
-# Start the frontend
-pnpm --filter frontend dev
+pnpm dev
 ```
 
-The frontend proxies `/api` requests to `http://localhost:3000`, so both services can run independently.
+That's it. `pnpm dev` runs a small bootstrap step that:
+
+- Creates `.env` from `.env.example` if missing
+- Generates a real `JWT_SECRET` if the value is still the placeholder
+- Runs pending Drizzle migrations against `./dev.db`
+
+It then starts the server (`:3000`) and frontend (`:5173`) in parallel. The frontend proxies `/api` to the server, so both services run independently.
+
+The default SQLite client is `@libsql/client` and password hashing uses `@node-rs/argon2`, both of which ship prebuilt napi-rs binaries for Windows, Linux, and macOS — no C/C++ toolchain required.
 
 ### Local development with Docker (PostgreSQL)
 
@@ -84,12 +85,14 @@ docker-compose up
 ### Running tests
 
 ```bash
-# All packages (SQLite in-memory)
-DATABASE_URL=:memory: JWT_SECRET=dev pnpm test
+# All packages
+pnpm test
 
 # Watch mode for a single package
 pnpm --filter server test:watch
 ```
+
+Tests use libsql with a file-backed temporary database (unique per test run, cleaned up on process exit) — no env vars needed.
 
 ### Type checking and linting
 

@@ -41,8 +41,8 @@ describe('CachedProvider', () => {
   let inner: FakeInner;
   let provider: CachedProvider;
 
-  beforeEach(() => {
-    db = createTestDb();
+  beforeEach(async () => {
+    db = await createTestDb();
     inner = new FakeInner();
     provider = new CachedProvider(db, inner);
   });

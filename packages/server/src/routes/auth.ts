@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import argon2 from 'argon2';
+import { hash, verify } from '@node-rs/argon2';
 import { eq } from 'drizzle-orm';
 import type { Db } from '../db/index.js';
 import { schema } from '../db/index.js';
@@ -37,7 +37,7 @@ export function authRoutes(db: Db) {
       }
       const { username, password } = parsed.data;
 
-      const passwordHash = await argon2.hash(password);
+      const passwordHash = await hash(password);
       let user: { id: string; username: string } | undefined;
       try {
         const [inserted] = await db
@@ -85,7 +85,7 @@ export function authRoutes(db: Db) {
         return reply.status(401).send({ error: 'Invalid credentials' });
       }
 
-      const valid = await argon2.verify(user.passwordHash, password);
+      const valid = await verify(user.passwordHash, password);
       if (!valid) {
         return reply.status(401).send({ error: 'Invalid credentials' });
       }

@@ -53,6 +53,10 @@ export function liveRoute(db: Db, registry: GameClientRegistry) {
               if (!Array.isArray(symbols)) return;
               const entry = registry.getEntry(gameId, socket);
               if (entry) {
+                // Replace, not append: the client sends the full active set on
+                // every change, and additive merging would broadcast forever
+                // to symbols the user has dropped (e.g. when switching lists).
+                entry.subscriptions.clear();
                 for (const symbol of symbols) {
                   if (typeof symbol === 'string') {
                     entry.subscriptions.add(symbol.toUpperCase());

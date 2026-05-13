@@ -128,25 +128,23 @@ export function WatchlistSelector({ watchlists, selected }: Props) {
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-8 px-2"
-                title="Rename"
+                className="h-8 px-2 text-xs"
                 onClick={() => {
                   setDraftName(selected.name);
                   setRenaming((r) => !r);
                 }}
                 aria-label="Rename watchlist"
               >
-                ✎
+                Rename
               </Button>
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-8 px-2 text-destructive"
-                title="Delete"
+                className="h-8 px-2 text-xs text-destructive"
                 onClick={handleDelete}
                 aria-label="Delete watchlist"
               >
-                🗑
+                Delete
               </Button>
               <Button
                 variant="outline"
@@ -165,21 +163,20 @@ export function WatchlistSelector({ watchlists, selected }: Props) {
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-8 px-2"
-                title="Edit watchlist"
+                className="h-8 px-2 text-xs"
                 onClick={() => setEditMode(true)}
                 aria-label="Edit watchlist"
               >
-                ✎
+                Edit
               </Button>
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-8 px-2"
-                title="New watchlist"
+                className="h-8 px-2 text-base leading-none"
                 onClick={handleCreate}
                 disabled={create.isPending}
                 aria-label="New watchlist"
+                title="New watchlist"
               >
                 +
               </Button>

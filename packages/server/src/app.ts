@@ -24,6 +24,7 @@ import { env } from './env.js';
 import { GameClientRegistry } from './ws/registry.js';
 import { liveRoute } from './ws/live-route.js';
 import { startPricePoller } from './ws/price-poller.js';
+import { startPendingOrdersWorker } from './workers/pending-orders.js';
 import { attachSentry } from './observability/sentry.js';
 
 export async function buildApp(
@@ -69,7 +70,9 @@ export async function buildApp(
   await app.register(authRoutes(db));
   await app.register(gameRoutes(db));
   await app.register(stockRoutes(db, provider));
-  await app.register(tradingRoutes(db, provider, registry, leaderboardThrottleMs));
+  await app.register(
+    tradingRoutes(db, provider, marketStatusProvider, registry, leaderboardThrottleMs),
+  );
   await app.register(marketStatusRoutes(marketStatusProvider));
   await app.register(liveRoute(db, registry));
 
@@ -78,6 +81,19 @@ export async function buildApp(
     app.addHook('onClose', async () => {
       clearInterval(handle);
     });
+
+    if (env.MARKET_HOURS_MODE === 'pending') {
+      const pendingWorker = startPendingOrdersWorker({
+        db,
+        provider,
+        marketStatusProvider,
+        registry,
+        logger: app.log,
+      });
+      app.addHook('onClose', async () => {
+        pendingWorker.stop();
+      });
+    }
   }
 
   attachSentry(app);

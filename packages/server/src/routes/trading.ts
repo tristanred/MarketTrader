@@ -5,12 +5,27 @@ import type { Db } from '../db/index.js';
 import { schema } from '../db/index.js';
 import type { StockProvider } from '../providers/index.js';
 import { StockProviderError, TradeError } from '../providers/index.js';
+import type { MarketStatusProvider } from '../providers/market-status/index.js';
+import type { MarketState } from '@markettrader/shared';
 import { recomputeGameStatus } from '../services/game-status.js';
 import { executeTrade, computeUnrealizedPnL } from '../services/trade.js';
+import {
+  reservePendingTrade,
+  listPendingTrades,
+  cancelPendingTrade,
+  PendingTradeNotFoundError,
+} from '../services/pending-trade.js';
 import { computeLeaderboard } from '../services/leaderboard.js';
 import type { TradeDirection } from '@markettrader/shared';
 import type { GameClientRegistry } from '../ws/registry.js';
 import { env } from '../env.js';
+
+/** Returns whether the configured policy treats this market state as "open" for trading. */
+function isTradingOpen(state: MarketState): boolean {
+  if (state === 'REGULAR') return true;
+  if (!env.MARKET_HOURS_INCLUDE_EXTENDED) return false;
+  return state === 'PRE' || state === 'POST';
+}
 
 const LEADERBOARD_THROTTLE_MS = 1_000;
 
@@ -33,6 +48,7 @@ const placeTradeSchema = z.object({
 export function tradingRoutes(
   db: Db,
   provider: StockProvider,
+  marketStatusProvider: MarketStatusProvider,
   registry?: GameClientRegistry,
   leaderboardThrottleMs = LEADERBOARD_THROTTLE_MS,
 ) {
@@ -75,6 +91,60 @@ export function tradingRoutes(
           .where(and(eq(gamePlayers.gameId, gameId), eq(gamePlayers.userId, userId)))
           .limit(1);
         if (!gamePlayer) return reply.status(404).send({ error: 'You are not a member of this game' });
+
+        // ── Market-hours gate ────────────────────────────────────────────────
+        // Default mode `instant` falls through to the existing logic for
+        // backwards compatibility. `disabled` rejects out-of-hours; `pending`
+        // queues the order for settlement at next market open.
+        if (env.MARKET_HOURS_MODE !== 'instant') {
+          let marketState: MarketState | null = null;
+          try {
+            const ms = await marketStatusProvider.getStatus();
+            marketState = ms.state;
+          } catch {
+            // If we can't determine market state, fall through to instant
+            // semantics — better to accept the trade than to silently break
+            // when the upstream is flaky. Operators who care can set the
+            // static provider for a guaranteed answer.
+          }
+
+          if (marketState !== null && !isTradingOpen(marketState)) {
+            if (env.MARKET_HOURS_MODE === 'disabled') {
+              return reply.status(409).send({
+                code: 'MARKET_CLOSED',
+                message: 'Market is closed and pending orders are disabled on this server.',
+              });
+            }
+            // MARKET_HOURS_MODE === 'pending': reserve and queue.
+            let reservedQuote;
+            try {
+              reservedQuote = await provider.getQuote(symbol);
+            } catch (err) {
+              if (err instanceof StockProviderError) {
+                if (err.code === 'SYMBOL_NOT_FOUND') {
+                  return reply.status(404).send({ error: err.message });
+                }
+                return reply.status(502).send({ error: err.message });
+              }
+              throw err;
+            }
+            try {
+              const pending = await reservePendingTrade(db, {
+                gamePlayerId: gamePlayer.id,
+                symbol,
+                direction: direction as TradeDirection,
+                quantity,
+                reservedPrice: reservedQuote.price,
+              });
+              return reply.status(202).send({ pending });
+            } catch (err) {
+              if (err instanceof TradeError) {
+                return reply.status(422).send({ code: err.code, message: err.message });
+              }
+              throw err;
+            }
+          }
+        }
 
         let quote;
         try {
@@ -202,7 +272,7 @@ export function tradingRoutes(
         const history = await db
           .select()
           .from(trades)
-          .where(eq(trades.gamePlayerId, gamePlayer.id))
+          .where(and(eq(trades.gamePlayerId, gamePlayer.id), eq(trades.status, 'executed')))
           .orderBy(desc(trades.executedAt));
 
         return reply.status(200).send(
@@ -216,6 +286,52 @@ export function tradingRoutes(
             executedAt: t.executedAt,
           })),
         );
+      },
+    );
+
+    app.get<{ Params: { id: string } }>(
+      '/games/:id/trades/pending',
+      { preHandler: app.authenticate },
+      async (request, reply) => {
+        const userId = request.user.id;
+        const gameId = request.params.id;
+
+        const [gamePlayer] = await db
+          .select({ id: gamePlayers.id })
+          .from(gamePlayers)
+          .where(and(eq(gamePlayers.gameId, gameId), eq(gamePlayers.userId, userId)))
+          .limit(1);
+        if (!gamePlayer) return reply.status(404).send({ error: 'You are not a member of this game' });
+
+        const pending = await listPendingTrades(db, gamePlayer.id);
+        return reply.status(200).send(pending);
+      },
+    );
+
+    app.delete<{ Params: { id: string; pendingId: string } }>(
+      '/games/:id/trades/pending/:pendingId',
+      { preHandler: app.authenticate },
+      async (request, reply) => {
+        const userId = request.user.id;
+        const gameId = request.params.id;
+        const pendingId = request.params.pendingId;
+
+        const [gamePlayer] = await db
+          .select({ id: gamePlayers.id })
+          .from(gamePlayers)
+          .where(and(eq(gamePlayers.gameId, gameId), eq(gamePlayers.userId, userId)))
+          .limit(1);
+        if (!gamePlayer) return reply.status(404).send({ error: 'You are not a member of this game' });
+
+        try {
+          await cancelPendingTrade(db, gamePlayer.id, pendingId);
+        } catch (err) {
+          if (err instanceof PendingTradeNotFoundError) {
+            return reply.status(404).send({ error: 'Pending trade not found' });
+          }
+          throw err;
+        }
+        return reply.status(204).send();
       },
     );
 
@@ -266,10 +382,37 @@ export function tradingRoutes(
           }),
         );
 
-        const totalValue =
-          cashBalance + enrichedHoldings.reduce((sum, h) => sum + h.marketValue, 0);
+        // Pending buys: cash already deducted, no shares yet → add reservedCash back.
+        // Pending sells: shares already removed → add quantity × currentPrice back.
+        const pendings = await db
+          .select()
+          .from(trades)
+          .where(and(eq(trades.gamePlayerId, gamePlayer.id), eq(trades.status, 'pending')));
 
-        return reply.status(200).send({ cashBalance, holdings: enrichedHoldings, totalValue });
+        let reservedValue = 0;
+        for (const p of pendings) {
+          if (p.direction === 'buy') {
+            reservedValue += Number(p.reservedCash ?? 0);
+          } else {
+            let price = Number(p.reservedPrice ?? 0);
+            try {
+              const q = await provider.getQuote(p.symbol);
+              price = q.price;
+            } catch {
+              // Fall back to reservedPrice if quote fetch fails
+            }
+            reservedValue += p.quantity * price;
+          }
+        }
+
+        const totalValue =
+          cashBalance +
+          enrichedHoldings.reduce((sum, h) => sum + h.marketValue, 0) +
+          reservedValue;
+
+        return reply
+          .status(200)
+          .send({ cashBalance, holdings: enrichedHoldings, totalValue, reservedValue });
       },
     );
   };

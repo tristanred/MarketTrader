@@ -151,9 +151,23 @@ export async function executeTrade(db: Db, params: ExecuteTradeParams): Promise<
       }
     }
 
-    const [trade] = await tx.insert(trades).values({ gamePlayerId, symbol, direction, quantity, price }).returning();
+    const [trade] = await tx
+      .insert(trades)
+      .values({
+        gamePlayerId,
+        symbol,
+        direction,
+        quantity,
+        status: 'executed',
+        price,
+        executedAt: new Date().toISOString(),
+      })
+      .returning();
 
     if (!trade) throw new Error('Failed to insert trade');
+    if (trade.price == null || trade.executedAt == null) {
+      throw new Error('Trade insert returned null price/executedAt');
+    }
 
     return {
       id: trade.id,

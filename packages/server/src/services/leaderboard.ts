@@ -76,6 +76,34 @@ export async function computeLeaderboard(db: Db, gameId: string): Promise<Leader
     }
   }
 
+  // Pending buys hold cash aside (already deducted from cashBalance); pending
+  // sells hold shares aside (already removed from portfolios). Both are still
+  // the player's assets, so add them back into total value so a queued order
+  // doesn't masquerade as a loss / rank drop.
+  const pendingRows = await db
+    .select({
+      gpId: schema.trades.gamePlayerId,
+      direction: schema.trades.direction,
+      quantity: schema.trades.quantity,
+      reservedCash: schema.trades.reservedCash,
+      symbol: schema.trades.symbol,
+      cachedPrice: schema.stockPriceCache.price,
+    })
+    .from(schema.trades)
+    .leftJoin(schema.stockPriceCache, eq(schema.stockPriceCache.symbol, schema.trades.symbol))
+    .where(eq(schema.trades.status, 'pending'));
+
+  for (const row of pendingRows) {
+    const player = playerMap.get(row.gpId);
+    if (!player) continue;
+    if (row.direction === 'buy') {
+      player.portfolioValue += Number(row.reservedCash ?? 0);
+    } else {
+      const price = row.cachedPrice != null ? Number(row.cachedPrice) : null;
+      if (price != null) player.portfolioValue += row.quantity * price;
+    }
+  }
+
   const entries = [...playerMap.values()].map(p => ({
     rank: 0,
     playerId: p.playerId,

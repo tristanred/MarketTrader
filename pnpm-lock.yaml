@@ -168,6 +168,9 @@ importers:
       fastify:
         specifier: ^5.0.0
         version: 5.8.5
+      nyse-holidays:
+        specifier: ^1.2.0
+        version: 1.2.0
       postgres:
         specifier: ^3.4.0
         version: 3.4.9
@@ -2294,6 +2297,9 @@ packages:
   dateformat@4.6.3:
     resolution: {integrity: sha512-2P0p0pFGzHS5EMnhdxQi7aJN+iMheud0UhG4dlE1DLAlvL8JHjJJTX/CSm4JXwV0Ka5nGk3zC5mcb5bUQUxxMA==}
 
+  dayjs@1.11.20:
+    resolution: {integrity: sha512-YbwwqR/uYpeoP4pu043q+LTDLFBLApUP6VxRihdfNTqu4ubqMlGDLd6ErXhEgsyvY0K6nCs7nggYumAN+9uEuQ==}
+
   debug@4.4.3:
     resolution: {integrity: sha512-RGwwWnwQvkVfavKVt22FGLw+xYSdzARwm0ru6DhTVA3umU5hZc28V3kO4stgYryrTlLpuvgI9GiijltAjNbcqA==}
     engines: {node: '>=6.0'}
@@ -3054,6 +3060,9 @@ packages:
 
   nwsapi@2.2.23:
     resolution: {integrity: sha512-7wfH4sLbt4M0gCDzGE6vzQBo0bfTKjU7Sfpqy/7gs1qBfYz2vEJH6vXcBKpO3+6Yu1telwd0t9HpyOoLEQQbIQ==}
+
+  nyse-holidays@1.2.0:
+    resolution: {integrity: sha512-ly02U/EIdQMfNGoNibtP3CTKl+RO8QpscYWJOX5NEvUaLS9KZopCK5OUD6siOGSfWhhIrk42nqed2MDeUpjC/Q==}
 
   object-assign@4.1.1:
     resolution: {integrity: sha512-rJgTQnkUnH1sFw8yT6VSU3zD3sWmu6sZhIseY8VX+GRu3P6F7Fu+JNDoXfklElbLJSnc3FUQHVe4cU5hj+BcUg==}
@@ -5609,6 +5618,8 @@ snapshots:
 
   dateformat@4.6.3: {}
 
+  dayjs@1.11.20: {}
+
   debug@4.4.3:
     dependencies:
       ms: 2.1.3
@@ -6410,6 +6421,10 @@ snapshots:
   normalize-url@4.5.1: {}
 
   nwsapi@2.2.23: {}
+
+  nyse-holidays@1.2.0:
+    dependencies:
+      dayjs: 1.11.20
 
   object-assign@4.1.1: {}
 

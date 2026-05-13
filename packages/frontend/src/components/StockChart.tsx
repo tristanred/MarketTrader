@@ -5,6 +5,7 @@ import { useLiveStore, type PriceTick } from '@/stores/liveStore';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useStockHistory } from '@/api/stocks';
+import { useMarketStatus } from '@/api/market-status';
 import type { StockHistoryRange } from '@markettrader/shared';
 
 const RANGES: { key: StockHistoryRange; label: string }[] = [
@@ -90,9 +91,9 @@ function ChartCanvas({ symbol, range }: { symbol: string; range: StockHistoryRan
   const seriesRef = useRef<ISeriesApi<'Line'> | null>(null);
   const history = useStockHistory(symbol, range);
   const liveHistory = useLiveStore((s) => s.historyBySymbol[symbol]);
-  const latestQuote = useLiveStore((s) => s.pricesBySymbol[symbol]);
   const ticks: PriceTick[] = useMemo(() => liveHistory ?? [], [liveHistory]);
-  const marketOpen = latestQuote?.marketState === 'REGULAR';
+  const marketStatus = useMarketStatus();
+  const marketOpen = marketStatus.data?.state === 'REGULAR';
 
   useEffect(() => {
     if (!containerRef.current) return;

@@ -57,3 +57,18 @@ export interface StockHistoryResponse {
   /** ISO 8601 timestamp of when the upstream returned this series. */
   fetchedAt: string;
 }
+
+/**
+ * Response body for GET /market/status. The chart uses `state === 'REGULAR'`
+ * to decide whether to extend the price line with live WebSocket ticks; the
+ * other fields are informational.
+ */
+export interface MarketStatusResult {
+  state: MarketState;
+  /** ISO 8601 timestamp the upstream reported (or our own clock for the static provider). */
+  asOf: string;
+  /** ISO 8601 timestamp of the next session transition, if the source knows it. */
+  nextChangeAt?: string;
+  /** Which implementation produced this status — for diagnostics. */
+  source: 'yahoo' | 'alpaca' | 'static';
+}

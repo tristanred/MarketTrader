@@ -11,8 +11,15 @@ import { authRoutes } from './routes/auth.js';
 import { gameRoutes } from './routes/games.js';
 import { stockRoutes } from './routes/stocks.js';
 import { tradingRoutes } from './routes/trading.js';
+import { marketStatusRoutes } from './routes/market-status.js';
 import type { StockProvider } from './providers/index.js';
 import { CachedProvider, createProvider } from './providers/index.js';
+import type { MarketStatusProvider } from './providers/market-status/index.js';
+import {
+  CachedMarketStatus,
+  createMarketStatusProvider,
+} from './providers/market-status/index.js';
+import { env } from './env.js';
 import { GameClientRegistry } from './ws/registry.js';
 import { liveRoute } from './ws/live-route.js';
 import { startPricePoller } from './ws/price-poller.js';
@@ -21,13 +28,27 @@ export async function buildApp(
   opts: FastifyServerOptions & {
     db?: Db;
     provider?: StockProvider;
+    marketStatusProvider?: MarketStatusProvider;
     disablePoller?: boolean;
     /** Override leaderboard broadcast throttle in ms. Defaults to 1000. Pass 0 in tests. */
     leaderboardThrottleMs?: number;
   } = {},
 ): Promise<FastifyInstance> {
-  const { db = globalDb, provider: injectedProvider, disablePoller = false, leaderboardThrottleMs, ...fastifyOpts } = opts;
+  const {
+    db = globalDb,
+    provider: injectedProvider,
+    marketStatusProvider: injectedMarketStatus,
+    disablePoller = false,
+    leaderboardThrottleMs,
+    ...fastifyOpts
+  } = opts;
   const provider = injectedProvider ?? new CachedProvider(db, createProvider());
+  const marketStatusProvider =
+    injectedMarketStatus ??
+    new CachedMarketStatus(
+      createMarketStatusProvider(provider),
+      env.MARKET_STATUS_CACHE_TTL_MS,
+    );
   const app = Fastify(fastifyOpts);
 
   // @fastify/websocket MUST be registered before any routes
@@ -46,6 +67,7 @@ export async function buildApp(
   await app.register(gameRoutes(db));
   await app.register(stockRoutes(db, provider));
   await app.register(tradingRoutes(db, provider, registry, leaderboardThrottleMs));
+  await app.register(marketStatusRoutes(marketStatusProvider));
   await app.register(liveRoute(db, registry));
 
   if (!disablePoller) {

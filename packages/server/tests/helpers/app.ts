@@ -5,7 +5,9 @@ import * as schema from '../../src/db/schema.sqlite.js';
 import { buildApp } from '../../src/app.js';
 import type { FastifyInstance } from 'fastify';
 import type { StockProvider } from '../../src/providers/index.js';
+import type { MarketStatusProvider } from '../../src/providers/market-status/interface.js';
 import { MockStockProvider } from './mock-provider.js';
+import { MockMarketStatusProvider } from './mock-market-status.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -24,9 +26,19 @@ export async function createTestDb() {
   return db;
 }
 
-export async function createTestApp(provider?: StockProvider): Promise<FastifyInstance> {
+export async function createTestApp(
+  provider?: StockProvider,
+  marketStatusProvider?: MarketStatusProvider,
+): Promise<FastifyInstance> {
   const db = await createTestDb();
   // Always disable the price poller in tests to prevent setInterval from
   // keeping the Vitest process alive after app.close().
-  return buildApp({ logger: false, db, provider: provider ?? new MockStockProvider(), disablePoller: true, leaderboardThrottleMs: 0 });
+  return buildApp({
+    logger: false,
+    db,
+    provider: provider ?? new MockStockProvider(),
+    marketStatusProvider: marketStatusProvider ?? new MockMarketStatusProvider(),
+    disablePoller: true,
+    leaderboardThrottleMs: 0,
+  });
 }

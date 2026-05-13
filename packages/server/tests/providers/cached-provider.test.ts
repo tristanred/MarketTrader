@@ -5,6 +5,7 @@ import { createTestDb } from '../helpers/app.js';
 import type { Db } from '../../src/db/index.js';
 import type { StockProvider } from '../../src/providers/index.js';
 import type {
+  StockDetails,
   StockHistoryBar,
   StockHistoryRange,
   StockQuote,
@@ -43,6 +44,11 @@ class FakeInner implements StockProvider {
   async getHistory(_s: string, _r: StockHistoryRange): Promise<StockHistoryBar[]> {
     if (this.nextError) throw this.nextError;
     return [];
+  }
+
+  async getDetails(symbol: string): Promise<StockDetails> {
+    if (this.nextError) throw this.nextError;
+    return { symbol, fetchedAt: new Date().toISOString() };
   }
 }
 

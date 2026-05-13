@@ -4,12 +4,12 @@
   "private": true,
   "packageManager": "pnpm@11.0.9",
   "scripts": {
-    "dev": "node scripts/bootstrap-dev.mjs && pnpm --parallel --filter './packages/*' dev",
+    "dev": "node scripts/bootstrap-dev.mjs && pnpm -r --parallel dev",
     "bootstrap": "node scripts/bootstrap-dev.mjs",
-    "build": "pnpm --filter shared build && pnpm --parallel --filter server --filter frontend build",
-    "test": "pnpm --filter './packages/*' test",
-    "typecheck": "pnpm --filter './packages/*' typecheck",
-    "lint": "pnpm --filter './packages/*' lint"
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "pnpm -r lint"
   },
   "pnpm": {
     "overrides": {

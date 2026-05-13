@@ -5,6 +5,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { usePortfolio } from '@/api/trades';
 import { useLiveStore } from '@/stores/liveStore';
 import { formatPct, formatUSD, cn } from '@/lib/utils';
+import { SymbolButton } from '@/components/SymbolButton';
 
 type SortKey = 'ticker-asc' | 'value-desc' | 'gain-desc';
 
@@ -88,7 +89,7 @@ export function HoldingsSidebar({ gameId }: { gameId: string }) {
                   {rows.map((r) => (
                     <tr key={r.symbol} className="border-b last:border-b-0">
                       <td className="py-2 align-top">
-                        <div className="font-semibold">{r.symbol}</div>
+                        <SymbolButton symbol={r.symbol} className="font-semibold" />
                         <div className="text-[11px] text-muted-foreground tabular-nums">{r.quantity}</div>
                       </td>
                       <td className="py-2 text-right align-top tabular-nums">

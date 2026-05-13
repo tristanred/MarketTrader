@@ -20,3 +20,17 @@ export function formatPct(value: number): string {
   const sign = value >= 0 ? '+' : '';
   return `${sign}${value.toFixed(2)}%`;
 }
+
+/** Format a large integer in compact notation (e.g. 7_950_000 → "7.95M"). */
+export function formatCompactNumber(value: number): string {
+  return new Intl.NumberFormat(undefined, {
+    notation: 'compact',
+    maximumFractionDigits: 2,
+  }).format(value);
+}
+
+/**
+ * Validates a ticker symbol the way the trade and quote-info UIs expect:
+ * 1–10 chars, uppercase letters/digits with optional `.` or `-` (e.g. `BRK.B`).
+ */
+export const SYMBOL_RE = /^[A-Z][A-Z0-9.\-]{0,9}$/;

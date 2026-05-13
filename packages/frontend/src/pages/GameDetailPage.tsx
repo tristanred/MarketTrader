@@ -12,6 +12,8 @@ import { YourProfileCard } from '@/components/game/YourProfileCard';
 import { AboutThisGameCard } from '@/components/game/AboutThisGameCard';
 import { GameLeaderboardCard } from '@/components/game/GameLeaderboardCard';
 import { HoldingsSidebar } from '@/components/game/HoldingsSidebar';
+import { QuoteInfoDialog } from '@/components/QuoteInfoDialog';
+import { useQuoteDialogStore } from '@/stores/quoteDialogStore';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
@@ -43,6 +45,7 @@ export function GameDetailPage() {
   const game = useGame(gameId);
   const portfolio = usePortfolio(gameId);
   const join = useJoinGame();
+  const quoteDialog = useQuoteDialogStore();
 
   const heldSymbols = useMemo(
     () => portfolio.data?.holdings.map((h) => h.symbol) ?? [],
@@ -146,6 +149,14 @@ export function GameDetailPage() {
           </aside>
         </div>
       </main>
+      <QuoteInfoDialog
+        open={quoteDialog.open}
+        symbol={quoteDialog.symbol}
+        onOpenChange={(open) => {
+          if (!open) quoteDialog.closeQuote();
+        }}
+        onTradeClick={(s) => quoteDialog.setSelectedTradeSymbol(s)}
+      />
     </div>
   );
 }

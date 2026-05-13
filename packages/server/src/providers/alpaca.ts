@@ -1,4 +1,5 @@
 import type {
+  StockDetails,
   StockHistoryBar,
   StockHistoryRange,
   StockQuote,
@@ -19,6 +20,7 @@ import { StockProviderError } from './interface.js';
  */
 export class AlpacaProvider implements StockProvider {
   private readonly baseUrl = 'https://data.alpaca.markets/v2';
+  private readonly tradingBaseUrl = 'https://api.alpaca.markets/v2';
 
   constructor(private readonly apiKey: string) {}
 
@@ -66,5 +68,80 @@ export class AlpacaProvider implements StockProvider {
   // TODO(alpaca-history): wire to /v2/stocks/{symbol}/bars with timeframe + start derived from range.
   async getHistory(_symbol: string, _range: StockHistoryRange): Promise<StockHistoryBar[]> {
     throw new StockProviderError('PROVIDER_ERROR', 'Alpaca history is not implemented yet');
+  }
+
+  async getDetails(symbol: string): Promise<StockDetails> {
+    const headers = {
+      'APCA-API-KEY-ID': this.apiKey,
+      Accept: 'application/json',
+    };
+
+    const snapshotUrl = `${this.baseUrl}/stocks/${encodeURIComponent(symbol)}/snapshot`;
+    const assetsUrl = `${this.tradingBaseUrl}/assets/${encodeURIComponent(symbol)}`;
+
+    const [snapshotRes, assetsRes] = await Promise.allSettled([
+      fetch(snapshotUrl, { headers }),
+      fetch(assetsUrl, { headers }),
+    ]);
+
+    if (snapshotRes.status === 'rejected') {
+      throw new StockProviderError('PROVIDER_ERROR', `Alpaca snapshot fetch failed for ${symbol}`);
+    }
+    const sres = snapshotRes.value;
+    if (sres.status === 404) {
+      throw new StockProviderError('SYMBOL_NOT_FOUND', `Symbol not found: ${symbol}`);
+    }
+    if (sres.status === 429) {
+      throw new StockProviderError('RATE_LIMITED', 'Alpaca rate limit exceeded');
+    }
+    if (!sres.ok) {
+      throw new StockProviderError('PROVIDER_ERROR', `Alpaca snapshot error ${sres.status} for ${symbol}`);
+    }
+
+    interface SnapshotResponse {
+      latestTrade?: { p?: number };
+      dailyBar?: { c?: number; v?: number };
+      prevDailyBar?: { c?: number };
+    }
+    const snapshot = (await sres.json()) as SnapshotResponse;
+
+    const price = snapshot.latestTrade?.p ?? snapshot.dailyBar?.c;
+    const previousClose = snapshot.prevDailyBar?.c;
+    const dayVolume = snapshot.dailyBar?.v;
+
+    const details: StockDetails = {
+      symbol,
+      fetchedAt: new Date().toISOString(),
+    };
+    if (typeof price === 'number' && price > 0) details.price = price;
+    if (typeof previousClose === 'number' && previousClose > 0) {
+      details.previousClose = previousClose;
+      if (details.price !== undefined) {
+        details.change = details.price - previousClose;
+        details.changePercent = (details.change / previousClose) * 100;
+      }
+    }
+    if (typeof dayVolume === 'number') details.dayVolume = dayVolume;
+
+    // Assets call is best-effort — missing exchange/companyName is acceptable.
+    if (assetsRes.status === 'fulfilled' && assetsRes.value.ok) {
+      interface AssetResponse {
+        name?: string;
+        exchange?: string;
+      }
+      try {
+        const asset = (await assetsRes.value.json()) as AssetResponse;
+        if (typeof asset.name === 'string' && asset.name.length > 0) {
+          details.companyName = asset.name;
+        }
+        if (typeof asset.exchange === 'string' && asset.exchange.length > 0) {
+          details.exchange = asset.exchange;
+        }
+      } catch {
+        // swallow — assets are decorative
+      }
+    }
+
+    return details;
   }
 }

@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm';
 import type {
   MarketState,
+  StockDetails,
   StockHistoryBar,
   StockHistoryRange,
   StockQuote,
@@ -41,6 +42,12 @@ export class CachedProvider implements StockProvider {
    * hit reads still surface a recent session label to clients.
    */
   private readonly marketStateBySymbol = new Map<string, MarketState>();
+  /**
+   * In-memory cache for {@link getDetails}. Details are display-only and
+   * expensive to fetch (Yahoo `quote()` is the slow path; Alpaca needs two
+   * calls). Lost on restart — acceptable trade-off vs. adding a DB table.
+   */
+  private readonly detailsBySymbol = new Map<string, { details: StockDetails; cachedAt: number }>();
 
   constructor(
     private readonly db: Db,
@@ -128,6 +135,32 @@ export class CachedProvider implements StockProvider {
     const bars = await this.inner.getHistory(symbol, range);
     this.historyCache.set(key, { bars, fetchedAt: Date.now() });
     return bars;
+  }
+
+  async getDetails(symbol: string): Promise<StockDetails> {
+    const hit = this.detailsBySymbol.get(symbol);
+    const ageMs = hit ? Date.now() - hit.cachedAt : Infinity;
+    if (hit && ageMs < env.STOCK_CACHE_TTL_MS) {
+      return hit.details;
+    }
+
+    let details: StockDetails;
+    try {
+      details = await this.inner.getDetails(symbol);
+    } catch (err) {
+      if (
+        err instanceof StockProviderError &&
+        err.code === 'RATE_LIMITED' &&
+        hit &&
+        ageMs <= env.STOCK_STALE_PRICE_MAX_AGE_MS
+      ) {
+        return { ...hit.details, stale: true };
+      }
+      throw err;
+    }
+
+    this.detailsBySymbol.set(symbol, { details, cachedAt: Date.now() });
+    return details;
   }
 
   async searchSymbols(query: string): Promise<StockSearchResult[]> {

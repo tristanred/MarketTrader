@@ -11,6 +11,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { formatUSD, formatPct, cn } from '@/lib/utils';
+import { SymbolButton } from '@/components/SymbolButton';
 
 export function PortfolioTable({ gameId }: { gameId: string }) {
   const portfolio = usePortfolio(gameId);
@@ -93,7 +94,7 @@ export function PortfolioTable({ gameId }: { gameId: string }) {
             <TableBody>
               {enriched.map((h) => (
                 <TableRow key={h.symbol}>
-                  <TableCell className="font-medium">{h.symbol}</TableCell>
+                  <TableCell><SymbolButton symbol={h.symbol} /></TableCell>
                   <TableCell className="text-right">{h.quantity}</TableCell>
                   <TableCell className="text-right">{formatUSD(h.avgCostBasis)}</TableCell>
                   <TableCell className="text-right">{formatUSD(h.currentPrice)}</TableCell>

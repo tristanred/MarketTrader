@@ -1,4 +1,5 @@
 import type {
+  StockDetails,
   StockHistoryBar,
   StockHistoryRange,
   StockQuote,
@@ -69,6 +70,25 @@ export class MockStockProvider implements StockProvider {
 
   async searchSymbols(query: string): Promise<StockSearchResult[]> {
     return [{ symbol: query.toUpperCase(), name: `Mock ${query}` }];
+  }
+
+  async getDetails(symbol: string): Promise<StockDetails> {
+    const errCode = this.errors.get(symbol);
+    if (errCode) throw new StockProviderError(errCode, `mock ${errCode}`);
+    const quote = this.quotes.get(symbol);
+    const price = quote?.price ?? 100;
+    return {
+      symbol,
+      price,
+      change: quote?.change ?? 0,
+      changePercent: quote?.changePercent ?? 0,
+      previousClose: price,
+      dayVolume: 1_000_000,
+      avgVolume: 1_500_000,
+      exchange: 'NASDAQ',
+      companyName: `Mock ${symbol}`,
+      fetchedAt: quote?.fetchedAt ?? new Date().toISOString(),
+    };
   }
 
   async getHistory(symbol: string, _range: StockHistoryRange): Promise<StockHistoryBar[]> {

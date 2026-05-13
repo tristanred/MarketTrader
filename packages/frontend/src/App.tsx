@@ -5,6 +5,7 @@ import { LoginPage } from '@/pages/LoginPage';
 import { RegisterPage } from '@/pages/RegisterPage';
 import { GamesListPage } from '@/pages/GamesListPage';
 import { GameDetailPage } from '@/pages/GameDetailPage';
+import { SymbolPage } from '@/pages/SymbolPage';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { Toaster } from '@/components/ui/toast';
 import { useAuthStore } from '@/stores/authStore';
@@ -48,6 +49,14 @@ function App() {
             element={
               <ProtectedRoute>
                 <GameDetailPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/symbols/:symbol"
+            element={
+              <ProtectedRoute>
+                <SymbolPage />
               </ProtectedRoute>
             }
           />

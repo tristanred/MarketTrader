@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { useTradeHistory } from '@/api/trades';
+import { SymbolButton } from '@/components/SymbolButton';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Table,
@@ -90,7 +91,7 @@ export function TradeHistoryTable({ gameId }: { gameId: string }) {
               {groups.map((g) => (
                 <TableRow key={g.key}>
                   <TableCell>{formatWhen(g)}</TableCell>
-                  <TableCell className="font-medium">{g.symbol}</TableCell>
+                  <TableCell><SymbolButton symbol={g.symbol} /></TableCell>
                   <TableCell
                     className={cn(
                       'uppercase text-xs font-semibold',

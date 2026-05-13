@@ -59,6 +59,39 @@ export interface StockHistoryResponse {
 }
 
 /**
+ * Richer, slower-moving information about a symbol — surfaced by the Quote
+ * Information modal and the /symbols/:symbol page. Distinct from
+ * {@link StockQuote}, which is on the trade hot path: details are fetched
+ * on demand and include fields each provider may or may not supply. All
+ * fields except `symbol` and `fetchedAt` are optional.
+ */
+export interface StockDetails {
+  symbol: string;
+  /** Latest price in USD. Same semantics as {@link StockQuote.price}. */
+  price?: number;
+  /** Absolute price change since previous close. */
+  change?: number;
+  /** Percentage change since previous close. */
+  changePercent?: number;
+  /** Previous regular-session close in USD. */
+  previousClose?: number;
+  /** Today's cumulative regular-session volume, in shares. */
+  dayVolume?: number;
+  /** Trailing 3-month average daily volume, in shares — the "65 Day Avg" label. */
+  avgVolume?: number;
+  /** Display name of the listing exchange, e.g. "NASDAQ" or "NYSE". */
+  exchange?: string;
+  /** Full company or fund name, e.g. "Arm Holdings PLC ADR". */
+  companyName?: string;
+  /** Trading session at fetch time. See {@link MarketState}. */
+  marketState?: MarketState;
+  /** ISO 8601 timestamp of when the upstream data was fetched. */
+  fetchedAt: string;
+  /** True when this response came from the server-side cache after upstream rate-limiting. */
+  stale?: boolean;
+}
+
+/**
  * Response body for GET /market/status. The chart uses `state === 'REGULAR'`
  * to decide whether to extend the price line with live WebSocket ticks; the
  * other fields are informational.

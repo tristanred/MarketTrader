@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { SymbolButton } from '@/components/SymbolButton';
 import { usePendingTrades, useCancelPendingTrade } from '@/api/trades';
 import { toast } from '@/components/ui/toast';
 import { formatUSD } from '@/lib/utils';
@@ -93,7 +94,7 @@ export function PendingOrdersList({ gameId }: { gameId: string }) {
       <CardContent>
         <ul className="space-y-2 text-sm">
           {groups.map((g) => {
-            const label = `${g.direction === 'buy' ? 'Buy' : 'Sell'} ${g.totalQuantity} ${g.symbol}`;
+            const verb = g.direction === 'buy' ? 'Buy' : 'Sell';
             return (
               <li
                 key={g.key}
@@ -101,7 +102,7 @@ export function PendingOrdersList({ gameId }: { gameId: string }) {
               >
                 <div>
                   <div className="font-medium">
-                    {label}
+                    {verb} {g.totalQuantity} <SymbolButton symbol={g.symbol} />
                     {g.ids.length > 1 && (
                       <span className="ml-2 text-xs font-normal text-muted-foreground">
                         ({g.ids.length} orders)

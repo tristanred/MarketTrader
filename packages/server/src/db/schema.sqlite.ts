@@ -29,6 +29,18 @@ export const games = sqliteTable('games', {
   allowShortSelling: integer('allow_short_selling', { mode: 'boolean' })
     .notNull()
     .default(false),
+  allowLimitOrders: integer('allow_limit_orders', { mode: 'boolean' })
+    .notNull()
+    .default(false),
+  allowStopOrders: integer('allow_stop_orders', { mode: 'boolean' })
+    .notNull()
+    .default(false),
+  allowBracketOrders: integer('allow_bracket_orders', { mode: 'boolean' })
+    .notNull()
+    .default(false),
+  allowGTC: integer('allow_gtc', { mode: 'boolean' })
+    .notNull()
+    .default(false),
   status: text('status', { enum: ['pending', 'active', 'ended'] })
     .notNull()
     .default('pending'),
@@ -87,12 +99,19 @@ export const portfolios = sqliteTable(
 );
 
 /**
- * Trade lifecycle record. Most rows are `executed` (filled immediately at
- * `price` and frozen). When `MARKET_HOURS_MODE=pending` is active, orders
- * placed outside market hours start as `pending`: `reservedPrice` and
- * `reservedCash` hold the estimate used to lock funds (buys) or shares
- * (sells), and `price`/`executedAt` stay null until the worker settles them.
- * A user-cancelled pending becomes `cancelled` with `cancelledAt` set.
+ * Trade lifecycle record. Status semantics:
+ * - `executed`: filled immediately at `price` and frozen.
+ * - `pending`:  market order queued outside market hours (settled by the
+ *   market-hours worker). `reservedPrice`/`reservedCash` lock the estimate.
+ * - `working`:  resting limit/stop/stop_limit/bracket order awaiting a price
+ *   trigger. `orderType` + `limitPrice`/`stopPrice` describe the trigger.
+ * - `cancelled`: user cancel, TIF expiry, OCO-sibling fill, or insufficient
+ *   resources at fill. `cancelReason` records why.
+ *
+ * Brackets are modeled as three rows: a parent (`bracketRole='entry'`) plus
+ * two children with `parentTradeId` pointing back. Children stay `working`
+ * until the parent fills; the trigger evaluator skips a working child whose
+ * parent isn't yet `executed`.
  */
 export const trades = sqliteTable('trades', {
   id: text('id')
@@ -104,9 +123,27 @@ export const trades = sqliteTable('trades', {
   symbol: text('symbol').notNull(),
   direction: text('direction', { enum: ['buy', 'sell'] }).notNull(),
   quantity: integer('quantity').notNull(),
-  status: text('status', { enum: ['pending', 'executed', 'cancelled'] })
+  status: text('status', { enum: ['pending', 'working', 'executed', 'cancelled'] })
     .notNull()
     .default('executed'),
+  orderType: text('order_type', {
+    enum: ['market', 'limit', 'stop', 'stop_limit', 'bracket'],
+  })
+    .notNull()
+    .default('market'),
+  timeInForce: text('time_in_force', { enum: ['day', 'gtc'] }).notNull().default('day'),
+  limitPrice: real('limit_price'),
+  stopPrice: real('stop_price'),
+  /** For stop_limit: set to ISO timestamp once the stop has triggered; null until then. */
+  stopTriggeredAt: text('stop_triggered_at'),
+  /** Bracket children point at their parent (entry) row. Null on parents. */
+  parentTradeId: text('parent_trade_id'),
+  bracketRole: text('bracket_role', { enum: ['entry', 'take_profit', 'stop_loss'] }),
+  /** Convenience copies on a bracket parent — TP/SL children's prices. Null on non-brackets. */
+  takeProfitPrice: real('take_profit_price'),
+  stopLossPrice: real('stop_loss_price'),
+  /** ISO 8601 expiry for day-TIF orders; null for GTC. */
+  expiresAt: text('expires_at'),
   reservedPrice: real('reserved_price'),
   reservedCash: real('reserved_cash'),
   price: real('price'),
@@ -115,6 +152,7 @@ export const trades = sqliteTable('trades', {
     .notNull(),
   executedAt: text('executed_at'),
   cancelledAt: text('cancelled_at'),
+  cancelReason: text('cancel_reason'),
 });
 
 /**

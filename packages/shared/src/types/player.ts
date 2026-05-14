@@ -22,6 +22,27 @@ export interface Portfolio {
 /** Direction of a trade order. */
 export type TradeDirection = 'buy' | 'sell';
 
+/**
+ * The shape of an order's trigger condition.
+ * - `market`     — fill at the next available quote (default).
+ * - `limit`      — buy at-or-below / sell at-or-above `limitPrice`.
+ * - `stop`       — when the quote crosses `stopPrice`, fill at the triggering quote.
+ * - `stop_limit` — stop crosses → becomes a resting limit at `limitPrice`.
+ * - `bracket`    — parent entry (market or limit) plus two OCO children
+ *                  (a take-profit limit and a stop-loss stop).
+ */
+export type OrderType = 'market' | 'limit' | 'stop' | 'stop_limit' | 'bracket';
+
+/**
+ * Order lifetime policy. Orthogonal to {@link OrderType}.
+ * - `day` — cancelled at end of the trading day if not filled.
+ * - `gtc` — Good-Til-Cancelled; lives until filled or explicitly cancelled.
+ */
+export type TimeInForce = 'day' | 'gtc';
+
+/** Role of a row within a bracket-order triple. Null on non-bracket rows. */
+export type BracketRole = 'entry' | 'take_profit' | 'stop_loss';
+
 /** An executed trade record as returned by the API. */
 export interface Trade {
   id: string;
@@ -62,9 +83,47 @@ export interface PendingTrade {
   placedAt: string;
 }
 
+/**
+ * A resting limit/stop/stop_limit/bracket order awaiting a price trigger.
+ * Returned by the trade endpoint with HTTP 202 when an advanced order is
+ * placed, and by `GET /games/:id/trades?status=working`.
+ */
+export interface WorkingOrder {
+  id: string;
+  gamePlayerId: string;
+  symbol: string;
+  direction: TradeDirection;
+  quantity: number;
+  orderType: OrderType;
+  timeInForce: TimeInForce;
+  limitPrice: number | null;
+  stopPrice: number | null;
+  /** ISO 8601 timestamp once the stop has triggered on a stop_limit. */
+  stopTriggeredAt: string | null;
+  parentTradeId: string | null;
+  bracketRole: BracketRole | null;
+  takeProfitPrice: number | null;
+  stopLossPrice: number | null;
+  expiresAt: string | null;
+  reservedCash: number | null;
+  placedAt: string;
+}
+
 export interface PlaceTradeRequest {
   symbol: string;
   direction: TradeDirection;
   /** Must be a positive integer ≥ 1. No fractional shares. Validated server-side. */
   quantity: number;
+  /** Defaults to `'market'`. See {@link OrderType}. */
+  orderType?: OrderType;
+  /** Defaults to `'day'`. See {@link TimeInForce}. */
+  timeInForce?: TimeInForce;
+  /** Required for `limit` and `stop_limit`. */
+  limitPrice?: number;
+  /** Required for `stop` and `stop_limit`. */
+  stopPrice?: number;
+  /** Required when `orderType='bracket'` — the TP child's limit price. */
+  takeProfitPrice?: number;
+  /** Required when `orderType='bracket'` — the SL child's stop price. */
+  stopLossPrice?: number;
 }

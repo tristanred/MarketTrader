@@ -5,6 +5,7 @@ import { schema } from '../db/index.js';
 import type { StockProvider } from '../providers/index.js';
 import type { MarketStatusProvider } from '../providers/market-status/index.js';
 import { settlePendingTrades } from '../services/pending-trade.js';
+import { evaluateTriggers, expireDayOrders } from '../services/working-order.js';
 import { computeLeaderboard } from '../services/leaderboard.js';
 import type { GameClientRegistry } from '../ws/registry.js';
 import { env } from '../env.js';
@@ -17,7 +18,17 @@ function isTradingOpen(state: MarketState): boolean {
   return state === 'PRE' || state === 'POST';
 }
 
-/** Settles every eligible pending trade and broadcasts the resulting executions. */
+/**
+ * One tick of the pending-orders worker. Does, in order:
+ *  1. Expire day-TIF orders whose `expiresAt` has passed (always; not gated on
+ *     market state — a day order that died overnight should be cancelled at
+ *     the next tick regardless of whether the market is currently open).
+ *  2. Settle market-hours pending orders (existing behaviour; gated on market open).
+ *  3. Evaluate triggers for resting limit/stop/bracket orders (gated on market
+ *     open — we don't fire stops on stale data when the market is closed).
+ *  4. Broadcast `trade_executed`, `order_cancelled`, `order_triggered` events
+ *     and a per-game `leaderboard_update`.
+ */
 export async function runPendingOrdersTick(deps: {
   db: Db;
   provider: StockProvider;
@@ -25,32 +36,49 @@ export async function runPendingOrdersTick(deps: {
   registry?: GameClientRegistry;
 }): Promise<void> {
   const { db, provider, marketStatusProvider, registry } = deps;
+  const { gamePlayers } = schema;
 
-  let state: MarketState;
+  // Step 1: expire day-TIF orders. Cheap and side-effect-only on the DB.
+  let expired: { cancelledIds: string[] } = { cancelledIds: [] };
+  try {
+    expired = await expireDayOrders(db);
+  } catch {
+    // Swallow — a failed expiry must not block settlement.
+  }
+
+  let state: MarketState | null = null;
   try {
     state = (await marketStatusProvider.getStatus()).state;
   } catch {
-    return;
+    // If we can't determine market state, fall through to "closed" semantics
+    // for steps 2 and 3 — better than firing stops on stale data.
   }
-  if (!isTradingOpen(state)) return;
+  const marketOpen = state != null && isTradingOpen(state);
 
-  const outcomes = await settlePendingTrades(db, provider);
-  if (outcomes.length === 0 || !registry) return;
+  const settleOutcomes = marketOpen ? await settlePendingTrades(db, provider) : [];
+  const triggerOutcomes = marketOpen ? await evaluateTriggers(db, provider) : [];
 
-  // Map each executed trade back to its (gameId, userId) so we can broadcast.
-  const executed = outcomes.filter(
-    (o): o is Extract<typeof o, { kind: 'executed' }> => o.kind === 'executed',
-  );
-  if (executed.length === 0) return;
+  if (!registry) return;
 
-  const { gamePlayers } = schema;
   const gameIdsTouched = new Set<string>();
-  for (const o of executed) {
-    const [player] = await db
+  const playerCache = new Map<string, { gameId: string; userId: string }>();
+  async function resolvePlayer(gamePlayerId: string) {
+    const cached = playerCache.get(gamePlayerId);
+    if (cached) return cached;
+    const [row] = await db
       .select({ gameId: gamePlayers.gameId, userId: gamePlayers.userId })
       .from(gamePlayers)
-      .where(eq(gamePlayers.id, o.trade.gamePlayerId))
+      .where(eq(gamePlayers.id, gamePlayerId))
       .limit(1);
+    if (!row) return null;
+    playerCache.set(gamePlayerId, row);
+    return row;
+  }
+
+  // Broadcasts: settled market-pending fills.
+  for (const o of settleOutcomes) {
+    if (o.kind !== 'executed') continue;
+    const player = await resolvePlayer(o.trade.gamePlayerId);
     if (!player) continue;
     gameIdsTouched.add(player.gameId);
     registry.broadcast(player.gameId, {
@@ -63,6 +91,61 @@ export async function runPendingOrdersTick(deps: {
         price: o.trade.price,
         executedAt: o.trade.executedAt,
       },
+    });
+  }
+
+  // Broadcasts: trigger evaluator outcomes (limit/stop fills, OCO cancels, stop_limit triggers).
+  for (const o of triggerOutcomes) {
+    const gamePlayerId =
+      o.kind === 'filled' ? o.row.gamePlayerId : o.gamePlayerId;
+    const player = await resolvePlayer(gamePlayerId);
+    if (!player) continue;
+    gameIdsTouched.add(player.gameId);
+
+    if (o.kind === 'filled') {
+      registry.broadcast(player.gameId, {
+        event: 'trade_executed',
+        data: {
+          playerId: player.userId,
+          symbol: o.trade.symbol,
+          direction: o.trade.direction as TradeDirection,
+          quantity: o.trade.quantity,
+          price: o.trade.price,
+          executedAt: o.trade.executedAt,
+        },
+      });
+    } else if (o.kind === 'cancelled') {
+      registry.broadcast(player.gameId, {
+        event: 'order_cancelled',
+        data: { playerId: player.userId, tradeId: o.tradeId, reason: o.reason },
+      });
+    } else {
+      registry.broadcast(player.gameId, {
+        event: 'order_triggered',
+        data: {
+          playerId: player.userId,
+          tradeId: o.tradeId,
+          triggerPrice: o.triggerPrice,
+        },
+      });
+    }
+  }
+
+  // Broadcasts: TIF expiry cancellations.
+  for (const tradeId of expired.cancelledIds) {
+    // Look up the player by trade id (small N — only the rows we cancelled this tick).
+    const [t] = await db
+      .select({ gamePlayerId: schema.trades.gamePlayerId })
+      .from(schema.trades)
+      .where(eq(schema.trades.id, tradeId))
+      .limit(1);
+    if (!t) continue;
+    const player = await resolvePlayer(t.gamePlayerId);
+    if (!player) continue;
+    gameIdsTouched.add(player.gameId);
+    registry.broadcast(player.gameId, {
+      event: 'order_cancelled',
+      data: { playerId: player.userId, tradeId, reason: 'TIF_EXPIRED' },
     });
   }
 

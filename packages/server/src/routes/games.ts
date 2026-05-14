@@ -16,6 +16,10 @@ const createGameSchema = z
     endDate: z.string().datetime(),
     startingBalance: z.number().positive(),
     allowShortSelling: z.boolean().optional().default(false),
+    allowLimitOrders: z.boolean().optional().default(false),
+    allowStopOrders: z.boolean().optional().default(false),
+    allowBracketOrders: z.boolean().optional().default(false),
+    allowGTC: z.boolean().optional().default(false),
   })
   .refine(d => d.endDate > d.startDate, {
     message: 'endDate must be after startDate',

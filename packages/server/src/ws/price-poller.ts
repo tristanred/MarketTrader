@@ -1,4 +1,4 @@
-import { eq, inArray, and } from 'drizzle-orm';
+import { eq, inArray, and, or } from 'drizzle-orm';
 import type { Db } from '../db/index.js';
 import { schema } from '../db/index.js';
 import type { StockProvider } from '../providers/index.js';
@@ -38,6 +38,23 @@ export async function pollPrices(
     .innerJoin(gamePlayers, eq(portfolios.gamePlayerId, gamePlayers.id))
     .where(inArray(gamePlayers.gameId, liveGameIds));
 
+  // Symbols with open (working/pending) orders in any active game — needed so
+  // GTC/limit/stop orders evaluate even when their owner isn't connected. The
+  // CachedProvider coalesces these fetches with the worker, so this doesn't
+  // multiply upstream API calls.
+  const { trades } = schema;
+  const openOrderSymbols = await db
+    .select({ symbol: trades.symbol })
+    .from(trades)
+    .innerJoin(gamePlayers, eq(trades.gamePlayerId, gamePlayers.id))
+    .innerJoin(games, eq(gamePlayers.gameId, games.id))
+    .where(
+      and(
+        eq(games.status, 'active'),
+        or(eq(trades.status, 'working'), eq(trades.status, 'pending')),
+      ),
+    );
+
   // Collect userIds for all clients currently connected to a live game.
   // ClientEntry.playerId is the JWT user id (see live-route.ts).
   const connectedUserIds = new Set<string>();
@@ -57,7 +74,11 @@ export async function pollPrices(
       : [];
 
   const allSymbols = [
-    ...new Set([...holdings.map((h) => h.symbol), ...watchSymbols.map((w) => w.symbol)]),
+    ...new Set([
+      ...holdings.map((h) => h.symbol),
+      ...watchSymbols.map((w) => w.symbol),
+      ...openOrderSymbols.map((o) => o.symbol),
+    ]),
   ];
   if (allSymbols.length === 0) return;
 

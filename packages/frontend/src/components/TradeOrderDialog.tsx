@@ -412,6 +412,8 @@ export function TradeOrderDialog({
                   onLeft={() => setTerm('DAY')}
                   onRight={allowGTC ? () => setTerm('GTC') : undefined}
                   rightDisabledHint="Not enabled for this game"
+                  disabled={priceType === 'MARKET'}
+                  disabledHint="Time-in-force does not apply to market orders"
                 />
               </div>
 
@@ -645,6 +647,8 @@ function SegmentedTwo({
   onLeft,
   onRight,
   rightDisabledHint,
+  disabled = false,
+  disabledHint,
 }: {
   leftLabel: string;
   rightLabel: string;
@@ -652,17 +656,28 @@ function SegmentedTwo({
   onLeft: () => void;
   onRight: (() => void) | undefined;
   rightDisabledHint?: string;
+  disabled?: boolean;
+  disabledHint?: string;
 }) {
-  const rightDisabled = !onRight;
-  const rightActive = !leftActive && !rightDisabled;
+  const rightOnlyDisabled = !onRight;
+  const rightActive = !leftActive && !rightOnlyDisabled && !disabled;
+  const leftShowActive = leftActive && !disabled;
   return (
-    <div className="grid grid-cols-2 rounded-md border overflow-hidden bg-muted">
+    <div
+      className={cn(
+        'grid grid-cols-2 rounded-md border overflow-hidden bg-muted',
+        disabled && 'opacity-60',
+      )}
+    >
       <button
         type="button"
         onClick={onLeft}
+        disabled={disabled}
+        title={disabled ? disabledHint : undefined}
         className={cn(
           'px-3 py-3 text-sm font-semibold uppercase tracking-wide transition-colors',
-          leftActive ? 'bg-foreground text-background' : 'hover:bg-muted-foreground/10',
+          leftShowActive ? 'bg-foreground text-background' : 'hover:bg-muted-foreground/10',
+          disabled && 'cursor-not-allowed text-muted-foreground hover:bg-transparent',
         )}
       >
         {leftLabel}
@@ -670,13 +685,16 @@ function SegmentedTwo({
       <button
         type="button"
         onClick={onRight}
-        disabled={rightDisabled}
-        title={rightDisabled ? rightDisabledHint : undefined}
+        disabled={rightOnlyDisabled || disabled}
+        title={
+          disabled ? disabledHint : rightOnlyDisabled ? rightDisabledHint : undefined
+        }
         className={cn(
           'px-3 py-3 text-sm font-semibold uppercase tracking-wide transition-colors',
           rightActive && 'bg-foreground text-background',
-          !rightActive && !rightDisabled && 'hover:bg-muted-foreground/10',
-          rightDisabled && 'cursor-not-allowed text-muted-foreground',
+          !rightActive && !rightOnlyDisabled && !disabled && 'hover:bg-muted-foreground/10',
+          (rightOnlyDisabled || disabled) &&
+            'cursor-not-allowed text-muted-foreground hover:bg-transparent',
         )}
       >
         {rightLabel}

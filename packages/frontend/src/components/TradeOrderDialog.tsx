@@ -654,14 +654,15 @@ function SegmentedTwo({
   rightDisabledHint?: string;
 }) {
   const rightDisabled = !onRight;
+  const rightActive = !leftActive && !rightDisabled;
   return (
-    <div className="grid grid-cols-2 rounded-md border overflow-hidden bg-background">
+    <div className="grid grid-cols-2 rounded-md border overflow-hidden bg-muted">
       <button
         type="button"
         onClick={onLeft}
         className={cn(
           'px-3 py-3 text-sm font-semibold uppercase tracking-wide transition-colors',
-          leftActive ? 'bg-background text-foreground' : 'hover:bg-muted',
+          leftActive ? 'bg-foreground text-background' : 'hover:bg-muted-foreground/10',
         )}
       >
         {leftLabel}
@@ -673,9 +674,9 @@ function SegmentedTwo({
         title={rightDisabled ? rightDisabledHint : undefined}
         className={cn(
           'px-3 py-3 text-sm font-semibold uppercase tracking-wide transition-colors',
-          !leftActive && !rightDisabled && 'bg-foreground text-background',
-          rightDisabled &&
-            'cursor-not-allowed text-muted-foreground bg-foreground/90 text-background/70',
+          rightActive && 'bg-foreground text-background',
+          !rightActive && !rightDisabled && 'hover:bg-muted-foreground/10',
+          rightDisabled && 'cursor-not-allowed text-muted-foreground',
         )}
       >
         {rightLabel}

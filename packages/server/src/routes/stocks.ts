@@ -1,12 +1,15 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
+import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import type { Db } from '../db/index.js';
 import type { StockProvider } from '../providers/index.js';
 import { StockProviderError } from '../providers/index.js';
 import { env } from '../env.js';
 
-const symbolSchema = z.string().min(1).max(10).transform((s) => s.toUpperCase());
-const searchSchema = z.object({ q: z.string().min(1).max(50) });
+const symbolParamsSchema = z.object({
+  symbol: z.string().min(1).max(10).transform((s) => s.toUpperCase()),
+});
+const searchQuerySchema = z.object({ q: z.string().min(1).max(50) });
 const HISTORY_RANGES = ['1d', '5d', '1mo', '3mo', '6mo', '1y'] as const;
 const historyQuerySchema = z.object({
   range: z.enum(HISTORY_RANGES).default('1d'),
@@ -31,14 +34,17 @@ function setRetryAfter(reply: FastifyReply): void {
  * - `PROVIDER_ERROR`   → 502
  */
 export function stockRoutes(_db: Db, provider: StockProvider) {
-  return async function (app: FastifyInstance): Promise<void> {
-    app.get('/stocks/search', async (request, reply) => {
-      const parsed = searchSchema.safeParse(request.query);
-      if (!parsed.success) {
-        return reply.status(400).send({ error: parsed.error.issues });
-      }
+  return async function (rawApp: FastifyInstance): Promise<void> {
+    const app = rawApp.withTypeProvider<ZodTypeProvider>();
+    app.get('/stocks/search', {
+      schema: {
+        tags: ['Stocks'],
+        summary: 'Symbol autocomplete.',
+        querystring: searchQuerySchema,
+      },
+    }, async (request, reply) => {
       try {
-        const results = await provider.searchSymbols(parsed.data.q);
+        const results = await provider.searchSymbols(request.query.q);
         return reply.status(200).send(results);
       } catch (err) {
         if (err instanceof StockProviderError) {
@@ -52,22 +58,24 @@ export function stockRoutes(_db: Db, provider: StockProvider) {
       }
     });
 
-    app.get<{ Params: { symbol: string }; Querystring: { range?: string } }>(
+    app.get(
       '/stocks/:symbol/history',
+      {
+        schema: {
+          tags: ['Stocks'],
+          summary: 'Historical OHLC bars for a symbol.',
+          params: symbolParamsSchema,
+          querystring: historyQuerySchema,
+        },
+      },
       async (request, reply) => {
-        const parsedSymbol = symbolSchema.safeParse(request.params.symbol);
-        if (!parsedSymbol.success) {
-          return reply.status(400).send({ error: 'Invalid symbol' });
-        }
-        const parsedQuery = historyQuerySchema.safeParse(request.query);
-        if (!parsedQuery.success) {
-          return reply.status(400).send({ error: parsedQuery.error.issues });
-        }
+        const { symbol } = request.params;
+        const { range } = request.query;
         try {
-          const bars = await provider.getHistory(parsedSymbol.data, parsedQuery.data.range);
+          const bars = await provider.getHistory(symbol, range);
           return reply.status(200).send({
-            symbol: parsedSymbol.data,
-            range: parsedQuery.data.range,
+            symbol,
+            range,
             bars,
             fetchedAt: new Date().toISOString(),
           });
@@ -85,13 +93,15 @@ export function stockRoutes(_db: Db, provider: StockProvider) {
       },
     );
 
-    app.get<{ Params: { symbol: string } }>('/stocks/:symbol/details', async (request, reply) => {
-      const parsed = symbolSchema.safeParse(request.params.symbol);
-      if (!parsed.success) {
-        return reply.status(400).send({ error: 'Invalid symbol' });
-      }
+    app.get('/stocks/:symbol/details', {
+      schema: {
+        tags: ['Stocks'],
+        summary: 'Extended company/details metadata for a symbol.',
+        params: symbolParamsSchema,
+      },
+    }, async (request, reply) => {
       try {
-        const details = await provider.getDetails(parsed.data);
+        const details = await provider.getDetails(request.params.symbol);
         return reply.status(200).send(details);
       } catch (err) {
         if (err instanceof StockProviderError) {
@@ -106,13 +116,15 @@ export function stockRoutes(_db: Db, provider: StockProvider) {
       }
     });
 
-    app.get<{ Params: { symbol: string } }>('/stocks/:symbol', async (request, reply) => {
-      const parsed = symbolSchema.safeParse(request.params.symbol);
-      if (!parsed.success) {
-        return reply.status(400).send({ error: 'Invalid symbol' });
-      }
+    app.get('/stocks/:symbol', {
+      schema: {
+        tags: ['Stocks'],
+        summary: 'Current quote for a single ticker.',
+        params: symbolParamsSchema,
+      },
+    }, async (request, reply) => {
       try {
-        const quote = await provider.getQuote(parsed.data);
+        const quote = await provider.getQuote(request.params.symbol);
         return reply.status(200).send(quote);
       } catch (err) {
         if (err instanceof StockProviderError) {

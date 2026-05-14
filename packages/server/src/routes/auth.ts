@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
+import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { hash, verify } from '@node-rs/argon2';
 import { eq } from 'drizzle-orm';
 import type { Db } from '../db/index.js';
@@ -53,15 +54,19 @@ const loginSchema = z.object({
  * Passwords are hashed with argon2; never bcrypt.
  */
 export function authRoutes(db: Db) {
-  return async function (app: FastifyInstance): Promise<void> {
+  return async function (rawApp: FastifyInstance): Promise<void> {
+    const app = rawApp.withTypeProvider<ZodTypeProvider>();
     const { users } = schema;
 
-    app.post('/auth/register', { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (request, reply) => {
-      const parsed = registerSchema.safeParse(request.body);
-      if (!parsed.success) {
-        return reply.status(400).send({ error: parsed.error.issues });
-      }
-      const { username, password } = parsed.data;
+    app.post('/auth/register', {
+      config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
+      schema: {
+        tags: ['Auth'],
+        summary: 'Create a new account and issue a 15-minute access token.',
+        body: registerSchema,
+      },
+    }, async (request, reply) => {
+      const { username, password } = request.body;
 
       const passwordHash = await hash(password);
       let user: { id: string; username: string } | undefined;
@@ -100,12 +105,15 @@ export function authRoutes(db: Db) {
       });
     });
 
-    app.post('/auth/login', { config: { rateLimit: { max: 5, timeWindow: '1 minute' } } }, async (request, reply) => {
-      const parsed = loginSchema.safeParse(request.body);
-      if (!parsed.success) {
-        return reply.status(400).send({ error: parsed.error.issues });
-      }
-      const { username, password } = parsed.data;
+    app.post('/auth/login', {
+      config: { rateLimit: { max: 5, timeWindow: '1 minute' } },
+      schema: {
+        tags: ['Auth'],
+        summary: 'Verify credentials and issue a 15-minute access token.',
+        body: loginSchema,
+      },
+    }, async (request, reply) => {
+      const { username, password } = request.body;
 
       const [user] = await db
         .select({ id: users.id, username: users.username, passwordHash: users.passwordHash })
@@ -135,7 +143,13 @@ export function authRoutes(db: Db) {
       });
     });
 
-    app.post('/auth/logout', { config: { rateLimit: { max: 20, timeWindow: '1 minute' } } }, async (_request, reply) => {
+    app.post('/auth/logout', {
+      config: { rateLimit: { max: 20, timeWindow: '1 minute' } },
+      schema: {
+        tags: ['Auth'],
+        summary: 'Clear the refresh-token cookie (idempotent).',
+      },
+    }, async (_request, reply) => {
       // Idempotent: clearing always succeeds, whether or not a cookie was set.
       // Identity is not verified — sign-out must work even after the access
       // token has expired or the refresh cookie has rotted.
@@ -143,7 +157,13 @@ export function authRoutes(db: Db) {
       return reply.status(204).send();
     });
 
-    app.post('/auth/refresh', { config: { rateLimit: { max: 20, timeWindow: '1 minute' } } }, async (request, reply) => {
+    app.post('/auth/refresh', {
+      config: { rateLimit: { max: 20, timeWindow: '1 minute' } },
+      schema: {
+        tags: ['Auth'],
+        summary: 'Exchange the refresh-token cookie for a new access token.',
+      },
+    }, async (request, reply) => {
       const token = request.cookies['refreshToken'];
       if (!token) {
         return reply.status(401).send({ error: 'Missing refresh token' });

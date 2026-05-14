@@ -17,7 +17,12 @@ function setRetryAfter(reply: FastifyReply): void {
  */
 export function marketStatusRoutes(provider: MarketStatusProvider) {
   return async function (app: FastifyInstance): Promise<void> {
-    app.get('/market/status', async (_req, reply) => {
+    app.get('/market/status', {
+      schema: {
+        tags: ['Market'],
+        summary: 'Current trading session status (PRE / REGULAR / POST / CLOSED).',
+      },
+    }, async (_req, reply) => {
       try {
         const status = await provider.getStatus();
         return reply.status(200).send(status);

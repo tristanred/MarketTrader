@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { eq, and, desc } from 'drizzle-orm';
 import type { Db } from '../db/index.js';
 import { schema } from '../db/index.js';
@@ -35,6 +36,9 @@ const placeTradeSchema = z.object({
   quantity: z.number().int().min(1),
 });
 
+const gameIdParamsSchema = z.object({ id: z.string() });
+const pendingTradeParamsSchema = z.object({ id: z.string(), pendingId: z.string() });
+
 /**
  * Registers trading and portfolio routes (all require authentication):
  * - `POST /games/:id/trades`     — execute a buy or sell at the live market price.
@@ -55,21 +59,25 @@ export function tradingRoutes(
   // Per-game leaderboard throttle: gameId → timestamp of last broadcast (ms)
   const lastLeaderboardBroadcast = new Map<string, number>();
 
-  return async function (app: FastifyInstance): Promise<void> {
+  return async function (rawApp: FastifyInstance): Promise<void> {
+    const app = rawApp.withTypeProvider<ZodTypeProvider>();
     const { games, gamePlayers, portfolios, trades } = schema;
 
-    app.post<{ Params: { id: string } }>(
+    app.post(
       '/games/:id/trades',
       {
-        preHandler: app.authenticate,
+        onRequest: rawApp.authenticate,
         config: { rateLimit: { max: 30, timeWindow: '1 minute' } },
+        schema: {
+          tags: ['Trading'],
+          summary: 'Execute a buy or sell at the live market price.',
+          security: [{ bearerAuth: [] }],
+          params: gameIdParamsSchema,
+          body: placeTradeSchema,
+        },
       },
       async (request, reply) => {
-        const parsed = placeTradeSchema.safeParse(request.body);
-        if (!parsed.success) {
-          return reply.status(400).send({ error: parsed.error.issues });
-        }
-        const { symbol, direction, quantity } = parsed.data;
+        const { symbol, direction, quantity } = request.body;
         const userId = request.user.id;
         const gameId = request.params.id;
 
@@ -255,9 +263,17 @@ export function tradingRoutes(
       },
     );
 
-    app.get<{ Params: { id: string } }>(
+    app.get(
       '/games/:id/trades',
-      { preHandler: app.authenticate },
+      {
+        onRequest: rawApp.authenticate,
+        schema: {
+          tags: ['Trading'],
+          summary: 'Trade history for the caller in this game, newest first.',
+          security: [{ bearerAuth: [] }],
+          params: gameIdParamsSchema,
+        },
+      },
       async (request, reply) => {
         const userId = request.user.id;
         const gameId = request.params.id;
@@ -289,9 +305,17 @@ export function tradingRoutes(
       },
     );
 
-    app.get<{ Params: { id: string } }>(
+    app.get(
       '/games/:id/trades/pending',
-      { preHandler: app.authenticate },
+      {
+        onRequest: rawApp.authenticate,
+        schema: {
+          tags: ['Trading'],
+          summary: 'List the caller\'s pending (queued) trades for this game.',
+          security: [{ bearerAuth: [] }],
+          params: gameIdParamsSchema,
+        },
+      },
       async (request, reply) => {
         const userId = request.user.id;
         const gameId = request.params.id;
@@ -308,9 +332,17 @@ export function tradingRoutes(
       },
     );
 
-    app.delete<{ Params: { id: string; pendingId: string } }>(
+    app.delete(
       '/games/:id/trades/pending/:pendingId',
-      { preHandler: app.authenticate },
+      {
+        onRequest: rawApp.authenticate,
+        schema: {
+          tags: ['Trading'],
+          summary: 'Cancel a pending trade.',
+          security: [{ bearerAuth: [] }],
+          params: pendingTradeParamsSchema,
+        },
+      },
       async (request, reply) => {
         const userId = request.user.id;
         const gameId = request.params.id;
@@ -335,9 +367,17 @@ export function tradingRoutes(
       },
     );
 
-    app.get<{ Params: { id: string } }>(
+    app.get(
       '/games/:id/portfolio',
-      { preHandler: app.authenticate },
+      {
+        onRequest: rawApp.authenticate,
+        schema: {
+          tags: ['Trading'],
+          summary: 'Current holdings enriched with live prices and unrealized P&L.',
+          security: [{ bearerAuth: [] }],
+          params: gameIdParamsSchema,
+        },
+      },
       async (request, reply) => {
         const userId = request.user.id;
         const gameId = request.params.id;

@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { and, asc, eq } from 'drizzle-orm';
 import type { Db } from '../db/index.js';
 import { schema } from '../db/index.js';
@@ -24,6 +25,8 @@ const symbolSchema = z
 const createBodySchema = z.object({ name: nameSchema });
 const renameBodySchema = z.object({ name: nameSchema });
 const addItemBodySchema = z.object({ symbol: symbolSchema });
+const watchlistIdParamsSchema = z.object({ id: z.string() });
+const watchlistItemParamsSchema = z.object({ id: z.string(), symbol: z.string() });
 
 /**
  * Loads a single watchlist owned by `userId` plus its symbols in addedAt order.
@@ -62,10 +65,18 @@ async function loadWatchlistForUser(
  * are treated as idempotent — the existing record is returned rather than 409.
  */
 export function watchlistRoutes(db: Db) {
-  return async function (app: FastifyInstance): Promise<void> {
+  return async function (rawApp: FastifyInstance): Promise<void> {
+    const app = rawApp.withTypeProvider<ZodTypeProvider>();
     const { watchlists, watchlistItems } = schema;
 
-    app.get('/watchlists', { preHandler: app.authenticate }, async (request, reply) => {
+    app.get('/watchlists', {
+      onRequest: rawApp.authenticate,
+      schema: {
+        tags: ['Watchlists'],
+        summary: "List the caller's watchlists with their symbols.",
+        security: [{ bearerAuth: [] }],
+      },
+    }, async (request, reply) => {
       const userId = request.user.id;
       const lists = await db
         .select({ id: watchlists.id, name: watchlists.name, createdAt: watchlists.createdAt })
@@ -102,11 +113,17 @@ export function watchlistRoutes(db: Db) {
       return reply.status(200).send(result);
     });
 
-    app.post('/watchlists', { preHandler: app.authenticate }, async (request, reply) => {
-      const parsed = createBodySchema.safeParse(request.body);
-      if (!parsed.success) return reply.status(400).send({ error: parsed.error.issues });
+    app.post('/watchlists', {
+      onRequest: rawApp.authenticate,
+      schema: {
+        tags: ['Watchlists'],
+        summary: 'Create a new watchlist (idempotent on name).',
+        security: [{ bearerAuth: [] }],
+        body: createBodySchema,
+      },
+    }, async (request, reply) => {
       const userId = request.user.id;
-      const { name } = parsed.data;
+      const { name } = request.body;
 
       // Idempotent: if a list with this name already exists, return it.
       const [existing] = await db
@@ -124,12 +141,19 @@ export function watchlistRoutes(db: Db) {
       return reply.status(201).send(loaded);
     });
 
-    app.patch<{ Params: { id: string } }>(
+    app.patch(
       '/watchlists/:id',
-      { preHandler: app.authenticate },
+      {
+        onRequest: rawApp.authenticate,
+        schema: {
+          tags: ['Watchlists'],
+          summary: 'Rename a watchlist.',
+          security: [{ bearerAuth: [] }],
+          params: watchlistIdParamsSchema,
+          body: renameBodySchema,
+        },
+      },
       async (request, reply) => {
-        const parsed = renameBodySchema.safeParse(request.body);
-        if (!parsed.success) return reply.status(400).send({ error: parsed.error.issues });
         const userId = request.user.id;
         const watchlistId = request.params.id;
 
@@ -139,7 +163,7 @@ export function watchlistRoutes(db: Db) {
         try {
           await db
             .update(watchlists)
-            .set({ name: parsed.data.name })
+            .set({ name: request.body.name })
             .where(and(eq(watchlists.id, watchlistId), eq(watchlists.userId, userId)));
         } catch (err) {
           // Likely a unique-constraint violation on (userId, name)
@@ -151,9 +175,17 @@ export function watchlistRoutes(db: Db) {
       },
     );
 
-    app.delete<{ Params: { id: string } }>(
+    app.delete(
       '/watchlists/:id',
-      { preHandler: app.authenticate },
+      {
+        onRequest: rawApp.authenticate,
+        schema: {
+          tags: ['Watchlists'],
+          summary: 'Delete a watchlist (cascades items).',
+          security: [{ bearerAuth: [] }],
+          params: watchlistIdParamsSchema,
+        },
+      },
       async (request, reply) => {
         const userId = request.user.id;
         const watchlistId = request.params.id;
@@ -168,15 +200,22 @@ export function watchlistRoutes(db: Db) {
       },
     );
 
-    app.post<{ Params: { id: string } }>(
+    app.post(
       '/watchlists/:id/items',
-      { preHandler: app.authenticate },
+      {
+        onRequest: rawApp.authenticate,
+        schema: {
+          tags: ['Watchlists'],
+          summary: 'Add a symbol to a watchlist (idempotent).',
+          security: [{ bearerAuth: [] }],
+          params: watchlistIdParamsSchema,
+          body: addItemBodySchema,
+        },
+      },
       async (request, reply) => {
-        const parsed = addItemBodySchema.safeParse(request.body);
-        if (!parsed.success) return reply.status(400).send({ error: parsed.error.issues });
         const userId = request.user.id;
         const watchlistId = request.params.id;
-        const { symbol } = parsed.data;
+        const { symbol } = request.body;
 
         const existing = await loadWatchlistForUser(db, watchlistId, userId);
         if (!existing) return reply.status(404).send({ error: 'Watchlist not found' });
@@ -193,9 +232,17 @@ export function watchlistRoutes(db: Db) {
       },
     );
 
-    app.delete<{ Params: { id: string; symbol: string } }>(
+    app.delete(
       '/watchlists/:id/items/:symbol',
-      { preHandler: app.authenticate },
+      {
+        onRequest: rawApp.authenticate,
+        schema: {
+          tags: ['Watchlists'],
+          summary: 'Remove a symbol from a watchlist (idempotent).',
+          security: [{ bearerAuth: [] }],
+          params: watchlistItemParamsSchema,
+        },
+      },
       async (request, reply) => {
         const userId = request.user.id;
         const watchlistId = request.params.id;

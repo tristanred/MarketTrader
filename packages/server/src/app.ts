@@ -7,6 +7,7 @@ import { registerJwt } from './plugins/jwt.js';
 import { registerHelmet } from './plugins/helmet.js';
 import { registerRateLimit } from './plugins/rate-limit.js';
 import { registerWebsocket } from './plugins/websocket.js';
+import { registerSwagger } from './plugins/swagger.js';
 import { healthRoutes } from './routes/health.js';
 import { authRoutes } from './routes/auth.js';
 import { gameRoutes } from './routes/games.js';
@@ -64,6 +65,7 @@ export async function buildApp(
   await registerCookie(app);
   await registerJwt(app);
   await registerRateLimit(app);
+  await registerSwagger(app);
 
   const registry = new GameClientRegistry();
 

@@ -1,10 +1,13 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { eq, and } from 'drizzle-orm';
 import type { Db } from '../db/index.js';
 import { schema } from '../db/index.js';
 import { recomputeGameStatus, recomputeMany } from '../services/game-status.js';
 import { computeLeaderboard } from '../services/leaderboard.js';
+
+const gameIdParamsSchema = z.object({ id: z.string() });
 
 const createGameSchema = z
   .object({
@@ -29,10 +32,18 @@ const createGameSchema = z
  * reflects real time rather than the stored snapshot.
  */
 export function gameRoutes(db: Db) {
-  return async function (app: FastifyInstance): Promise<void> {
+  return async function (rawApp: FastifyInstance): Promise<void> {
+    const app = rawApp.withTypeProvider<ZodTypeProvider>();
     const { games, gamePlayers } = schema;
 
-    app.get('/games', { preHandler: app.authenticate }, async (request, reply) => {
+    app.get('/games', {
+      onRequest: rawApp.authenticate,
+      schema: {
+        tags: ['Games'],
+        summary: 'List games the caller has joined.',
+        security: [{ bearerAuth: [] }],
+      },
+    }, async (request, reply) => {
       const userId = request.user.id;
 
       const rows = await db
@@ -61,12 +72,16 @@ export function gameRoutes(db: Db) {
       );
     });
 
-    app.post('/games', { preHandler: app.authenticate }, async (request, reply) => {
-      const parsed = createGameSchema.safeParse(request.body);
-      if (!parsed.success) {
-        return reply.status(400).send({ error: parsed.error.issues });
-      }
-      const { name, startDate, endDate, startingBalance } = parsed.data;
+    app.post('/games', {
+      onRequest: rawApp.authenticate,
+      schema: {
+        tags: ['Games'],
+        summary: 'Create a new game; creator is enrolled automatically.',
+        security: [{ bearerAuth: [] }],
+        body: createGameSchema,
+      },
+    }, async (request, reply) => {
+      const { name, startDate, endDate, startingBalance } = request.body;
       const userId = request.user.id;
 
       const [game] = await db
@@ -83,8 +98,16 @@ export function gameRoutes(db: Db) {
       return reply.status(201).send({ ...game, startingBalance: Number(game.startingBalance), status });
     });
 
-    app.post('/games/:id/join', { preHandler: app.authenticate }, async (request, reply) => {
-      const { id: gameId } = request.params as { id: string };
+    app.post('/games/:id/join', {
+      onRequest: rawApp.authenticate,
+      schema: {
+        tags: ['Games'],
+        summary: 'Join an existing game.',
+        security: [{ bearerAuth: [] }],
+        params: gameIdParamsSchema,
+      },
+    }, async (request, reply) => {
+      const { id: gameId } = request.params;
       const userId = request.user.id;
 
       const [game] = await db.select().from(games).where(eq(games.id, gameId)).limit(1);
@@ -118,8 +141,16 @@ export function gameRoutes(db: Db) {
       });
     });
 
-    app.get('/games/:id', { preHandler: app.authenticate }, async (request, reply) => {
-      const { id: gameId } = request.params as { id: string };
+    app.get('/games/:id', {
+      onRequest: rawApp.authenticate,
+      schema: {
+        tags: ['Games'],
+        summary: 'Fetch game details + leaderboard (membership required).',
+        security: [{ bearerAuth: [] }],
+        params: gameIdParamsSchema,
+      },
+    }, async (request, reply) => {
+      const { id: gameId } = request.params;
       const userId = request.user.id;
 
       const [game] = await db.select().from(games).where(eq(games.id, gameId)).limit(1);

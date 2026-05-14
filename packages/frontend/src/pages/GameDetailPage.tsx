@@ -4,7 +4,7 @@ import { useGame, useJoinGame } from '@/api/games';
 import { usePortfolio } from '@/api/trades';
 import { useGameSocket } from '@/hooks/useGameSocket';
 import { TradePanel } from '@/components/TradePanel';
-import { PendingOrdersList } from '@/components/PendingOrdersList';
+import { OpenOrdersList } from '@/components/OpenOrdersList';
 import { TradeHistoryTable } from '@/components/TradeHistoryTable';
 import { StockChart } from '@/components/StockChart';
 import { YourProfileCard } from '@/components/game/YourProfileCard';
@@ -144,7 +144,7 @@ export function GameDetailPage() {
                   </TabsList>
                   <TabsContent value="trade" className="pt-3 space-y-4">
                     <TradePanel gameId={gameId} />
-                    <PendingOrdersList gameId={gameId} />
+                    <OpenOrdersList gameId={gameId} />
                   </TabsContent>
                   <TabsContent value="history" className="pt-3">
                     <TradeHistoryTable gameId={gameId} />
@@ -175,6 +175,10 @@ export function GameDetailPage() {
         initialSymbol={quoteDialog.tradeOrderSymbol}
         gameId={gameId}
         allowShortSelling={game.data?.allowShortSelling ?? false}
+        allowLimitOrders={game.data?.allowLimitOrders ?? false}
+        allowStopOrders={game.data?.allowStopOrders ?? false}
+        allowBracketOrders={game.data?.allowBracketOrders ?? false}
+        allowGTC={game.data?.allowGTC ?? false}
         onOpenChange={(open) => {
           if (!open) quoteDialog.closeTradeOrder();
         }}

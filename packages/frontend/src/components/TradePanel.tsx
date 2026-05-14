@@ -66,7 +66,7 @@ export function TradePanel({ gameId }: { gameId: string }) {
           description: `Order will execute at next market open (~ ${formatUSD(result.pending.reservedPrice * quantity)}).`,
           variant: 'success',
         });
-      } else {
+      } else if (result.kind === 'executed') {
         const verb = direction === 'buy' ? 'Bought' : 'Sold';
         let description: string | undefined =
           total !== null ? `~ ${formatUSD(total)}` : undefined;
@@ -80,6 +80,8 @@ export function TradePanel({ gameId }: { gameId: string }) {
           variant: 'success',
         });
       }
+      // `working` kind is unreachable from TradePanel (market orders only) —
+      // intentionally not handled.
     } catch (err) {
       toast({ title: 'Trade failed', description: extractApiMessage(err), variant: 'destructive' });
     }

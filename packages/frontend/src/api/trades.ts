@@ -2,7 +2,12 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch, API_BASE, ApiError } from '@/lib/api';
 import { useAuthStore } from '@/stores/authStore';
 import { gameKeys } from '@/api/games';
-import type { PendingTrade, PlaceTradeRequest, Trade } from '@markettrader/shared';
+import type {
+  PendingTrade,
+  PlaceTradeRequest,
+  Trade,
+  WorkingOrder,
+} from '@markettrader/shared';
 
 /** Server response shape for `GET /games/:id/portfolio` — enriched with live prices and P&L. */
 export interface EnrichedHolding {
@@ -31,6 +36,7 @@ export const tradeKeys = {
   portfolio: (gameId: string) => ['portfolio', gameId] as const,
   history: (gameId: string) => ['trades', gameId] as const,
   pending: (gameId: string) => ['trades', gameId, 'pending'] as const,
+  working: (gameId: string) => ['trades', gameId, 'working'] as const,
 };
 
 export function usePortfolio(gameId: string) {
@@ -61,13 +67,26 @@ export interface PlaceTradeExecuted {
   priceAgeMs?: number;
 }
 
-/** Queued-pending response from `POST /games/:id/trades` (HTTP 202). */
+/** Queued-pending response from `POST /games/:id/trades` (HTTP 202, market-hours queue). */
 export interface PlaceTradePending {
   kind: 'pending';
   pending: PendingTrade;
 }
 
-export type PlaceTradeResponse = PlaceTradeExecuted | PlaceTradePending;
+/**
+ * Resting limit/stop/bracket order response from `POST /games/:id/trades`
+ * (HTTP 202). For a bracket this contains three rows (entry + take_profit +
+ * stop_loss); for other types, one row.
+ */
+export interface PlaceTradeWorking {
+  kind: 'working';
+  orders: WorkingOrder[];
+}
+
+export type PlaceTradeResponse =
+  | PlaceTradeExecuted
+  | PlaceTradePending
+  | PlaceTradeWorking;
 
 /**
  * Calls `POST /games/:id/trades` and discriminates the response by status code:
@@ -89,7 +108,10 @@ async function placeTradeRaw(gameId: string, body: PlaceTradeRequest): Promise<P
     return { kind: 'executed', ...data };
   }
   if (res.status === 202) {
-    const data = (await res.json()) as { pending: PendingTrade };
+    const data = (await res.json()) as
+      | { pending: PendingTrade }
+      | { orders: WorkingOrder[] };
+    if ('orders' in data) return { kind: 'working', orders: data.orders };
     return { kind: 'pending', pending: data.pending };
   }
   let parsed: unknown = null;
@@ -109,6 +131,30 @@ export function usePlaceTrade(gameId: string) {
       void qc.invalidateQueries({ queryKey: tradeKeys.portfolio(gameId) });
       void qc.invalidateQueries({ queryKey: tradeKeys.history(gameId) });
       void qc.invalidateQueries({ queryKey: tradeKeys.pending(gameId) });
+      void qc.invalidateQueries({ queryKey: tradeKeys.working(gameId) });
+      void qc.invalidateQueries({ queryKey: gameKeys.detail(gameId) });
+    },
+  });
+}
+
+export function useWorkingOrders(gameId: string) {
+  return useQuery({
+    queryKey: tradeKeys.working(gameId),
+    queryFn: () => apiFetch<WorkingOrder[]>(`/games/${gameId}/trades?status=working`),
+    enabled: !!gameId,
+    refetchInterval: 30_000,
+  });
+}
+
+export function useCancelWorkingOrder(gameId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (tradeId: string) =>
+      apiFetch<void>(`/games/${gameId}/trades/${tradeId}`, { method: 'DELETE' }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: tradeKeys.working(gameId) });
+      void qc.invalidateQueries({ queryKey: tradeKeys.pending(gameId) });
+      void qc.invalidateQueries({ queryKey: tradeKeys.portfolio(gameId) });
       void qc.invalidateQueries({ queryKey: gameKeys.detail(gameId) });
     },
   });

@@ -24,6 +24,14 @@ const schema = z
     endDate: z.string().min(1, 'Required'),
     startingBalance: z.coerce.number().positive('Must be > 0'),
     allowShortSelling: z.boolean(),
+    /**
+     * Single bundled toggle: when on, the frontend sends all four backend
+     * flags (allowLimitOrders, allowStopOrders, allowBracketOrders, allowGTC)
+     * as true. GTC has no meaning without resting order types, so bundling
+     * them is the correct UX. Backend retains granular columns for future
+     * per-flag control.
+     */
+    advancedOrders: z.boolean(),
   })
   .refine((d) => new Date(d.endDate) > new Date(d.startDate), {
     message: 'End must be after start',
@@ -49,6 +57,7 @@ export function CreateGameDialog() {
     endDate: '',
     startingBalance: 100000,
     allowShortSelling: false,
+    advancedOrders: false,
   };
 
   const form = useForm<FormValues, unknown, FormOutput>({
@@ -64,6 +73,10 @@ export function CreateGameDialog() {
         endDate: toIsoOrEmpty(values.endDate),
         startingBalance: values.startingBalance,
         allowShortSelling: values.allowShortSelling,
+        allowLimitOrders: values.advancedOrders,
+        allowStopOrders: values.advancedOrders,
+        allowBracketOrders: values.advancedOrders,
+        allowGTC: values.advancedOrders,
       });
       toast({ title: 'Game created', variant: 'success' });
       setOpen(false);
@@ -144,6 +157,22 @@ export function CreateGameDialog() {
               </Label>
               <p className="text-xs text-muted-foreground">
                 When enabled, players can SELL SHORT and BUY TO COVER. Leave off for a long-only game.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-start gap-2">
+            <input
+              id="advancedOrders"
+              type="checkbox"
+              className="mt-1 h-4 w-4"
+              {...form.register('advancedOrders')}
+            />
+            <div className="space-y-0.5">
+              <Label htmlFor="advancedOrders" className="cursor-pointer">
+                Advanced order types
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                Enables limit, stop, stop-limit, and bracket orders with Good-Til-Cancelled. Leave off for a market-only game.
               </p>
             </div>
           </div>

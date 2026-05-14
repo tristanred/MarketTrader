@@ -36,6 +36,13 @@
       "when": 1778721855061,
       "tag": "0004_powerful_stellaris",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1778724660391,
+      "tag": "0005_advanced_orders",
+      "breakpoints": true
     }
   ]
 }

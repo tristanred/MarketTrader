@@ -1,8 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import React from 'react';
 import { useGameSocket } from '../src/hooks/useGameSocket';
 import { useAuthStore } from '../src/stores/authStore';
 import { useLiveStore } from '../src/stores/liveStore';
+
+function withQueryClient(children: React.ReactNode) {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return <QueryClientProvider client={qc}>{children}</QueryClientProvider>;
+}
 
 class MockWebSocket {
   static OPEN = 1;
@@ -55,7 +62,7 @@ describe('useGameSocket', () => {
   });
 
   it('connects with the token in the query string and sends an initial subscribe', async () => {
-    render(<Harness symbols={['AAPL', 'TSLA']} />);
+    render(withQueryClient(<Harness symbols={['AAPL', 'TSLA']} />));
     await act(async () => {
       await vi.runAllTimersAsync();
     });
@@ -68,7 +75,7 @@ describe('useGameSocket', () => {
   });
 
   it('dispatches price_update events into the live store', async () => {
-    render(<Harness symbols={['AAPL']} />);
+    render(withQueryClient(<Harness symbols={['AAPL']} />));
     await act(async () => {
       await vi.runAllTimersAsync();
     });
@@ -85,7 +92,7 @@ describe('useGameSocket', () => {
   });
 
   it('dispatches leaderboard_update and trade_executed events', async () => {
-    render(<Harness symbols={['AAPL']} />);
+    render(withQueryClient(<Harness symbols={['AAPL']} />));
     await act(async () => {
       await vi.runAllTimersAsync();
     });

@@ -16,6 +16,10 @@ const createGameSchema = z
     endDate: z.string().datetime(),
     startingBalance: z.number().positive(),
     allowShortSelling: z.boolean().optional().default(false),
+    allowLimitOrders: z.boolean().optional().default(false),
+    allowStopOrders: z.boolean().optional().default(false),
+    allowBracketOrders: z.boolean().optional().default(false),
+    allowGTC: z.boolean().optional().default(false),
   })
   .refine(d => d.endDate > d.startDate, {
     message: 'endDate must be after startDate',
@@ -83,7 +87,17 @@ export function gameRoutes(db: Db) {
         body: createGameSchema,
       },
     }, async (request, reply) => {
-      const { name, startDate, endDate, startingBalance, allowShortSelling } = request.body;
+      const {
+        name,
+        startDate,
+        endDate,
+        startingBalance,
+        allowShortSelling,
+        allowLimitOrders,
+        allowStopOrders,
+        allowBracketOrders,
+        allowGTC,
+      } = request.body;
       const userId = request.user.id;
 
       const [game] = await db
@@ -94,6 +108,10 @@ export function gameRoutes(db: Db) {
           endDate,
           startingBalance,
           allowShortSelling,
+          allowLimitOrders,
+          allowStopOrders,
+          allowBracketOrders,
+          allowGTC,
           createdBy: userId,
         })
         .returning();

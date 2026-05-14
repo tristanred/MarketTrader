@@ -53,15 +53,23 @@ export class StockProviderError extends Error {
 /**
  * Thrown by trade validation helpers when an order cannot be filled.
  * Route handlers map each error code to HTTP 422 with the code in the body.
- * - `INSUFFICIENT_FUNDS`  — buy cost exceeds cash balance
- * - `INSUFFICIENT_SHARES` — sell quantity exceeds holding
- * - `INVALID_QUANTITY`    — quantity is not a positive integer
+ * - `INSUFFICIENT_FUNDS`        — buy cost exceeds available cash
+ * - `INSUFFICIENT_SHARES`       — sell quantity exceeds available holding
+ * - `INVALID_QUANTITY`          — quantity is not a positive integer
+ * - `INVALID_ORDER`             — required price field missing or logically inconsistent
+ * - `ORDER_NOT_WORKING`         — attempted to fill an order that was already cancelled/filled
+ * - `INSUFFICIENT_FUNDS_AT_FILL`— resting buy could not be funded when its trigger fired
  */
+export type TradeErrorCode =
+  | 'INSUFFICIENT_FUNDS'
+  | 'INSUFFICIENT_SHARES'
+  | 'INVALID_QUANTITY'
+  | 'INVALID_ORDER'
+  | 'ORDER_NOT_WORKING'
+  | 'INSUFFICIENT_FUNDS_AT_FILL';
+
 export class TradeError extends Error {
-  constructor(
-    public readonly code: 'INSUFFICIENT_FUNDS' | 'INSUFFICIENT_SHARES' | 'INVALID_QUANTITY',
-    message: string,
-  ) {
+  constructor(public readonly code: TradeErrorCode, message: string) {
     super(message);
     this.name = 'TradeError';
   }

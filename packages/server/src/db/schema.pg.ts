@@ -12,7 +12,21 @@ import {
 // PostgreSQL enums for status and direction fields; the SQLite schema uses text enums instead.
 export const gameStatusEnum = pgEnum('game_status', ['pending', 'active', 'ended']);
 export const tradeDirectionEnum = pgEnum('trade_direction', ['buy', 'sell']);
-export const tradeStatusEnum = pgEnum('trade_status', ['pending', 'executed', 'cancelled']);
+export const tradeStatusEnum = pgEnum('trade_status', [
+  'pending',
+  'working',
+  'executed',
+  'cancelled',
+]);
+export const orderTypeEnum = pgEnum('order_type', [
+  'market',
+  'limit',
+  'stop',
+  'stop_limit',
+  'bracket',
+]);
+export const timeInForceEnum = pgEnum('time_in_force', ['day', 'gtc']);
+export const bracketRoleEnum = pgEnum('bracket_role', ['entry', 'take_profit', 'stop_loss']);
 
 /** Registered platform accounts. One user can participate in many games. */
 export const users = pgTable('users', {
@@ -39,6 +53,10 @@ export const games = pgTable('games', {
     .notNull()
     .default('100000'),
   allowShortSelling: boolean('allow_short_selling').notNull().default(false),
+  allowLimitOrders: boolean('allow_limit_orders').notNull().default(false),
+  allowStopOrders: boolean('allow_stop_orders').notNull().default(false),
+  allowBracketOrders: boolean('allow_bracket_orders').notNull().default(false),
+  allowGTC: boolean('allow_gtc').notNull().default(false),
   status: gameStatusEnum('status').notNull().default('pending'),
   createdBy: text('created_by')
     .notNull()
@@ -92,7 +110,8 @@ export const portfolios = pgTable(
 
 /**
  * Trade lifecycle record. See the SQLite schema for the full lifecycle
- * description (pending → executed | cancelled).
+ * description (working/pending → executed | cancelled, with bracket parent/
+ * child semantics and TIF-driven expiry).
  */
 export const trades = pgTable('trades', {
   id: text('id')
@@ -105,12 +124,23 @@ export const trades = pgTable('trades', {
   direction: tradeDirectionEnum('direction').notNull(),
   quantity: integer('quantity').notNull(),
   status: tradeStatusEnum('status').notNull().default('executed'),
+  orderType: orderTypeEnum('order_type').notNull().default('market'),
+  timeInForce: timeInForceEnum('time_in_force').notNull().default('day'),
+  limitPrice: decimal('limit_price', { precision: 15, scale: 4 }),
+  stopPrice: decimal('stop_price', { precision: 15, scale: 4 }),
+  stopTriggeredAt: timestamp('stop_triggered_at', { mode: 'string' }),
+  parentTradeId: text('parent_trade_id'),
+  bracketRole: bracketRoleEnum('bracket_role'),
+  takeProfitPrice: decimal('take_profit_price', { precision: 15, scale: 4 }),
+  stopLossPrice: decimal('stop_loss_price', { precision: 15, scale: 4 }),
+  expiresAt: timestamp('expires_at', { mode: 'string' }),
   reservedPrice: decimal('reserved_price', { precision: 15, scale: 4 }),
   reservedCash: decimal('reserved_cash', { precision: 15, scale: 2 }),
   price: decimal('price', { precision: 15, scale: 4 }),
   placedAt: timestamp('placed_at', { mode: 'string' }).defaultNow().notNull(),
   executedAt: timestamp('executed_at', { mode: 'string' }),
   cancelledAt: timestamp('cancelled_at', { mode: 'string' }),
+  cancelReason: text('cancel_reason'),
 });
 
 /**

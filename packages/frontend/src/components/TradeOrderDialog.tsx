@@ -109,6 +109,34 @@ export function TradeOrderDialog({
   const place = usePlaceTrade(gameId);
 
   const displayPrice = livePrice ?? quote.data?.price ?? details.data?.price;
+
+  // Prefill price fields with the current quote when the user switches into
+  // a price type that needs one and the field is empty. Avoids forcing the
+  // user to retype the share price they just looked at. Existing entries
+  // are never overwritten — a typed value wins over the auto-default.
+  useEffect(() => {
+    if (displayPrice === undefined || displayPrice <= 0) return;
+    const fmt = (n: number) => n.toFixed(2);
+    if (priceType === 'LIMIT' && limitPrice === '') {
+      setLimitPrice(fmt(displayPrice));
+    } else if (priceType === 'STOP' && stopPrice === '') {
+      setStopPrice(fmt(displayPrice));
+    } else if (priceType === 'STOP_LIMIT') {
+      if (limitPrice === '') setLimitPrice(fmt(displayPrice));
+      if (stopPrice === '') setStopPrice(fmt(displayPrice));
+    } else if (priceType === 'BRACKET') {
+      // Bracket entry is left empty (defaults to market entry — usually
+      // what the user wants). TP/SL get ±5% of current price, on the side
+      // matching the direction.
+      const isBuySide = direction === 'buy';
+      const offset = displayPrice * 0.05;
+      const tpDefault = isBuySide ? displayPrice + offset : displayPrice - offset;
+      const slDefault = isBuySide ? displayPrice - offset : displayPrice + offset;
+      if (takeProfitPrice === '') setTakeProfitPrice(fmt(tpDefault));
+      if (stopLossPrice === '') setStopLossPrice(fmt(slDefault));
+    }
+  }, [priceType, displayPrice, direction, limitPrice, stopPrice, takeProfitPrice, stopLossPrice]);
+
   const cashBalance = portfolio.data?.cashBalance ?? 0;
   const totalPortfolioValue = portfolio.data?.totalValue ?? 0;
   const heldQuantity = useMemo(() => {

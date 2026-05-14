@@ -3,10 +3,8 @@ import { useParams } from 'react-router-dom';
 import { useGame, useJoinGame } from '@/api/games';
 import { usePortfolio } from '@/api/trades';
 import { useGameSocket } from '@/hooks/useGameSocket';
-import { TradePanel } from '@/components/TradePanel';
-import { OpenOrdersList } from '@/components/OpenOrdersList';
-import { TradeHistoryTable } from '@/components/TradeHistoryTable';
-import { StockChart } from '@/components/StockChart';
+import { SymbolSearchCard } from '@/components/SymbolSearchCard';
+import { TradeActivityCard } from '@/components/TradeActivityCard';
 import { YourProfileCard } from '@/components/game/YourProfileCard';
 import { AboutThisGameCard } from '@/components/game/AboutThisGameCard';
 import { GameLeaderboardCard } from '@/components/game/GameLeaderboardCard';
@@ -17,7 +15,6 @@ import { useQuoteDialogStore } from '@/stores/quoteDialogStore';
 import { useWatchlists } from '@/api/watchlists';
 import { useWatchlistUiStore } from '@/stores/watchlistUiStore';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ApiError } from '@/lib/api';
@@ -125,36 +122,11 @@ export function GameDetailPage() {
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <div className="lg:col-span-2 space-y-4">
+            <SymbolSearchCard />
             <YourProfileCard gameId={gameId} />
             <AboutThisGameCard gameId={gameId} />
             <GameLeaderboardCard gameId={gameId} />
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="uppercase tracking-wide text-xs text-muted-foreground">
-                  Trade desk
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <Tabs defaultValue="trade">
-                  <TabsList>
-                    <TabsTrigger value="trade">Trade</TabsTrigger>
-                    <TabsTrigger value="history">History</TabsTrigger>
-                    <TabsTrigger value="chart">Chart</TabsTrigger>
-                  </TabsList>
-                  <TabsContent value="trade" className="pt-3 space-y-4">
-                    <TradePanel gameId={gameId} />
-                    <OpenOrdersList gameId={gameId} />
-                  </TabsContent>
-                  <TabsContent value="history" className="pt-3">
-                    <TradeHistoryTable gameId={gameId} />
-                  </TabsContent>
-                  <TabsContent value="chart" className="pt-3">
-                    <StockChart symbols={heldSymbols} />
-                  </TabsContent>
-                </Tabs>
-              </CardContent>
-            </Card>
+            <TradeActivityCard gameId={gameId} />
           </div>
 
           <aside className="space-y-4">

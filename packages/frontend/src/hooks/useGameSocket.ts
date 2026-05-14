@@ -1,6 +1,9 @@
 import { useEffect, useRef } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useAuthStore } from '@/stores/authStore';
 import { useLiveStore } from '@/stores/liveStore';
+import { tradeKeys } from '@/api/trades';
+import { toast } from '@/components/ui/toast';
 import type { WsClientEvent, WsServerEvent } from '@markettrader/shared';
 
 const MAX_BACKOFF_MS = 30_000;
@@ -24,6 +27,7 @@ export function useGameSocket(gameId: string, symbols: string[]): void {
   const applyLeaderboard = useLiveStore((s) => s.applyLeaderboard);
   const applyTradeExecuted = useLiveStore((s) => s.applyTradeExecuted);
   const reset = useLiveStore((s) => s.reset);
+  const qc = useQueryClient();
 
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectRef = useRef<{ attempt: number; timer: number | null }>({ attempt: 0, timer: null });
@@ -60,7 +64,25 @@ export function useGameSocket(gameId: string, symbols: string[]): void {
           const parsed = JSON.parse(evt.data) as WsServerEvent;
           if (parsed.event === 'price_update') applyPriceUpdate(parsed.data);
           else if (parsed.event === 'leaderboard_update') applyLeaderboard(parsed.data);
-          else if (parsed.event === 'trade_executed') applyTradeExecuted(parsed.data);
+          else if (parsed.event === 'trade_executed') {
+            applyTradeExecuted(parsed.data);
+            // A working order may have just flipped to executed — refresh.
+            void qc.invalidateQueries({ queryKey: tradeKeys.working(gameId) });
+            void qc.invalidateQueries({ queryKey: tradeKeys.pending(gameId) });
+          } else if (parsed.event === 'order_placed') {
+            void qc.invalidateQueries({ queryKey: tradeKeys.working(gameId) });
+          } else if (parsed.event === 'order_cancelled') {
+            void qc.invalidateQueries({ queryKey: tradeKeys.working(gameId) });
+            void qc.invalidateQueries({ queryKey: tradeKeys.pending(gameId) });
+            void qc.invalidateQueries({ queryKey: tradeKeys.portfolio(gameId) });
+          } else if (parsed.event === 'order_triggered') {
+            void qc.invalidateQueries({ queryKey: tradeKeys.working(gameId) });
+            toast({
+              title: 'Stop triggered',
+              description: `Order ${parsed.data.tradeId.slice(0, 8)} now resting as a limit at ${parsed.data.triggerPrice.toFixed(2)}.`,
+              variant: 'success',
+            });
+          }
         } catch {
           // malformed — drop
         }
@@ -100,7 +122,7 @@ export function useGameSocket(gameId: string, symbols: string[]): void {
         wsRef.current = null;
       }
     };
-  }, [gameId, token, applyPriceUpdate, applyLeaderboard, applyTradeExecuted, reset]);
+  }, [gameId, token, applyPriceUpdate, applyLeaderboard, applyTradeExecuted, reset, qc]);
 
   useEffect(() => {
     const ws = wsRef.current;

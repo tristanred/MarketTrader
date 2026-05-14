@@ -22,6 +22,14 @@ export interface Game {
    * false on game creation.
    */
   allowShortSelling: boolean;
+  /** When true, limit orders may be placed. Server rejects with 409 LIMIT_ORDERS_DISABLED otherwise. */
+  allowLimitOrders: boolean;
+  /** When true, stop / stop-limit orders may be placed. Server rejects with 409 STOP_ORDERS_DISABLED otherwise. */
+  allowStopOrders: boolean;
+  /** When true, bracket orders may be placed. Server rejects with 409 BRACKET_ORDERS_DISABLED otherwise. */
+  allowBracketOrders: boolean;
+  /** When true, `timeInForce='gtc'` is accepted. Server rejects with 409 GTC_DISABLED otherwise. */
+  allowGTC: boolean;
   status: GameStatus;
   /** ID of the user who created the game. */
   createdBy: string;
@@ -39,6 +47,14 @@ export interface CreateGameRequest {
   startingBalance: number;
   /** Defaults to false when omitted. */
   allowShortSelling?: boolean;
+  /** Defaults to false when omitted. */
+  allowLimitOrders?: boolean;
+  /** Defaults to false when omitted. */
+  allowStopOrders?: boolean;
+  /** Defaults to false when omitted. */
+  allowBracketOrders?: boolean;
+  /** Defaults to false when omitted. */
+  allowGTC?: boolean;
 }
 
 /** A single player's rank entry as returned in the game leaderboard. */

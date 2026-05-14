@@ -9,11 +9,19 @@ import { useLiveStore } from '@/stores/liveStore';
 import { toast } from '@/components/ui/toast';
 import { ApiError } from '@/lib/api';
 import { cn, formatUSD, SYMBOL_RE } from '@/lib/utils';
-import type { TradeDirection } from '@markettrader/shared';
+import type { OrderType, PlaceTradeRequest, TradeDirection } from '@markettrader/shared';
 
 type Term = 'DAY' | 'GTC';
-type PriceType = 'MARKET' | 'LIMIT' | 'STOP' | 'BRACKET';
+type PriceType = 'MARKET' | 'LIMIT' | 'STOP' | 'STOP_LIMIT' | 'BRACKET';
 type DirectionTab = 'buy' | 'sell-short' | 'sell' | 'buy-to-cover';
+
+const PRICE_TYPE_TO_ORDER_TYPE: Record<PriceType, OrderType> = {
+  MARKET: 'market',
+  LIMIT: 'limit',
+  STOP: 'stop',
+  STOP_LIMIT: 'stop_limit',
+  BRACKET: 'bracket',
+};
 
 interface TradeOrderDialogProps {
   open: boolean;
@@ -21,6 +29,14 @@ interface TradeOrderDialogProps {
   gameId: string;
   /** When false, SELL SHORT and BUY TO COVER tabs are hidden entirely. */
   allowShortSelling: boolean;
+  /** Per-game gate. When false, LIMIT and STOP_LIMIT options are disabled. */
+  allowLimitOrders: boolean;
+  /** Per-game gate. When false, STOP and STOP_LIMIT options are disabled. */
+  allowStopOrders: boolean;
+  /** Per-game gate. When false, BRACKET is disabled. */
+  allowBracketOrders: boolean;
+  /** Per-game gate. When false, the GTC tab is disabled. */
+  allowGTC: boolean;
   onOpenChange: (open: boolean) => void;
   onSeeQuote: (symbol: string) => void;
 }
@@ -47,6 +63,10 @@ export function TradeOrderDialog({
   initialSymbol,
   gameId,
   allowShortSelling,
+  allowLimitOrders,
+  allowStopOrders,
+  allowBracketOrders,
+  allowGTC,
   onOpenChange,
   onSeeQuote,
 }: TradeOrderDialogProps) {
@@ -58,6 +78,9 @@ export function TradeOrderDialog({
   const [term, setTerm] = useState<Term>('DAY');
   const [priceType, setPriceType] = useState<PriceType>('MARKET');
   const [limitPrice, setLimitPrice] = useState<string>('');
+  const [stopPrice, setStopPrice] = useState<string>('');
+  const [takeProfitPrice, setTakeProfitPrice] = useState<string>('');
+  const [stopLossPrice, setStopLossPrice] = useState<string>('');
 
   useEffect(() => {
     if (open) {
@@ -69,6 +92,9 @@ export function TradeOrderDialog({
       setTerm('DAY');
       setPriceType('MARKET');
       setLimitPrice('');
+      setStopPrice('');
+      setTakeProfitPrice('');
+      setStopLossPrice('');
     }
   }, [open, initialSymbol]);
 
@@ -125,30 +151,78 @@ export function TradeOrderDialog({
     setTerm('DAY');
     setPriceType('MARKET');
     setLimitPrice('');
+    setStopPrice('');
+    setTakeProfitPrice('');
+    setStopLossPrice('');
   };
+
+  // Progressive-disclosure visibility helpers.
+  const showLimitPrice = priceType === 'LIMIT' || priceType === 'STOP_LIMIT' || priceType === 'BRACKET';
+  const showStopPrice = priceType === 'STOP' || priceType === 'STOP_LIMIT';
+  const showBracket = priceType === 'BRACKET';
+  const limitPriceRequired = priceType === 'LIMIT' || priceType === 'STOP_LIMIT';
+
+  const parsedLimit = parseFloat(limitPrice);
+  const parsedStop = parseFloat(stopPrice);
+  const parsedTP = parseFloat(takeProfitPrice);
+  const parsedSL = parseFloat(stopLossPrice);
+
+  const priceFieldsValid = (() => {
+    if (priceType === 'MARKET') return true;
+    if (priceType === 'LIMIT') return parsedLimit > 0;
+    if (priceType === 'STOP') return parsedStop > 0;
+    if (priceType === 'STOP_LIMIT') return parsedLimit > 0 && parsedStop > 0;
+    if (priceType === 'BRACKET') {
+      if (!(parsedTP > 0) || !(parsedSL > 0)) return false;
+      // For a long entry: TP must be above SL. For a short entry: TP below SL.
+      return tradeDirection === 'buy' ? parsedTP > parsedSL : parsedTP < parsedSL;
+    }
+    return false;
+  })();
 
   const canSubmit =
     !!activeSymbol &&
-    priceType === 'MARKET' &&
-    term === 'DAY' &&
     (direction === 'buy' || direction === 'sell') &&
     effectiveQuantity >= 1 &&
     maxQuantity >= 1 &&
+    priceFieldsValid &&
     !place.isPending;
 
   const handleSubmit = async () => {
     if (!activeSymbol || !canSubmit) return;
     try {
-      const result = await place.mutateAsync({
+      const payload: PlaceTradeRequest = {
         symbol: activeSymbol,
         direction: tradeDirection,
         quantity: effectiveQuantity,
-      });
+        orderType: PRICE_TYPE_TO_ORDER_TYPE[priceType],
+        timeInForce: term === 'GTC' ? 'gtc' : 'day',
+        ...(showLimitPrice && limitPrice.length > 0 && { limitPrice: parsedLimit }),
+        ...(showStopPrice && { stopPrice: parsedStop }),
+        ...(showBracket && {
+          takeProfitPrice: parsedTP,
+          stopLossPrice: parsedSL,
+        }),
+      };
+      const result = await place.mutateAsync(payload);
       if (result.kind === 'pending') {
         const verb = tradeDirection === 'buy' ? 'Buy' : 'Sell';
         toast({
           title: `${verb} ${effectiveQuantity} ${activeSymbol} queued`,
           description: `Order will execute at next market open (~ ${formatUSD(result.pending.reservedPrice * effectiveQuantity)}).`,
+          variant: 'success',
+        });
+      } else if (result.kind === 'working') {
+        const verb = tradeDirection === 'buy' ? 'Buy' : 'Sell';
+        const label =
+          priceType === 'BRACKET'
+            ? 'bracket'
+            : priceType === 'STOP_LIMIT'
+              ? 'stop-limit'
+              : priceType.toLowerCase();
+        toast({
+          title: `${verb} ${effectiveQuantity} ${activeSymbol} placed`,
+          description: `${label} ${term} order resting — will fill when the price condition is met.`,
           variant: 'success',
         });
       } else {
@@ -308,48 +382,119 @@ export function TradeOrderDialog({
                   rightLabel="Good Til Canceled"
                   leftActive={term === 'DAY'}
                   onLeft={() => setTerm('DAY')}
-                  onRight={undefined}
-                  rightDisabledHint="Coming soon"
+                  onRight={allowGTC ? () => setTerm('GTC') : undefined}
+                  rightDisabledHint="Not enabled for this game"
                 />
               </div>
 
-              {/* Price Type + Price */}
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <Label htmlFor="price-type">Price Type</Label>
-                  <select
-                    id="price-type"
-                    value={priceType}
-                    onChange={(e) => setPriceType(e.target.value as PriceType)}
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm uppercase tracking-wide font-semibold focus:outline-none focus:ring-2 focus:ring-ring"
-                  >
-                    <option value="MARKET">MARKET</option>
-                    <option value="LIMIT" disabled>
-                      LIMIT (coming soon)
-                    </option>
-                    <option value="STOP" disabled>
-                      STOP (coming soon)
-                    </option>
-                    <option value="BRACKET" disabled>
-                      BRACKET (coming soon)
-                    </option>
-                  </select>
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="limit-price">Price</Label>
-                  <Input
-                    id="limit-price"
-                    type="number"
-                    step="0.01"
-                    min={0}
-                    placeholder="$"
-                    value={limitPrice}
-                    onChange={(e) => setLimitPrice(e.target.value)}
-                    disabled={priceType === 'MARKET'}
-                    className="bg-background"
-                  />
-                </div>
+              {/* Price Type */}
+              <div className="space-y-1">
+                <Label htmlFor="price-type">Price Type</Label>
+                <select
+                  id="price-type"
+                  value={priceType}
+                  onChange={(e) => setPriceType(e.target.value as PriceType)}
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm uppercase tracking-wide font-semibold focus:outline-none focus:ring-2 focus:ring-ring"
+                >
+                  <option value="MARKET">MARKET</option>
+                  <option value="LIMIT" disabled={!allowLimitOrders}>
+                    LIMIT{!allowLimitOrders && ' (not enabled)'}
+                  </option>
+                  <option value="STOP" disabled={!allowStopOrders}>
+                    STOP{!allowStopOrders && ' (not enabled)'}
+                  </option>
+                  <option value="STOP_LIMIT" disabled={!allowLimitOrders || !allowStopOrders}>
+                    STOP-LIMIT{(!allowLimitOrders || !allowStopOrders) && ' (not enabled)'}
+                  </option>
+                  <option value="BRACKET" disabled={!allowBracketOrders}>
+                    BRACKET{!allowBracketOrders && ' (not enabled)'}
+                  </option>
+                </select>
               </div>
+
+              {/* Progressive price inputs */}
+              {(showLimitPrice || showStopPrice) && (
+                <div className="grid grid-cols-2 gap-4">
+                  {showLimitPrice && (
+                    <div className="space-y-1">
+                      <Label htmlFor="limit-price">
+                        {showBracket ? 'Entry Limit (optional)' : 'Limit Price'}
+                      </Label>
+                      <Input
+                        id="limit-price"
+                        type="number"
+                        step="0.01"
+                        min={0}
+                        placeholder={showBracket ? 'Market entry if blank' : '$'}
+                        value={limitPrice}
+                        onChange={(e) => setLimitPrice(e.target.value)}
+                        className="bg-background"
+                      />
+                      {limitPriceRequired && limitPrice.length > 0 && !(parsedLimit > 0) && (
+                        <p className="text-xs text-destructive">Must be greater than 0</p>
+                      )}
+                    </div>
+                  )}
+                  {showStopPrice && (
+                    <div className="space-y-1">
+                      <Label htmlFor="stop-price">Stop Price</Label>
+                      <Input
+                        id="stop-price"
+                        type="number"
+                        step="0.01"
+                        min={0}
+                        placeholder="$"
+                        value={stopPrice}
+                        onChange={(e) => setStopPrice(e.target.value)}
+                        className="bg-background"
+                      />
+                      {stopPrice.length > 0 && !(parsedStop > 0) && (
+                        <p className="text-xs text-destructive">Must be greater than 0</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {showBracket && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <Label htmlFor="tp-price">Take Profit</Label>
+                    <Input
+                      id="tp-price"
+                      type="number"
+                      step="0.01"
+                      min={0}
+                      placeholder="$"
+                      value={takeProfitPrice}
+                      onChange={(e) => setTakeProfitPrice(e.target.value)}
+                      className="bg-background"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="sl-price">Stop Loss</Label>
+                    <Input
+                      id="sl-price"
+                      type="number"
+                      step="0.01"
+                      min={0}
+                      placeholder="$"
+                      value={stopLossPrice}
+                      onChange={(e) => setStopLossPrice(e.target.value)}
+                      className="bg-background"
+                    />
+                  </div>
+                  {parsedTP > 0 && parsedSL > 0 && (
+                    (tradeDirection === 'buy' ? parsedTP <= parsedSL : parsedTP >= parsedSL) && (
+                      <p className="col-span-2 text-xs text-destructive">
+                        {tradeDirection === 'buy'
+                          ? 'Take profit must be greater than stop loss for a long bracket.'
+                          : 'Take profit must be less than stop loss for a short bracket.'}
+                      </p>
+                    )
+                  )}
+                </div>
+              )}
 
               {/* Order summary */}
               <div className="space-y-2">

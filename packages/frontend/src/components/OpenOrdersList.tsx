@@ -14,19 +14,31 @@ import { ApiError } from '@/lib/api';
 import type { PendingTrade, WorkingOrder } from '@markettrader/shared';
 
 /**
- * Unified row model spanning the two backend resting-order kinds:
- * - `working`: limit / stop / stop_limit / bracket waiting on a price trigger.
- * - `pending`: market-hours queue (placed while the market was closed).
+ * One displayed row in the Open Orders table. Identical orders fold into a
+ * single group so a player who placed five buys of AAPL at the same price
+ * sees one row with `qty=5 (5 orders)` rather than five duplicate rows.
  *
- * Bracket parents subsume their TP/SL children in the list (children are
- * filtered out while the parent is still working). After the parent fills,
- * the children appear as independent working rows so they can be cancelled.
+ * Bracket orders are deliberately *not* grouped: each bracket has its own
+ * TP/SL semantics tied to a specific entry, so collapsing them would hide
+ * meaningful per-order state.
  */
-type Row =
-  | { kind: 'working'; order: WorkingOrder; placedAt: string }
-  | { kind: 'pending'; trade: PendingTrade; placedAt: string };
+interface OrderGroup {
+  /** Stable identity for React keys + cancellation. */
+  key: string;
+  kind: 'working' | 'pending';
+  symbol: string;
+  direction: 'buy' | 'sell';
+  totalQuantity: number;
+  /** Per-order ids — used to cancel all rows in the group on a single click. */
+  ids: string[];
+  type: string;
+  trigger: string;
+  tif: string;
+  firstAt: string;
+  lastAt: string;
+}
 
-function describeOrder(o: WorkingOrder): { type: string; trigger: string } {
+function describeWorking(o: WorkingOrder): { type: string; trigger: string } {
   switch (o.orderType) {
     case 'limit':
       return { type: 'Limit', trigger: `@ ${formatUSD(Number(o.limitPrice))}` };
@@ -39,7 +51,6 @@ function describeOrder(o: WorkingOrder): { type: string; trigger: string } {
       };
     case 'bracket':
     case 'market':
-      // Bracket entry parent: show TP/SL in one row.
       if (o.bracketRole === 'entry') {
         const entry =
           o.limitPrice != null ? `Limit ${formatUSD(Number(o.limitPrice))}` : 'Market';
@@ -47,8 +58,6 @@ function describeOrder(o: WorkingOrder): { type: string; trigger: string } {
         const sl = o.stopLossPrice != null ? formatUSD(Number(o.stopLossPrice)) : '—';
         return { type: 'Bracket', trigger: `Entry ${entry} · TP ${tp} / SL ${sl}` };
       }
-      // Orphaned market row inside a working state — shouldn't appear,
-      // but format defensively.
       return { type: 'Market', trigger: 'Market' };
   }
 }
@@ -57,8 +66,38 @@ function describePending(p: PendingTrade): { type: string; trigger: string } {
   return { type: 'Market', trigger: `Queued @ ${formatUSD(p.reservedPrice)}` };
 }
 
+/**
+ * Returns a grouping key that's identical only for orders the user would
+ * see as duplicates. Brackets carry their per-row id so they never fold
+ * together — see {@link OrderGroup} comment.
+ */
+function workingGroupKey(o: WorkingOrder): string {
+  if (o.orderType === 'bracket' || o.bracketRole != null) {
+    return `working|bracket|${o.id}`;
+  }
+  return [
+    'working',
+    o.symbol,
+    o.direction,
+    o.orderType,
+    o.timeInForce,
+    o.limitPrice ?? '',
+    o.stopPrice ?? '',
+  ].join('|');
+}
+
+function pendingGroupKey(p: PendingTrade): string {
+  return ['pending', p.symbol, p.direction, p.reservedPrice].join('|');
+}
+
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleString();
+}
+
+function formatRange(g: OrderGroup): string {
+  const first = formatDate(g.firstAt);
+  if (g.ids.length === 1 || g.firstAt === g.lastAt) return first;
+  return `${first} → ${formatDate(g.lastAt)}`;
 }
 
 export function OpenOrdersList({ gameId }: { gameId: string }) {
@@ -67,7 +106,7 @@ export function OpenOrdersList({ gameId }: { gameId: string }) {
   const cancelWorking = useCancelWorkingOrder(gameId);
   const cancelPending = useCancelPendingTrade(gameId);
 
-  const rows = useMemo<Row[]>(() => {
+  const groups = useMemo<OrderGroup[]>(() => {
     const w = working.data ?? [];
     const p = pending.data ?? [];
 
@@ -81,16 +120,87 @@ export function OpenOrdersList({ gameId }: { gameId: string }) {
       (o) => o.parentTradeId == null || !workingParentIds.has(o.parentTradeId),
     );
 
-    const items: Row[] = [
-      ...filteredWorking.map((o) => ({ kind: 'working' as const, order: o, placedAt: o.placedAt })),
-      ...p.map((t) => ({ kind: 'pending' as const, trade: t, placedAt: t.placedAt })),
-    ];
-    items.sort((a, b) => b.placedAt.localeCompare(a.placedAt));
-    return items;
+    const map = new Map<string, OrderGroup>();
+
+    for (const o of filteredWorking) {
+      const key = workingGroupKey(o);
+      const { type, trigger } = describeWorking(o);
+      const existing = map.get(key);
+      if (existing) {
+        existing.totalQuantity += o.quantity;
+        existing.ids.push(o.id);
+        if (o.placedAt < existing.firstAt) existing.firstAt = o.placedAt;
+        if (o.placedAt > existing.lastAt) existing.lastAt = o.placedAt;
+      } else {
+        map.set(key, {
+          key,
+          kind: 'working',
+          symbol: o.symbol,
+          direction: o.direction,
+          totalQuantity: o.quantity,
+          ids: [o.id],
+          type,
+          trigger,
+          tif: o.timeInForce.toUpperCase(),
+          firstAt: o.placedAt,
+          lastAt: o.placedAt,
+        });
+      }
+    }
+
+    for (const t of p) {
+      const key = pendingGroupKey(t);
+      const { type, trigger } = describePending(t);
+      const existing = map.get(key);
+      if (existing) {
+        existing.totalQuantity += t.quantity;
+        existing.ids.push(t.id);
+        if (t.placedAt < existing.firstAt) existing.firstAt = t.placedAt;
+        if (t.placedAt > existing.lastAt) existing.lastAt = t.placedAt;
+      } else {
+        map.set(key, {
+          key,
+          kind: 'pending',
+          symbol: t.symbol,
+          direction: t.direction,
+          totalQuantity: t.quantity,
+          ids: [t.id],
+          type,
+          trigger,
+          tif: '—',
+          firstAt: t.placedAt,
+          lastAt: t.placedAt,
+        });
+      }
+    }
+
+    return [...map.values()].sort((a, b) => b.lastAt.localeCompare(a.lastAt));
   }, [working.data, pending.data]);
 
   if (working.isLoading || pending.isLoading) return null;
-  if (rows.length === 0) return null;
+  if (groups.length === 0) return null;
+
+  const isCancelling = cancelWorking.isPending || cancelPending.isPending;
+
+  const handleCancelGroup = async (g: OrderGroup) => {
+    const mutation = g.kind === 'working' ? cancelWorking : cancelPending;
+    const results = await Promise.allSettled(g.ids.map((id) => mutation.mutateAsync(id)));
+    const failures = results.filter((r) => r.status === 'rejected');
+    if (failures.length === 0) {
+      toast({
+        title: g.ids.length === 1 ? 'Order cancelled' : `${g.ids.length} orders cancelled`,
+        variant: 'success',
+      });
+      return;
+    }
+    const first = failures[0];
+    const reason = first?.status === 'rejected' ? first.reason : undefined;
+    toast({
+      title: `${failures.length} of ${g.ids.length} cancels failed`,
+      description: extractMessage(reason),
+      variant: 'destructive',
+    });
+  };
 
   return (
     <Card>
@@ -114,27 +224,12 @@ export function OpenOrdersList({ gameId }: { gameId: string }) {
               </tr>
             </thead>
             <tbody>
-              {rows.map((row) => (
+              {groups.map((g) => (
                 <OrderRow
-                  key={row.kind === 'working' ? row.order.id : row.trade.id}
-                  row={row}
-                  isCancelling={cancelWorking.isPending || cancelPending.isPending}
-                  onCancel={async () => {
-                    try {
-                      if (row.kind === 'working') {
-                        await cancelWorking.mutateAsync(row.order.id);
-                      } else {
-                        await cancelPending.mutateAsync(row.trade.id);
-                      }
-                      toast({ title: 'Order cancelled', variant: 'success' });
-                    } catch (err) {
-                      toast({
-                        title: 'Cancel failed',
-                        description: extractMessage(err),
-                        variant: 'destructive',
-                      });
-                    }
-                  }}
+                  key={g.key}
+                  group={g}
+                  isCancelling={isCancelling}
+                  onCancel={() => void handleCancelGroup(g)}
                 />
               ))}
             </tbody>
@@ -146,35 +241,43 @@ export function OpenOrdersList({ gameId }: { gameId: string }) {
 }
 
 function OrderRow({
-  row,
+  group,
   isCancelling,
   onCancel,
 }: {
-  row: Row;
+  group: OrderGroup;
   isCancelling: boolean;
   onCancel: () => void;
 }) {
-  const isWorking = row.kind === 'working';
-  const symbol = isWorking ? row.order.symbol : row.trade.symbol;
-  const direction = isWorking ? row.order.direction : row.trade.direction;
-  const quantity = isWorking ? row.order.quantity : row.trade.quantity;
-  const tif = isWorking ? row.order.timeInForce.toUpperCase() : '—';
-  const placed = isWorking ? row.order.placedAt : row.trade.placedAt;
-  const { type, trigger } = isWorking ? describeOrder(row.order) : describePending(row.trade);
-
+  const isWorking = group.kind === 'working';
+  const count = group.ids.length;
   return (
     <tr className="border-b last:border-b-0">
       <td className="px-2 py-2 font-medium">
-        <SymbolButton symbol={symbol} />
+        <SymbolButton symbol={group.symbol} />
       </td>
-      <td className={cn('px-2 py-2 uppercase text-xs font-semibold', direction === 'buy' ? 'text-green-600' : 'text-red-600')}>
-        {direction}
+      <td
+        className={cn(
+          'px-2 py-2 uppercase text-xs font-semibold',
+          group.direction === 'buy' ? 'text-green-600' : 'text-red-600',
+        )}
+      >
+        {group.direction}
       </td>
-      <td className="px-2 py-2 tabular-nums">{quantity}</td>
-      <td className="px-2 py-2">{type}</td>
-      <td className="px-2 py-2 text-muted-foreground">{trigger}</td>
-      <td className="px-2 py-2 text-xs">{tif}</td>
-      <td className="px-2 py-2 text-xs text-muted-foreground whitespace-nowrap">{formatDate(placed)}</td>
+      <td className="px-2 py-2 tabular-nums">
+        {group.totalQuantity}
+        {count > 1 && (
+          <span className="ml-1 text-xs font-normal text-muted-foreground">
+            ({count} orders)
+          </span>
+        )}
+      </td>
+      <td className="px-2 py-2">{group.type}</td>
+      <td className="px-2 py-2 text-muted-foreground">{group.trigger}</td>
+      <td className="px-2 py-2 text-xs">{group.tif}</td>
+      <td className="px-2 py-2 text-xs text-muted-foreground whitespace-nowrap">
+        {formatRange(group)}
+      </td>
       <td className="px-2 py-2">
         <span
           className={cn(
@@ -187,7 +290,7 @@ function OrderRow({
       </td>
       <td className="px-2 py-2 text-right">
         <Button variant="outline" size="sm" disabled={isCancelling} onClick={onCancel}>
-          Cancel
+          Cancel{count > 1 ? ' all' : ''}
         </Button>
       </td>
     </tr>

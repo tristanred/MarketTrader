@@ -162,4 +162,63 @@ describe('OpenOrdersList', () => {
     render(wrapper(<OpenOrdersList gameId="g1" />));
     expect(screen.getByText('Pending')).toBeInTheDocument();
   });
+
+  it('folds identical pending orders into one row with summed quantity', () => {
+    vi.mocked(useWorkingOrders).mockReturnValue({
+      data: [] as WorkingOrder[],
+      isLoading: false,
+    } as unknown as ReturnType<typeof useWorkingOrders>);
+    const samePrice = 298.21;
+    const pending: PendingTrade[] = Array.from({ length: 4 }, (_, i) => ({
+      id: `p${i}`,
+      gamePlayerId: 'gp',
+      symbol: 'AAPL',
+      direction: 'buy',
+      quantity: 1,
+      reservedPrice: samePrice,
+      reservedCash: samePrice,
+      placedAt: '2026-05-14T00:00:00Z',
+    }));
+    vi.mocked(usePendingTrades).mockReturnValue({
+      data: pending,
+      isLoading: false,
+    } as unknown as ReturnType<typeof usePendingTrades>);
+    render(wrapper(<OpenOrdersList gameId="g1" />));
+    // Should collapse to one row with qty 4 and "(4 orders)" annotation.
+    expect(screen.getAllByRole('button', { name: /cancel/i })).toHaveLength(1);
+    expect(screen.getByText(/\(4 orders\)/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /cancel all/i })).toBeInTheDocument();
+  });
+
+  it('does not fold orders with different prices', () => {
+    vi.mocked(useWorkingOrders).mockReturnValue({
+      data: [
+        makeWorking({ id: 'w1', orderType: 'limit', limitPrice: 100 }),
+        makeWorking({ id: 'w2', orderType: 'limit', limitPrice: 105 }),
+      ],
+      isLoading: false,
+    } as unknown as ReturnType<typeof useWorkingOrders>);
+    vi.mocked(usePendingTrades).mockReturnValue({
+      data: [] as PendingTrade[],
+      isLoading: false,
+    } as unknown as ReturnType<typeof usePendingTrades>);
+    render(wrapper(<OpenOrdersList gameId="g1" />));
+    expect(screen.getAllByRole('button', { name: /cancel/i })).toHaveLength(2);
+  });
+
+  it('does not fold orders with different sides', () => {
+    vi.mocked(useWorkingOrders).mockReturnValue({
+      data: [
+        makeWorking({ id: 'w1', direction: 'buy', orderType: 'limit', limitPrice: 100 }),
+        makeWorking({ id: 'w2', direction: 'sell', orderType: 'limit', limitPrice: 100 }),
+      ],
+      isLoading: false,
+    } as unknown as ReturnType<typeof useWorkingOrders>);
+    vi.mocked(usePendingTrades).mockReturnValue({
+      data: [] as PendingTrade[],
+      isLoading: false,
+    } as unknown as ReturnType<typeof usePendingTrades>);
+    render(wrapper(<OpenOrdersList gameId="g1" />));
+    expect(screen.getAllByRole('button', { name: /cancel/i })).toHaveLength(2);
+  });
 });

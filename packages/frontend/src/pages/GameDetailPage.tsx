@@ -12,6 +12,7 @@ import { AboutThisGameCard } from '@/components/game/AboutThisGameCard';
 import { GameLeaderboardCard } from '@/components/game/GameLeaderboardCard';
 import { HoldingsSidebar } from '@/components/game/HoldingsSidebar';
 import { QuoteInfoDialog } from '@/components/QuoteInfoDialog';
+import { TradeOrderDialog } from '@/components/TradeOrderDialog';
 import { useQuoteDialogStore } from '@/stores/quoteDialogStore';
 import { useWatchlists } from '@/api/watchlists';
 import { useWatchlistUiStore } from '@/stores/watchlistUiStore';
@@ -167,7 +168,19 @@ export function GameDetailPage() {
         onOpenChange={(open) => {
           if (!open) quoteDialog.closeQuote();
         }}
-        onTradeClick={(s) => quoteDialog.setSelectedTradeSymbol(s)}
+        onTradeClick={(s) => quoteDialog.openTradeOrder(s)}
+      />
+      <TradeOrderDialog
+        open={quoteDialog.tradeOrderOpen}
+        initialSymbol={quoteDialog.tradeOrderSymbol}
+        gameId={gameId}
+        onOpenChange={(open) => {
+          if (!open) quoteDialog.closeTradeOrder();
+        }}
+        onSeeQuote={(s) => {
+          quoteDialog.closeTradeOrder();
+          quoteDialog.openQuote(s);
+        }}
       />
     </>
   );

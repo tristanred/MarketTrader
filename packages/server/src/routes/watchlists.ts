@@ -165,7 +165,7 @@ export function watchlistRoutes(db: Db) {
             .update(watchlists)
             .set({ name: request.body.name })
             .where(and(eq(watchlists.id, watchlistId), eq(watchlists.userId, userId)));
-        } catch (err) {
+        } catch {
           // Likely a unique-constraint violation on (userId, name)
           return reply.status(409).send({ error: 'A watchlist with that name already exists' });
         }

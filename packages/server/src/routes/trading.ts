@@ -16,6 +16,13 @@ import {
   cancelPendingTrade,
   PendingTradeNotFoundError,
 } from '../services/pending-trade.js';
+import {
+  placeWorkingOrder,
+  cancelWorkingOrder,
+  listWorkingOrders,
+  WorkingOrderNotFoundError,
+} from '../services/working-order.js';
+import type { OrderType, TimeInForce } from '@markettrader/shared';
 import { computeLeaderboard } from '../services/leaderboard.js';
 import type { TradeDirection } from '@markettrader/shared';
 import type { GameClientRegistry } from '../ws/registry.js';
@@ -30,14 +37,58 @@ function isTradingOpen(state: MarketState): boolean {
 
 const LEADERBOARD_THROTTLE_MS = 1_000;
 
-const placeTradeSchema = z.object({
-  symbol: z.string().min(1).max(10).transform((s) => s.toUpperCase()),
-  direction: z.enum(['buy', 'sell']),
-  quantity: z.number().int().min(1),
-});
+const placeTradeSchema = z
+  .object({
+    symbol: z.string().min(1).max(10).transform((s) => s.toUpperCase()),
+    direction: z.enum(['buy', 'sell']),
+    quantity: z.number().int().min(1),
+    orderType: z
+      .enum(['market', 'limit', 'stop', 'stop_limit', 'bracket'])
+      .optional()
+      .default('market'),
+    timeInForce: z.enum(['day', 'gtc']).optional().default('day'),
+    limitPrice: z.number().positive().optional(),
+    stopPrice: z.number().positive().optional(),
+    takeProfitPrice: z.number().positive().optional(),
+    stopLossPrice: z.number().positive().optional(),
+  })
+  .superRefine((v, ctx) => {
+    if ((v.orderType === 'limit' || v.orderType === 'stop_limit') && v.limitPrice == null) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'limitPrice is required for limit and stop_limit orders',
+        path: ['limitPrice'],
+      });
+    }
+    if ((v.orderType === 'stop' || v.orderType === 'stop_limit') && v.stopPrice == null) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'stopPrice is required for stop and stop_limit orders',
+        path: ['stopPrice'],
+      });
+    }
+    if (v.orderType === 'bracket' && (v.takeProfitPrice == null || v.stopLossPrice == null)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'bracket orders require takeProfitPrice and stopLossPrice',
+        path: ['orderType'],
+      });
+    }
+    if (v.orderType === 'market' && (v.limitPrice != null || v.stopPrice != null)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'market orders must not include limitPrice or stopPrice',
+        path: ['orderType'],
+      });
+    }
+  });
 
 const gameIdParamsSchema = z.object({ id: z.string() });
 const pendingTradeParamsSchema = z.object({ id: z.string(), pendingId: z.string() });
+const workingOrderParamsSchema = z.object({ id: z.string(), tradeId: z.string() });
+const tradesQuerySchema = z.object({
+  status: z.enum(['executed', 'working', 'pending']).optional(),
+});
 
 /**
  * Registers trading and portfolio routes (all require authentication):
@@ -77,7 +128,17 @@ export function tradingRoutes(
         },
       },
       async (request, reply) => {
-        const { symbol, direction, quantity } = request.body;
+        const {
+          symbol,
+          direction,
+          quantity,
+          orderType,
+          timeInForce,
+          limitPrice,
+          stopPrice,
+          takeProfitPrice,
+          stopLossPrice,
+        } = request.body;
         const userId = request.user.id;
         const gameId = request.params.id;
 
@@ -102,6 +163,28 @@ export function tradingRoutes(
             .send({ error: 'SHORT_SELLING_DISABLED', message: 'Short selling is not allowed in this game' });
         }
 
+        // Per-game order-type gates. Mirrors the allowShortSelling pattern.
+        if ((orderType === 'limit' || orderType === 'stop_limit') && !game.allowLimitOrders) {
+          return reply
+            .status(409)
+            .send({ code: 'LIMIT_ORDERS_DISABLED', message: 'Limit orders are not allowed in this game' });
+        }
+        if ((orderType === 'stop' || orderType === 'stop_limit') && !game.allowStopOrders) {
+          return reply
+            .status(409)
+            .send({ code: 'STOP_ORDERS_DISABLED', message: 'Stop orders are not allowed in this game' });
+        }
+        if (orderType === 'bracket' && !game.allowBracketOrders) {
+          return reply
+            .status(409)
+            .send({ code: 'BRACKET_ORDERS_DISABLED', message: 'Bracket orders are not allowed in this game' });
+        }
+        if (timeInForce === 'gtc' && !game.allowGTC) {
+          return reply
+            .status(409)
+            .send({ code: 'GTC_DISABLED', message: 'Good-Til-Cancelled orders are not allowed in this game' });
+        }
+
         const status = await recomputeGameStatus(db, game);
         if (status !== 'active') {
           return reply.status(409).send({ error: 'GAME_NOT_ACTIVE', message: `Game is ${status}` });
@@ -113,6 +196,52 @@ export function tradingRoutes(
           .where(and(eq(gamePlayers.gameId, gameId), eq(gamePlayers.userId, userId)))
           .limit(1);
         if (!gamePlayer) return reply.status(404).send({ error: 'You are not a member of this game' });
+
+        // ── Working-order branch ─────────────────────────────────────────────
+        // Non-market orders are placed as resting working orders. The trigger
+        // worker fills them when the price condition is met.
+        if (orderType !== 'market') {
+          // Fetch a reference quote for stops (no limit ceiling) and brackets
+          // with a market entry. Best-effort: if it fails, the service will
+          // throw INVALID_ORDER for cases that need it.
+          let referencePrice: number | undefined;
+          try {
+            const q = await provider.getQuote(symbol);
+            referencePrice = q.price;
+          } catch {
+            // Stop and market-bracket entries that need a reference price
+            // will be rejected by placeWorkingOrder with INVALID_ORDER.
+          }
+          try {
+            const orders = await placeWorkingOrder(db, {
+              gamePlayerId: gamePlayer.id,
+              symbol,
+              direction: direction as TradeDirection,
+              quantity,
+              orderType: orderType as OrderType,
+              timeInForce: timeInForce as TimeInForce,
+              ...(limitPrice != null && { limitPrice }),
+              ...(stopPrice != null && { stopPrice }),
+              ...(takeProfitPrice != null && { takeProfitPrice }),
+              ...(stopLossPrice != null && { stopLossPrice }),
+              ...(referencePrice != null && { referencePrice }),
+            });
+            if (registry) {
+              for (const order of orders) {
+                registry.broadcast(gameId, {
+                  event: 'order_placed',
+                  data: { playerId: gamePlayer.userId, order },
+                });
+              }
+            }
+            return reply.status(202).send({ orders });
+          } catch (err) {
+            if (err instanceof TradeError) {
+              return reply.status(422).send({ code: err.code, message: err.message });
+            }
+            throw err;
+          }
+        }
 
         // ── Market-hours gate ────────────────────────────────────────────────
         // Default mode `instant` falls through to the existing logic for
@@ -283,14 +412,16 @@ export function tradingRoutes(
         onRequest: rawApp.authenticate,
         schema: {
           tags: ['Trading'],
-          summary: 'Trade history for the caller in this game, newest first.',
+          summary: 'Trade history for the caller. Defaults to executed; pass ?status=working for resting orders.',
           security: [{ bearerAuth: [] }],
           params: gameIdParamsSchema,
+          querystring: tradesQuerySchema,
         },
       },
       async (request, reply) => {
         const userId = request.user.id;
         const gameId = request.params.id;
+        const statusFilter = request.query.status ?? 'executed';
 
         const [gamePlayer] = await db
           .select({ id: gamePlayers.id })
@@ -298,6 +429,15 @@ export function tradingRoutes(
           .where(and(eq(gamePlayers.gameId, gameId), eq(gamePlayers.userId, userId)))
           .limit(1);
         if (!gamePlayer) return reply.status(404).send({ error: 'You are not a member of this game' });
+
+        if (statusFilter === 'working') {
+          const list = await listWorkingOrders(db, gamePlayer.id);
+          return reply.status(200).send(list);
+        }
+        if (statusFilter === 'pending') {
+          const list = await listPendingTrades(db, gamePlayer.id);
+          return reply.status(200).send(list);
+        }
 
         const history = await db
           .select()
@@ -316,6 +456,49 @@ export function tradingRoutes(
             executedAt: t.executedAt,
           })),
         );
+      },
+    );
+
+    app.delete(
+      '/games/:id/trades/:tradeId',
+      {
+        onRequest: rawApp.authenticate,
+        schema: {
+          tags: ['Trading'],
+          summary: 'Cancel a resting working order (limit/stop/bracket).',
+          security: [{ bearerAuth: [] }],
+          params: workingOrderParamsSchema,
+        },
+      },
+      async (request, reply) => {
+        const userId = request.user.id;
+        const gameId = request.params.id;
+        const tradeId = request.params.tradeId;
+
+        const [gamePlayer] = await db
+          .select({ id: gamePlayers.id, userId: gamePlayers.userId })
+          .from(gamePlayers)
+          .where(and(eq(gamePlayers.gameId, gameId), eq(gamePlayers.userId, userId)))
+          .limit(1);
+        if (!gamePlayer) return reply.status(404).send({ error: 'You are not a member of this game' });
+
+        try {
+          const { cancelledIds } = await cancelWorkingOrder(db, gamePlayer.id, tradeId);
+          if (registry) {
+            for (const id of cancelledIds) {
+              registry.broadcast(gameId, {
+                event: 'order_cancelled',
+                data: { playerId: gamePlayer.userId, tradeId: id, reason: 'USER_CANCELLED' },
+              });
+            }
+          }
+          return reply.status(204).send();
+        } catch (err) {
+          if (err instanceof WorkingOrderNotFoundError) {
+            return reply.status(404).send({ error: 'Working order not found' });
+          }
+          throw err;
+        }
       },
     );
 

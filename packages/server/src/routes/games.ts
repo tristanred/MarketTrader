@@ -87,7 +87,17 @@ export function gameRoutes(db: Db) {
         body: createGameSchema,
       },
     }, async (request, reply) => {
-      const { name, startDate, endDate, startingBalance, allowShortSelling } = request.body;
+      const {
+        name,
+        startDate,
+        endDate,
+        startingBalance,
+        allowShortSelling,
+        allowLimitOrders,
+        allowStopOrders,
+        allowBracketOrders,
+        allowGTC,
+      } = request.body;
       const userId = request.user.id;
 
       const [game] = await db
@@ -98,6 +108,10 @@ export function gameRoutes(db: Db) {
           endDate,
           startingBalance,
           allowShortSelling,
+          allowLimitOrders,
+          allowStopOrders,
+          allowBracketOrders,
+          allowGTC,
           createdBy: userId,
         })
         .returning();

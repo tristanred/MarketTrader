@@ -3,7 +3,6 @@ import { useParams } from 'react-router-dom';
 import { useGame, useJoinGame } from '@/api/games';
 import { usePortfolio } from '@/api/trades';
 import { useGameSocket } from '@/hooks/useGameSocket';
-import { AppHeader } from '@/components/AppHeader';
 import { TradePanel } from '@/components/TradePanel';
 import { PendingOrdersList } from '@/components/PendingOrdersList';
 import { TradeHistoryTable } from '@/components/TradeHistoryTable';
@@ -73,10 +72,8 @@ export function GameDetailPage() {
   // 404 => either game doesn't exist or caller isn't a member.
   if (game.isError && game.error instanceof ApiError && game.error.status === 404) {
     return (
-      <div className="min-h-screen bg-background">
-        <AppHeader />
-        <main className="mx-auto max-w-3xl p-6">
-          <Card>
+      <main className="mx-auto max-w-3xl p-6">
+        <Card>
             <CardHeader>
               <CardTitle>Join this game?</CardTitle>
             </CardHeader>
@@ -107,14 +104,12 @@ export function GameDetailPage() {
               </Button>
             </CardContent>
           </Card>
-        </main>
-      </div>
+      </main>
     );
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      <AppHeader />
+    <>
       <main className="mx-auto max-w-6xl p-4 sm:p-6 space-y-4">
         <div className="flex flex-wrap items-baseline justify-between gap-2 border-b pb-3">
           {game.isLoading ? (
@@ -174,6 +169,6 @@ export function GameDetailPage() {
         }}
         onTradeClick={(s) => quoteDialog.setSelectedTradeSymbol(s)}
       />
-    </div>
+    </>
   );
 }

@@ -1,5 +1,4 @@
 import { Navigate, useNavigate, useParams } from 'react-router-dom';
-import { AppHeader } from '@/components/AppHeader';
 import { QuoteInfo } from '@/components/QuoteInfo';
 import { SYMBOL_RE } from '@/lib/utils';
 
@@ -20,16 +19,13 @@ export function SymbolPage() {
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      <AppHeader />
-      <main className="mx-auto max-w-4xl p-4 sm:p-6">
-        <QuoteInfo
-          symbol={symbol}
-          variant="full"
-          onSymbolChange={(next) => navigate(`/symbols/${next}`)}
-          showTradeButton={false}
-        />
-      </main>
-    </div>
+    <main className="mx-auto max-w-4xl p-4 sm:p-6">
+      <QuoteInfo
+        symbol={symbol}
+        variant="full"
+        onSymbolChange={(next) => navigate(`/symbols/${next}`)}
+        showTradeButton={false}
+      />
+    </main>
   );
 }

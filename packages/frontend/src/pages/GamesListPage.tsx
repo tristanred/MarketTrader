@@ -1,6 +1,5 @@
 import { Link } from 'react-router-dom';
 import { useGames } from '@/api/games';
-import { AppHeader } from '@/components/AppHeader';
 import { CreateGameDialog } from '@/components/CreateGameDialog';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -25,10 +24,8 @@ export function GamesListPage() {
   const games = useGames();
 
   return (
-    <div className="min-h-screen bg-background">
-      <AppHeader />
-      <main className="mx-auto max-w-6xl p-4 sm:p-6 space-y-4">
-        <div className="flex items-center justify-between">
+    <div className="mx-auto max-w-6xl p-4 sm:p-6 space-y-4">
+      <div className="flex items-center justify-between">
           <h1 className="text-2xl font-semibold tracking-tight">Your games</h1>
           <CreateGameDialog />
         </div>
@@ -84,7 +81,6 @@ export function GamesListPage() {
             )}
           </CardContent>
         </Card>
-      </main>
     </div>
   );
 }

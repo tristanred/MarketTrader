@@ -7,6 +7,7 @@ import { GamesListPage } from '@/pages/GamesListPage';
 import { GameDetailPage } from '@/pages/GameDetailPage';
 import { SymbolPage } from '@/pages/SymbolPage';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
+import { AppShell } from '@/components/AppShell';
 import { Toaster } from '@/components/ui/toast';
 import { useAuthStore } from '@/stores/authStore';
 
@@ -37,29 +38,16 @@ function App() {
             }
           />
           <Route
-            path="/"
             element={
               <ProtectedRoute>
-                <GamesListPage />
+                <AppShell />
               </ProtectedRoute>
             }
-          />
-          <Route
-            path="/games/:gameId"
-            element={
-              <ProtectedRoute>
-                <GameDetailPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/symbols/:symbol"
-            element={
-              <ProtectedRoute>
-                <SymbolPage />
-              </ProtectedRoute>
-            }
-          />
+          >
+            <Route path="/" element={<GamesListPage />} />
+            <Route path="/games/:gameId" element={<GameDetailPage />} />
+            <Route path="/symbols/:symbol" element={<SymbolPage />} />
+          </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>

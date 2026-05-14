@@ -174,6 +174,7 @@ export function GameDetailPage() {
         open={quoteDialog.tradeOrderOpen}
         initialSymbol={quoteDialog.tradeOrderSymbol}
         gameId={gameId}
+        allowShortSelling={game.data?.allowShortSelling ?? false}
         onOpenChange={(open) => {
           if (!open) quoteDialog.closeTradeOrder();
         }}

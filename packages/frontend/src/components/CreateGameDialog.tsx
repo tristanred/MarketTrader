@@ -23,6 +23,7 @@ const schema = z
     startDate: z.string().min(1, 'Required'),
     endDate: z.string().min(1, 'Required'),
     startingBalance: z.coerce.number().positive('Must be > 0'),
+    allowShortSelling: z.boolean(),
   })
   .refine((d) => new Date(d.endDate) > new Date(d.startDate), {
     message: 'End must be after start',
@@ -47,6 +48,7 @@ export function CreateGameDialog() {
     startDate: '',
     endDate: '',
     startingBalance: 100000,
+    allowShortSelling: false,
   };
 
   const form = useForm<FormValues, unknown, FormOutput>({
@@ -61,6 +63,7 @@ export function CreateGameDialog() {
         startDate: toIsoOrEmpty(values.startDate),
         endDate: toIsoOrEmpty(values.endDate),
         startingBalance: values.startingBalance,
+        allowShortSelling: values.allowShortSelling,
       });
       toast({ title: 'Game created', variant: 'success' });
       setOpen(false);
@@ -120,6 +123,22 @@ export function CreateGameDialog() {
                 {form.formState.errors.startingBalance.message}
               </p>
             )}
+          </div>
+          <div className="flex items-start gap-2">
+            <input
+              id="allowShortSelling"
+              type="checkbox"
+              className="mt-1 h-4 w-4"
+              {...form.register('allowShortSelling')}
+            />
+            <div className="space-y-0.5">
+              <Label htmlFor="allowShortSelling" className="cursor-pointer">
+                Allow short selling
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                When enabled, players can SELL SHORT and BUY TO COVER. Leave off for a long-only game.
+              </p>
+            </div>
           </div>
           <DialogFooter>
             <Button type="submit" disabled={createGame.isPending}>

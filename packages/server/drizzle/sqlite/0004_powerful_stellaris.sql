@@ -1,0 +1,1 @@
+ALTER TABLE `games` ADD `allow_short_selling` integer DEFAULT false NOT NULL;

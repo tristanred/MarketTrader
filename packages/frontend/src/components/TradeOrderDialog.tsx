@@ -19,6 +19,8 @@ interface TradeOrderDialogProps {
   open: boolean;
   initialSymbol: string | null;
   gameId: string;
+  /** When false, SELL SHORT and BUY TO COVER tabs are hidden entirely. */
+  allowShortSelling: boolean;
   onOpenChange: (open: boolean) => void;
   onSeeQuote: (symbol: string) => void;
 }
@@ -44,6 +46,7 @@ export function TradeOrderDialog({
   open,
   initialSymbol,
   gameId,
+  allowShortSelling,
   onOpenChange,
   onSeeQuote,
 }: TradeOrderDialogProps) {
@@ -220,7 +223,11 @@ export function TradeOrderDialog({
           </div>
 
           {/* Direction tabs */}
-          <DirectionTabs value={direction} onChange={setDirection} />
+          <DirectionTabs
+            value={direction}
+            onChange={setDirection}
+            allowShortSelling={allowShortSelling}
+          />
 
           {activeSymbol && (
             <>
@@ -412,18 +419,27 @@ export function TradeOrderDialog({
 function DirectionTabs({
   value,
   onChange,
+  allowShortSelling,
 }: {
   value: DirectionTab;
   onChange: (next: DirectionTab) => void;
+  allowShortSelling: boolean;
 }) {
-  const tabs: { key: DirectionTab; label: string; disabled?: boolean }[] = [
-    { key: 'buy', label: 'Buy' },
-    { key: 'sell-short', label: 'Sell Short', disabled: true },
-    { key: 'sell', label: 'Sell' },
-    { key: 'buy-to-cover', label: 'Buy to Cover', disabled: true },
-  ];
+  const tabs: { key: DirectionTab; label: string; disabled?: boolean }[] =
+    allowShortSelling
+      ? [
+          { key: 'buy', label: 'Buy' },
+          { key: 'sell-short', label: 'Sell Short', disabled: true },
+          { key: 'sell', label: 'Sell' },
+          { key: 'buy-to-cover', label: 'Buy to Cover', disabled: true },
+        ]
+      : [
+          { key: 'buy', label: 'Buy' },
+          { key: 'sell', label: 'Sell' },
+        ];
+  const gridClass = allowShortSelling ? 'grid-cols-4' : 'grid-cols-2';
   return (
-    <div className="grid grid-cols-4 rounded-md border overflow-hidden bg-background">
+    <div className={cn('grid rounded-md border overflow-hidden bg-background', gridClass)}>
       {tabs.map((t) => {
         const active = value === t.key;
         return (

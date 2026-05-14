@@ -16,6 +16,12 @@ export interface Game {
   endDate: string;
   /** Virtual USD each player starts with. Default: $100,000. */
   startingBalance: number;
+  /**
+   * When true, the trade UI exposes SELL SHORT and BUY TO COVER actions.
+   * Backend rejects short-direction trades when this is false. Defaults to
+   * false on game creation.
+   */
+  allowShortSelling: boolean;
   status: GameStatus;
   /** ID of the user who created the game. */
   createdBy: string;
@@ -31,6 +37,8 @@ export interface CreateGameRequest {
   endDate: string;
   /** Virtual USD starting balance. Must be positive. */
   startingBalance: number;
+  /** Defaults to false when omitted. */
+  allowShortSelling?: boolean;
 }
 
 /** A single player's rank entry as returned in the game leaderboard. */

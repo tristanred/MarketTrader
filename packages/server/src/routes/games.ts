@@ -15,6 +15,7 @@ const createGameSchema = z
     startDate: z.string().datetime(),
     endDate: z.string().datetime(),
     startingBalance: z.number().positive(),
+    allowShortSelling: z.boolean().optional().default(false),
   })
   .refine(d => d.endDate > d.startDate, {
     message: 'endDate must be after startDate',
@@ -53,6 +54,7 @@ export function gameRoutes(db: Db) {
           startDate: games.startDate,
           endDate: games.endDate,
           startingBalance: games.startingBalance,
+          allowShortSelling: games.allowShortSelling,
           status: games.status,
           createdBy: games.createdBy,
           createdAt: games.createdAt,
@@ -81,12 +83,19 @@ export function gameRoutes(db: Db) {
         body: createGameSchema,
       },
     }, async (request, reply) => {
-      const { name, startDate, endDate, startingBalance } = request.body;
+      const { name, startDate, endDate, startingBalance, allowShortSelling } = request.body;
       const userId = request.user.id;
 
       const [game] = await db
         .insert(games)
-        .values({ name, startDate, endDate, startingBalance, createdBy: userId })
+        .values({
+          name,
+          startDate,
+          endDate,
+          startingBalance,
+          allowShortSelling,
+          createdBy: userId,
+        })
         .returning();
 
       if (!game) return reply.status(500).send({ error: 'Failed to create game' });

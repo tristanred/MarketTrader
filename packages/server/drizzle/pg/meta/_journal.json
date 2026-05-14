@@ -22,6 +22,13 @@
       "when": 1778709735470,
       "tag": "0002_careless_maelstrom",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1778721865719,
+      "tag": "0003_aromatic_maelstrom",
+      "breakpoints": true
     }
   ]
 }

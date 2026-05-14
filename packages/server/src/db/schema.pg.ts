@@ -5,6 +5,7 @@ import {
   integer,
   timestamp,
   pgEnum,
+  boolean,
   unique,
 } from 'drizzle-orm/pg-core';
 
@@ -37,6 +38,7 @@ export const games = pgTable('games', {
   startingBalance: decimal('starting_balance', { precision: 15, scale: 2 })
     .notNull()
     .default('100000'),
+  allowShortSelling: boolean('allow_short_selling').notNull().default(false),
   status: gameStatusEnum('status').notNull().default('pending'),
   createdBy: text('created_by')
     .notNull()

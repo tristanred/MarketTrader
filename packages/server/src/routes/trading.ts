@@ -88,6 +88,20 @@ export function tradingRoutes(
           .limit(1);
         if (!game) return reply.status(404).send({ error: 'Game not found' });
 
+        // Defensive: when shorts are wired into TradeDirection later, this
+        // gate enforces the per-game `allowShortSelling` setting. Today the
+        // Zod enum only admits buy/sell, so the predicate is unreachable —
+        // kept here so future additions to the direction enum can't bypass
+        // the per-game flag without an obvious test failure.
+        const isShortDirection: boolean = (
+          ['sell-short', 'buy-to-cover'] as readonly string[]
+        ).includes(direction);
+        if (isShortDirection && !game.allowShortSelling) {
+          return reply
+            .status(403)
+            .send({ error: 'SHORT_SELLING_DISABLED', message: 'Short selling is not allowed in this game' });
+        }
+
         const status = await recomputeGameStatus(db, game);
         if (status !== 'active') {
           return reply.status(409).send({ error: 'GAME_NOT_ACTIVE', message: `Game is ${status}` });

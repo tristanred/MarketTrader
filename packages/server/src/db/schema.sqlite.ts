@@ -26,6 +26,9 @@ export const games = sqliteTable('games', {
   startDate: text('start_date').notNull(),
   endDate: text('end_date').notNull(),
   startingBalance: real('starting_balance').notNull().default(100000),
+  allowShortSelling: integer('allow_short_selling', { mode: 'boolean' })
+    .notNull()
+    .default(false),
   status: text('status', { enum: ['pending', 'active', 'ended'] })
     .notNull()
     .default('pending'),

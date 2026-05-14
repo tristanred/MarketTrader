@@ -1,0 +1,1 @@
+ALTER TABLE "games" ADD COLUMN "allow_short_selling" boolean DEFAULT false NOT NULL;

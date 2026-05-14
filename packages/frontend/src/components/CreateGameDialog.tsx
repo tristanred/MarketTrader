@@ -87,8 +87,15 @@ export function CreateGameDialog() {
         </DialogHeader>
         <form onSubmit={onSubmit} className="space-y-4">
           <div className="space-y-1">
-            <Label htmlFor="name">Name</Label>
-            <Input id="name" {...form.register('name')} />
+            <Label htmlFor="game-name">Name</Label>
+            <Input
+              id="game-name"
+              autoComplete="off"
+              data-1p-ignore
+              data-lpignore="true"
+              data-bwignore
+              {...form.register('name')}
+            />
             {form.formState.errors.name && (
               <p className="text-xs text-destructive">{form.formState.errors.name.message}</p>
             )}

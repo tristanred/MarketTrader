@@ -83,9 +83,9 @@ Every exported function, class, and interface must have a JSDoc comment unless t
 
 ## Database Rules
 
-- **Schema lives in `packages/server/src/db/schema.ts`** — single source of truth for Drizzle
+- **Schema lives in `packages/server/src/db/schema.sqlite.ts` and `schema.pg.ts`** — one file per dialect, kept in sync by hand
 - **Never write raw SQL** — use Drizzle query builder
-- **Migrations** are generated via `drizzle-kit generate`; never hand-edit migration files
+- **Migrations**: `pnpm --filter server db:generate` (create), `db:migrate` (apply), `db:studio` (inspect). Never hand-edit migration files.
 - Driver selection at startup:
   ```typescript
   DATABASE_URL starts with "postgres" → postgres-js driver
@@ -109,7 +109,7 @@ Every exported function, class, and interface must have a JSDoc comment unless t
 
 - Access token: 15-minute JWT, `Authorization: Bearer <token>` header on REST requests
 - Refresh token: 7-day token, HttpOnly cookie
-- Password hashing: argon2 (not bcrypt)
+- Password hashing: argon2 via `@node-rs/argon2` (not bcrypt)
 - WebSocket auth: `ws://host/games/:id/live?token=<access_token>`
 
 ---
@@ -128,7 +128,7 @@ Switch via `STOCK_PROVIDER=alpaca` env var.
 ```
 DATABASE_URL=         # postgres://... or path/to/file.db or :memory:
 JWT_SECRET=           # random 64-char hex string
-STOCK_PROVIDER=yahoo  # yahoo | alpaca | polygon
+STOCK_PROVIDER=yahoo  # yahoo | alpaca  (polygon is TODO, not yet wired in env.ts)
 ALPACA_API_KEY=       # required if STOCK_PROVIDER=alpaca
 PORT=3000
 CORS_ORIGIN=          # frontend URL (e.g. http://localhost:5173)
@@ -145,17 +145,27 @@ docker-compose up -d db
 # Install all packages
 pnpm install
 
-# Start server (with SQLite dev DB)
-DATABASE_URL=./dev.db pnpm --filter server dev
+# Start everything (server + frontend in parallel).
+# Runs scripts/bootstrap-dev.mjs first — auto-creates .env from .env.example
+# and fills in a random JWT_SECRET if the placeholder is present.
+pnpm dev
 
-# Start frontend
+# Or run a single package
+pnpm --filter server dev
 pnpm --filter frontend dev
 
-# Run all tests
+# Tests / typecheck / lint (root-level, runs across all packages)
 pnpm test
-
-# Type-check everything
 pnpm typecheck
+pnpm lint
+
+# Frontend Playwright e2e
+pnpm --filter frontend e2e
+
+# Drizzle
+pnpm --filter server db:generate   # generate migration from schema changes
+pnpm --filter server db:migrate    # apply migrations
+pnpm --filter server db:studio     # open Drizzle Studio
 ```
 
 ---

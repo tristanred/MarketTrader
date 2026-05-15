@@ -208,7 +208,7 @@ export function OpenOrdersList({ gameId }: { gameId: string }) {
         <CardTitle>Open Orders</CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="overflow-x-auto scrollbar-always-x">
+        <div className="overflow-x-scroll scrollbar-always-x">
           <table className="w-full text-sm">
             <thead className="border-b text-left text-xs uppercase text-muted-foreground">
               <tr>

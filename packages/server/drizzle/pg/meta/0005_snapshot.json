@@ -1,5 +1,5 @@
 {
-  "id": "0bb85e65-f2fe-46cc-9b08-90048745cf87",
+  "id": "bfdd8d8b-83ba-4b3d-be20-6644f1c10e59",
   "prevId": "98419db2-78ce-4bfd-9a99-6d904f5ec223",
   "version": "7",
   "dialect": "postgresql",
@@ -40,19 +40,19 @@
         },
         "before": {
           "name": "before",
-          "type": "jsonb",
+          "type": "text",
           "primaryKey": false,
           "notNull": false
         },
         "after": {
           "name": "after",
-          "type": "jsonb",
+          "type": "text",
           "primaryKey": false,
           "notNull": false
         },
         "metadata": {
           "name": "metadata",
-          "type": "jsonb",
+          "type": "text",
           "primaryKey": false,
           "notNull": false
         },

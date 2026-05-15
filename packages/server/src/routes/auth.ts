@@ -6,6 +6,7 @@ import { eq } from 'drizzle-orm';
 import type { Db } from '../db/index.js';
 import { schema } from '../db/index.js';
 import { env } from '../env.js';
+import { ADMIN_GROUP_ID } from '../constants/groups.js';
 
 const REFRESH_COOKIE_PATH = '/auth/refresh';
 const REFRESH_TOKEN_MAX_AGE_S = 7 * 24 * 60 * 60;
@@ -56,7 +57,7 @@ const loginSchema = z.object({
 export function authRoutes(db: Db) {
   return async function (rawApp: FastifyInstance): Promise<void> {
     const app = rawApp.withTypeProvider<ZodTypeProvider>();
-    const { users } = schema;
+    const { users, userGroups } = schema;
 
     app.post('/auth/register', {
       config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
@@ -71,11 +72,30 @@ export function authRoutes(db: Db) {
       const passwordHash = await hash(password);
       let user: { id: string; username: string } | undefined;
       try {
-        const [inserted] = await db
-          .insert(users)
-          .values({ username, passwordHash })
-          .returning({ id: users.id, username: users.username });
-        user = inserted;
+        // Insert user and (atomically) grant admin if no admin exists yet.
+        // Doing both in one tx makes the bootstrap race-safe: two simultaneous
+        // first-registers can't both become admin.
+        user = await db.transaction(async (tx) => {
+          const [inserted] = await tx
+            .insert(users)
+            .values({ username, passwordHash })
+            .returning({ id: users.id, username: users.username });
+          if (!inserted) throw new Error('insert returned no row');
+
+          const [existingAdmin] = await tx
+            .select({ userId: userGroups.userId })
+            .from(userGroups)
+            .where(eq(userGroups.groupId, ADMIN_GROUP_ID))
+            .limit(1);
+
+          if (!existingAdmin) {
+            await tx
+              .insert(userGroups)
+              .values({ userId: inserted.id, groupId: ADMIN_GROUP_ID });
+          }
+
+          return inserted;
+        });
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
         if (msg.includes('UNIQUE constraint failed') || msg.includes('unique constraint')) {
@@ -116,7 +136,12 @@ export function authRoutes(db: Db) {
       const { username, password } = request.body;
 
       const [user] = await db
-        .select({ id: users.id, username: users.username, passwordHash: users.passwordHash })
+        .select({
+          id: users.id,
+          username: users.username,
+          passwordHash: users.passwordHash,
+          disabled: users.disabled,
+        })
         .from(users)
         .where(eq(users.username, username))
         .limit(1);
@@ -128,6 +153,10 @@ export function authRoutes(db: Db) {
       const valid = await verify(user.passwordHash, password);
       if (!valid) {
         return reply.status(401).send({ error: 'Invalid credentials' });
+      }
+
+      if (user.disabled) {
+        return reply.status(403).send({ error: 'Account disabled' });
       }
 
       const accessToken = app.jwt.sign(

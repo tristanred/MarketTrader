@@ -8,7 +8,6 @@ import {
   boolean,
   unique,
   primaryKey,
-  jsonb,
 } from 'drizzle-orm/pg-core';
 
 // PostgreSQL enums for status and direction fields; the SQLite schema uses text enums instead.
@@ -90,9 +89,9 @@ export const adminAuditLog = pgTable('admin_audit_log', {
   action: text('action').notNull(),
   targetType: text('target_type').notNull(),
   targetId: text('target_id'),
-  before: jsonb('before'),
-  after: jsonb('after'),
-  metadata: jsonb('metadata'),
+  before: text('before'),
+  after: text('after'),
+  metadata: text('metadata'),
   createdAt: timestamp('created_at', { mode: 'string' }).defaultNow().notNull(),
 });
 

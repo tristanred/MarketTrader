@@ -4,9 +4,9 @@ CREATE TABLE IF NOT EXISTS "admin_audit_log" (
 	"action" text NOT NULL,
 	"target_type" text NOT NULL,
 	"target_id" text,
-	"before" jsonb,
-	"after" jsonb,
-	"metadata" jsonb,
+	"before" text,
+	"after" text,
+	"metadata" text,
 	"created_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint

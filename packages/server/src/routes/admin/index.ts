@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { Db } from '../../db/index.js';
 import { adminUsersRoutes } from './users.js';
+import { adminGamesRoutes } from './games.js';
 
 /**
  * Composes every `/admin/*` sub-route into one plugin. The caller (app.ts) is
@@ -10,5 +11,6 @@ import { adminUsersRoutes } from './users.js';
 export function adminRoutes(db: Db) {
   return async function (app: FastifyInstance): Promise<void> {
     await app.register(adminUsersRoutes(db));
+    await app.register(adminGamesRoutes(db));
   };
 }

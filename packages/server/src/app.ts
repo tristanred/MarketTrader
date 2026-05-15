@@ -81,7 +81,7 @@ export async function buildApp(
   await app.register(marketStatusRoutes(marketStatusProvider));
   await app.register(watchlistRoutes(db));
   await registerAdminGuard(app, db);
-  await app.register(adminRoutes(db));
+  await app.register(adminRoutes(db, provider));
   await app.register(liveRoute(db, registry));
 
   if (!disablePoller) {

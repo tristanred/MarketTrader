@@ -1,6 +1,14 @@
 import type { Db } from '../db/index.js';
 import { schema } from '../db/index.js';
 
+/**
+ * Accepts either the top-level Db or a transaction handle returned by
+ * `db.transaction(async (tx) => ...)`. We only need .insert(), so a structural
+ * subset of Db is sufficient and keeps callers from juggling the exact
+ * transaction type (which differs from Db).
+ */
+type DbOrTx = Pick<Db, 'insert'>;
+
 /** Target categories for admin actions. Free-form `action` strings sit underneath. */
 export type AdminAuditTargetType = 'user' | 'game' | 'trade' | 'portfolio' | 'system';
 
@@ -25,7 +33,7 @@ export interface RecordAdminActionParams {
  * those are best-effort and shouldn't take down a legitimate mutation.
  */
 export async function recordAdminAction(
-  tx: Db,
+  tx: DbOrTx,
   params: RecordAdminActionParams,
 ): Promise<void> {
   await tx.insert(schema.adminAuditLog).values({

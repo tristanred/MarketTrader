@@ -15,6 +15,8 @@ import { stockRoutes } from './routes/stocks.js';
 import { tradingRoutes } from './routes/trading.js';
 import { marketStatusRoutes } from './routes/market-status.js';
 import { watchlistRoutes } from './routes/watchlists.js';
+import { adminRoutes } from './routes/admin/index.js';
+import { registerAdminGuard } from './plugins/admin-guard.js';
 import type { StockProvider } from './providers/index.js';
 import { CachedProvider, createProvider } from './providers/index.js';
 import type { MarketStatusProvider } from './providers/market-status/index.js';
@@ -78,6 +80,8 @@ export async function buildApp(
   );
   await app.register(marketStatusRoutes(marketStatusProvider));
   await app.register(watchlistRoutes(db));
+  await registerAdminGuard(app, db);
+  await app.register(adminRoutes(db));
   await app.register(liveRoute(db, registry));
 
   if (!disablePoller) {

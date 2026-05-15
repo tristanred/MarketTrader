@@ -5,6 +5,8 @@ import { adminUsersRoutes } from './users.js';
 import { adminGamesRoutes } from './games.js';
 import { adminPortfoliosRoutes } from './portfolios.js';
 import { adminTradesRoutes } from './trades.js';
+import { adminSystemRoutes } from './system.js';
+import { adminAuditRoutes } from './audit.js';
 
 /**
  * Composes every `/admin/*` sub-route into one plugin. The caller (app.ts) is
@@ -17,5 +19,7 @@ export function adminRoutes(db: Db, provider: StockProvider) {
     await app.register(adminGamesRoutes(db));
     await app.register(adminPortfoliosRoutes(db));
     await app.register(adminTradesRoutes(db, provider));
+    await app.register(adminSystemRoutes(db));
+    await app.register(adminAuditRoutes(db));
   };
 }

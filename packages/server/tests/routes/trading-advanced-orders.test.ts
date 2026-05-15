@@ -100,6 +100,26 @@ describe('POST /games/:id/trades — limit order', () => {
     expect(body.length).toBeGreaterThan(0);
     expect(body[0]?.orderType).toBe('limit');
   });
+
+  it('includes working buy reservedCash in portfolio totalValue', async () => {
+    // The limit buy placed above reserved 5 * 90 = 450. The open order's
+    // reservedCash must be added back so totalValue is unchanged from the
+    // starting balance — a working buy must not look like a loss.
+    const res = await app.inject({
+      method: 'GET',
+      url: `/games/${gameId}/portfolio`,
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json<{
+      cashBalance: number;
+      totalValue: number;
+      reservedValue: number;
+    }>();
+    expect(body.reservedValue).toBe(450);
+    // cashBalance + reservedValue === starting balance (no holdings yet).
+    expect(body.cashBalance + body.reservedValue).toBe(body.totalValue);
+  });
 });
 
 describe('POST /games/:id/trades — bracket order', () => {

@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import type { Db } from '../db/index.js';
 import { schema } from '../db/index.js';
 
@@ -76,11 +76,11 @@ export async function computeLeaderboard(db: Db, gameId: string): Promise<Leader
     }
   }
 
-  // Pending buys hold cash aside (already deducted from cashBalance); pending
-  // sells hold shares aside (already removed from portfolios). Both are still
-  // the player's assets, so add them back into total value so a queued order
-  // doesn't masquerade as a loss / rank drop.
-  const pendingRows = await db
+  // Open orders hold assets aside: buys deduct cashBalance into reservedCash;
+  // sells remove shares from portfolios. This applies to both `pending`
+  // (market-on-open) and `working` (resting limit/stop) orders. Add them back
+  // so a queued order doesn't masquerade as a loss / rank drop.
+  const reservationRows = await db
     .select({
       gpId: schema.trades.gamePlayerId,
       direction: schema.trades.direction,
@@ -91,9 +91,9 @@ export async function computeLeaderboard(db: Db, gameId: string): Promise<Leader
     })
     .from(schema.trades)
     .leftJoin(schema.stockPriceCache, eq(schema.stockPriceCache.symbol, schema.trades.symbol))
-    .where(eq(schema.trades.status, 'pending'));
+    .where(inArray(schema.trades.status, ['pending', 'working']));
 
-  for (const row of pendingRows) {
+  for (const row of reservationRows) {
     const player = playerMap.get(row.gpId);
     if (!player) continue;
     if (row.direction === 'buy') {

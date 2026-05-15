@@ -92,6 +92,56 @@ describe('computeLeaderboard', () => {
     expect(alice!.totalValue).toBe(11000);
   });
 
+  it('adds reservedCash from pending and working buy orders back into totalValue', async () => {
+    const [game] = await db.insert(schema.games).values({
+      name: 'Reservation Test',
+      startDate: '2026-01-01T00:00:00.000Z',
+      endDate: '2027-01-01T00:00:00.000Z',
+      startingBalance: 10000,
+      status: 'active',
+      createdBy: aliceId,
+    }).returning({ id: schema.games.id });
+    if (!game) throw new Error('Failed to insert reservation test game');
+
+    // Cash already debited by reservation: 10000 - 300 (pending) - 200 (working) = 9500.
+    const [gp] = await db.insert(schema.gamePlayers).values({
+      gameId: game.id,
+      userId: aliceId,
+      cashBalance: 9500,
+    }).returning({ id: schema.gamePlayers.id });
+    if (!gp) throw new Error('Failed to insert game player');
+
+    await db.insert(schema.trades).values([
+      {
+        gamePlayerId: gp.id,
+        symbol: 'AAPL',
+        direction: 'buy',
+        quantity: 3,
+        status: 'pending',
+        orderType: 'market',
+        reservedPrice: 100,
+        reservedCash: 300,
+      },
+      {
+        gamePlayerId: gp.id,
+        symbol: 'MSFT',
+        direction: 'buy',
+        quantity: 2,
+        status: 'working',
+        orderType: 'limit',
+        limitPrice: 100,
+        reservedPrice: 100,
+        reservedCash: 200,
+      },
+    ]);
+
+    const result = await computeLeaderboard(db, game.id);
+    const alice = result.find(e => e.username === 'alice');
+    expect(alice).toBeDefined();
+    // 9500 cash + 300 pending reservation + 200 working reservation = 10000.
+    expect(alice!.totalValue).toBe(10000);
+  });
+
   it('falls back to avgCostBasis for portfolio value when no cache entry exists', async () => {
     // Use a separate game and players to avoid shared state with other tests
     const [game4] = await db.insert(schema.games).values({

@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
-import { eq, and, desc } from 'drizzle-orm';
+import { eq, and, desc, inArray } from 'drizzle-orm';
 import type { Db } from '../db/index.js';
 import { schema } from '../db/index.js';
 import type { StockProvider } from '../providers/index.js';
@@ -619,15 +619,22 @@ export function tradingRoutes(
           }),
         );
 
-        // Pending buys: cash already deducted, no shares yet → add reservedCash back.
-        // Pending sells: shares already removed → add quantity × currentPrice back.
-        const pendings = await db
+        // Open orders (both pending market-on-open and working limit/stop)
+        // hold cash or shares aside: buys debit cashBalance into reservedCash;
+        // sells remove shares from portfolios. Restore both so a queued order
+        // doesn't masquerade as a loss in totalValue / Overall Gains.
+        const reservations = await db
           .select()
           .from(trades)
-          .where(and(eq(trades.gamePlayerId, gamePlayer.id), eq(trades.status, 'pending')));
+          .where(
+            and(
+              eq(trades.gamePlayerId, gamePlayer.id),
+              inArray(trades.status, ['pending', 'working']),
+            ),
+          );
 
         let reservedValue = 0;
-        for (const p of pendings) {
+        for (const p of reservations) {
           if (p.direction === 'buy') {
             reservedValue += Number(p.reservedCash ?? 0);
           } else {

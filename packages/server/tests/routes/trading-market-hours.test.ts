@@ -138,7 +138,16 @@ describe('POST /games/:id/trades — MARKET_HOURS_MODE=pending', () => {
       url: `/games/${gameId}/portfolio`,
       headers: { Authorization: `Bearer ${token}` },
     });
-    expect(portfolioRes.json<{ cashBalance: number }>().cashBalance).toBe(9700);
+    const portfolio = portfolioRes.json<{
+      cashBalance: number;
+      totalValue: number;
+      reservedValue: number;
+    }>();
+    expect(portfolio.cashBalance).toBe(9700);
+    // The 300 reserved cash should be added back so totalValue still equals
+    // the starting balance — a queued buy must not look like a loss.
+    expect(portfolio.reservedValue).toBe(300);
+    expect(portfolio.totalValue).toBe(10000);
   });
 
   it('lists pending orders via GET /games/:id/trades/pending', async () => {

@@ -16,16 +16,16 @@ export function TradeActivityCard({ gameId }: { gameId: string }) {
         </CardTitle>
       </CardHeader>
       <CardContent>
-        <Tabs defaultValue="history">
+        <Tabs defaultValue="open-orders">
           <TabsList>
-            <TabsTrigger value="history">History</TabsTrigger>
             <TabsTrigger value="open-orders">Open Orders</TabsTrigger>
+            <TabsTrigger value="history">History</TabsTrigger>
           </TabsList>
-          <TabsContent value="history" className="pt-3">
-            <TradeHistoryTable gameId={gameId} />
-          </TabsContent>
           <TabsContent value="open-orders" className="pt-3">
             <OpenOrdersList gameId={gameId} />
+          </TabsContent>
+          <TabsContent value="history" className="pt-3">
+            <TradeHistoryTable gameId={gameId} />
           </TabsContent>
         </Tabs>
       </CardContent>

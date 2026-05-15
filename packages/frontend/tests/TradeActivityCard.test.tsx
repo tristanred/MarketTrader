@@ -31,20 +31,20 @@ beforeEach(() => {});
 afterEach(() => vi.restoreAllMocks());
 
 describe('TradeActivityCard', () => {
-  it('renders the History tab by default', () => {
-    render(wrap(<TradeActivityCard gameId="g1" />));
-    const historyTab = screen.getByRole('tab', { name: /history/i });
-    expect(historyTab).toHaveAttribute('data-state', 'active');
-    expect(screen.getByTestId('history')).toHaveTextContent('history:g1');
-  });
-
-  it('switches to Open Orders when its tab is clicked', async () => {
-    const user = userEvent.setup();
+  it('renders the Open Orders tab by default', () => {
     render(wrap(<TradeActivityCard gameId="g1" />));
     const openOrdersTab = screen.getByRole('tab', { name: /open orders/i });
-    await user.click(openOrdersTab);
     expect(openOrdersTab).toHaveAttribute('data-state', 'active');
-    expect(screen.getByRole('tab', { name: /history/i })).toHaveAttribute(
+    expect(screen.getByTestId('open-orders')).toHaveTextContent('open-orders:g1');
+  });
+
+  it('switches to History when its tab is clicked', async () => {
+    const user = userEvent.setup();
+    render(wrap(<TradeActivityCard gameId="g1" />));
+    const historyTab = screen.getByRole('tab', { name: /history/i });
+    await user.click(historyTab);
+    expect(historyTab).toHaveAttribute('data-state', 'active');
+    expect(screen.getByRole('tab', { name: /open orders/i })).toHaveAttribute(
       'data-state',
       'inactive',
     );

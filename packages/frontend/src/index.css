@@ -58,20 +58,18 @@
     scrollbar-color: hsl(var(--muted-foreground) / 0.4) transparent;
   }
   .scrollbar-always-x::-webkit-scrollbar {
-    display: block !important;
-    height: 10px !important;
-    -webkit-appearance: none !important;
+    height: 10px;
+    -webkit-appearance: none;
   }
   .scrollbar-always-x::-webkit-scrollbar-track {
     background: hsl(var(--muted));
     border-radius: 9999px;
   }
   .scrollbar-always-x::-webkit-scrollbar-thumb {
-    background: hsl(var(--muted-foreground) / 0.5);
+    background: hsl(var(--muted-foreground) / 0.4);
     border-radius: 9999px;
-    border: 2px solid hsl(var(--muted));
   }
   .scrollbar-always-x::-webkit-scrollbar-thumb:hover {
-    background: hsl(var(--muted-foreground) / 0.7);
+    background: hsl(var(--muted-foreground) / 0.6);
   }
 }

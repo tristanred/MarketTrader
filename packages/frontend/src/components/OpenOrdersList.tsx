@@ -1,6 +1,5 @@
 import { useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
 import { SymbolButton } from '@/components/SymbolButton';
 import {
   usePendingTrades,
@@ -208,7 +207,7 @@ export function OpenOrdersList({ gameId }: { gameId: string }) {
         <CardTitle>Open Orders</CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="overflow-x-scroll scrollbar-always-x">
+        <div className="overflow-x-auto scrollbar-always-x">
           <table className="w-full text-sm">
             <thead className="border-b text-left text-xs uppercase text-muted-foreground">
               <tr>
@@ -218,9 +217,8 @@ export function OpenOrdersList({ gameId }: { gameId: string }) {
                 <th className="px-2 py-2">Type</th>
                 <th className="px-2 py-2">Trigger</th>
                 <th className="px-2 py-2">TIF</th>
-                <th className="px-2 py-2">Placed</th>
                 <th className="px-2 py-2">Status</th>
-                <th className="px-2 py-2"></th>
+                <th className="px-2 py-2">Placed</th>
               </tr>
             </thead>
             <tbody>
@@ -275,25 +273,64 @@ function OrderRow({
       <td className="px-2 py-2">{group.type}</td>
       <td className="px-2 py-2 text-muted-foreground">{group.trigger}</td>
       <td className="px-2 py-2 text-xs">{group.tif}</td>
+      <td className="px-2 py-2">
+        <StatusCancelBadge
+          isWorking={isWorking}
+          count={count}
+          disabled={isCancelling}
+          onCancel={onCancel}
+        />
+      </td>
       <td className="px-2 py-2 text-xs text-muted-foreground whitespace-nowrap">
         {formatRange(group)}
       </td>
-      <td className="px-2 py-2">
-        <span
-          className={cn(
-            'inline-flex items-center rounded px-1.5 py-0.5 text-xs font-semibold',
-            isWorking ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800',
-          )}
-        >
-          {isWorking ? 'Working' : 'Pending'}
-        </span>
-      </td>
-      <td className="px-2 py-2 text-right">
-        <Button variant="outline" size="sm" disabled={isCancelling} onClick={onCancel}>
-          Cancel{count > 1 ? ' all' : ''}
-        </Button>
-      </td>
     </tr>
+  );
+}
+
+/**
+ * Status pill that doubles as the cancel control. At rest it shows the order
+ * status (Working / Pending). On hover or keyboard focus it swaps to a
+ * destructive "✕ Cancel" / "✕ Cancel all" label. Clicking cancels the group.
+ */
+function StatusCancelBadge({
+  isWorking,
+  count,
+  disabled,
+  onCancel,
+}: {
+  isWorking: boolean;
+  count: number;
+  disabled: boolean;
+  onCancel: () => void;
+}) {
+  const statusLabel = isWorking ? 'Working' : 'Pending';
+  const cancelLabel = count > 1 ? '✕ Cancel all' : '✕ Cancel';
+  const baseColor = isWorking
+    ? 'bg-green-100 text-green-800'
+    : 'bg-amber-100 text-amber-800';
+  return (
+    <button
+      type="button"
+      onClick={onCancel}
+      disabled={disabled}
+      title={`Cancel ${count > 1 ? `${count} ${statusLabel.toLowerCase()} orders` : `this ${statusLabel.toLowerCase()} order`}`}
+      aria-label={cancelLabel}
+      className={cn(
+        'group/cancel inline-flex items-center rounded px-1.5 py-0.5 text-xs font-semibold transition-colors',
+        baseColor,
+        'hover:bg-red-100 hover:text-red-800 focus-visible:bg-red-100 focus-visible:text-red-800',
+        'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-red-500',
+        'disabled:cursor-not-allowed disabled:opacity-60',
+      )}
+    >
+      <span className="group-hover/cancel:hidden group-focus-visible/cancel:hidden">
+        {statusLabel}
+      </span>
+      <span className="hidden group-hover/cancel:inline group-focus-visible/cancel:inline">
+        {cancelLabel}
+      </span>
+    </button>
   );
 }
 

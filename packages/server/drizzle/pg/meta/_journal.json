@@ -36,6 +36,13 @@
       "when": 1778724670762,
       "tag": "0004_advanced_orders",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1778811413145,
+      "tag": "0005_cuddly_angel",
+      "breakpoints": true
     }
   ]
 }

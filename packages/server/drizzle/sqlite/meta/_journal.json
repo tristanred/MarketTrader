@@ -43,6 +43,13 @@
       "when": 1778724660391,
       "tag": "0005_advanced_orders",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1778811354721,
+      "tag": "0006_lowly_loners",
+      "breakpoints": true
     }
   ]
 }

@@ -1,4 +1,4 @@
-import { sqliteTable, text, real, integer, unique } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, real, integer, unique, primaryKey } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
 
 /** Registered platform accounts. One user can participate in many games. */
@@ -8,6 +8,68 @@ export const users = sqliteTable('users', {
     .$defaultFn(() => crypto.randomUUID()),
   username: text('username').notNull().unique(),
   passwordHash: text('password_hash').notNull(),
+  /** When true, login is rejected with 403. Set by admins via PATCH /admin/users/:id. */
+  disabled: integer('disabled', { mode: 'boolean' }).notNull().default(false),
+  createdAt: text('created_at')
+    .default(sql`(datetime('now'))`)
+    .notNull(),
+});
+
+/**
+ * Authorization groups. Currently a single seeded row: `admin`. Membership is
+ * tracked in {@link userGroups}. Users with no group have no special privileges.
+ */
+export const groups = sqliteTable('groups', {
+  id: text('id')
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  name: text('name').notNull().unique(),
+  createdAt: text('created_at')
+    .default(sql`(datetime('now'))`)
+    .notNull(),
+});
+
+/**
+ * Join table assigning users to authorization groups. Both sides cascade so
+ * deleting a user or a group automatically tidies up memberships.
+ */
+export const userGroups = sqliteTable(
+  'user_groups',
+  {
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    groupId: text('group_id')
+      .notNull()
+      .references(() => groups.id, { onDelete: 'cascade' }),
+    createdAt: text('created_at')
+      .default(sql`(datetime('now'))`)
+      .notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.groupId] })],
+);
+
+/**
+ * Append-only audit log for every action performed via the `/admin/*` API.
+ * Written inside the same transaction as the action it records — so failed
+ * actions leave no log entry, and a logged entry is guaranteed durable.
+ *
+ * `before`/`after`/`metadata` are JSON-encoded text blobs (parsed at read time
+ * by `GET /admin/audit`). `targetId` is nullable for system-level actions.
+ */
+export const adminAuditLog = sqliteTable('admin_audit_log', {
+  id: text('id')
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  adminUserId: text('admin_user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'restrict' }),
+  action: text('action').notNull(),
+  targetType: text('target_type').notNull(),
+  targetId: text('target_id'),
+  before: text('before'),
+  after: text('after'),
+  metadata: text('metadata'),
   createdAt: text('created_at')
     .default(sql`(datetime('now'))`)
     .notNull(),
@@ -65,10 +127,10 @@ export const gamePlayers = sqliteTable(
       .$defaultFn(() => crypto.randomUUID()),
     gameId: text('game_id')
       .notNull()
-      .references(() => games.id, { onDelete: 'restrict' }),
+      .references(() => games.id, { onDelete: 'cascade' }),
     userId: text('user_id')
       .notNull()
-      .references(() => users.id, { onDelete: 'restrict' }),
+      .references(() => users.id, { onDelete: 'cascade' }),
     cashBalance: real('cash_balance').notNull(),
     joinedAt: text('joined_at')
       .default(sql`(datetime('now'))`)
@@ -90,7 +152,7 @@ export const portfolios = sqliteTable(
       .$defaultFn(() => crypto.randomUUID()),
     gamePlayerId: text('game_player_id')
       .notNull()
-      .references(() => gamePlayers.id, { onDelete: 'restrict' }),
+      .references(() => gamePlayers.id, { onDelete: 'cascade' }),
     symbol: text('symbol').notNull(),
     quantity: integer('quantity').notNull(),
     avgCostBasis: real('avg_cost_basis').notNull(),
@@ -119,7 +181,7 @@ export const trades = sqliteTable('trades', {
     .$defaultFn(() => crypto.randomUUID()),
   gamePlayerId: text('game_player_id')
     .notNull()
-    .references(() => gamePlayers.id, { onDelete: 'restrict' }),
+    .references(() => gamePlayers.id, { onDelete: 'cascade' }),
   symbol: text('symbol').notNull(),
   direction: text('direction', { enum: ['buy', 'sell'] }).notNull(),
   quantity: integer('quantity').notNull(),

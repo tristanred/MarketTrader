@@ -23,6 +23,8 @@ export async function createTestDb() {
   const client = createClient({ url: 'file::memory:?cache=shared' });
   const db = drizzle(client, { schema });
   await migrate(db, { migrationsFolder });
+  // Match production: enforce FKs so cascade/restrict actions fire in tests.
+  await client.execute('PRAGMA foreign_keys = ON');
   return db;
 }
 

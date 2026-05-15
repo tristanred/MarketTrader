@@ -46,3 +46,30 @@
     @apply bg-background text-foreground;
   }
 }
+
+@layer components {
+  /*
+   * Always-visible horizontal scrollbar for overflowing tables. Counters
+   * macOS overlay scrollbars that hide until the user starts scrolling,
+   * which makes off-screen columns easy to miss.
+   */
+  .scrollbar-always-x {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--muted-foreground) / 0.4) transparent;
+  }
+  .scrollbar-always-x::-webkit-scrollbar {
+    height: 10px;
+    -webkit-appearance: none;
+  }
+  .scrollbar-always-x::-webkit-scrollbar-track {
+    background: hsl(var(--muted));
+    border-radius: 9999px;
+  }
+  .scrollbar-always-x::-webkit-scrollbar-thumb {
+    background: hsl(var(--muted-foreground) / 0.4);
+    border-radius: 9999px;
+  }
+  .scrollbar-always-x::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground) / 0.6);
+  }
+}

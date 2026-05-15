@@ -6,19 +6,28 @@ export function cn(...inputs: ClassValue[]): string {
   return twMerge(clsx(inputs));
 }
 
-/** Format a number as USD currency. */
+/**
+ * Format a number as USD currency. Values that round to zero at the display
+ * precision (including -0 and tiny negatives like -0.0001) are normalized so
+ * the result never reads "-$0.00".
+ */
 export function formatUSD(value: number): string {
+  const normalized = Math.abs(value) < 0.005 ? 0 : value;
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
     currency: 'USD',
     maximumFractionDigits: 2,
-  }).format(value);
+  }).format(normalized);
 }
 
-/** Format a percentage with one decimal place and a sign. */
+/**
+ * Format a percentage with two decimal places and an explicit sign. Values
+ * that round to zero render as "0.00%" with no sign rather than "-0.00%".
+ */
 export function formatPct(value: number): string {
-  const sign = value >= 0 ? '+' : '';
-  return `${sign}${value.toFixed(2)}%`;
+  const normalized = Math.abs(value) < 0.005 ? 0 : value;
+  const sign = normalized > 0 ? '+' : '';
+  return `${sign}${normalized.toFixed(2)}%`;
 }
 
 /** Format a large integer in compact notation (e.g. 7_950_000 → "7.95M"). */

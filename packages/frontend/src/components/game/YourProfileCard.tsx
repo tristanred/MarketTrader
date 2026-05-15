@@ -128,12 +128,12 @@ export function YourProfileCard({ gameId }: { gameId: string }) {
           <Metric
             label="Overall Gains"
             value={formatUSD(overallGains)}
-            tone={overallGains > 0 ? 'positive' : overallGains < 0 ? 'negative' : 'neutral'}
+            tone={overallGains >= 0.005 ? 'positive' : overallGains <= -0.005 ? 'negative' : 'neutral'}
           />
           <Metric
             label="Overall Returns"
             value={formatPct(overallReturnsPct)}
-            tone={overallReturnsPct > 0 ? 'positive' : overallReturnsPct < 0 ? 'negative' : 'neutral'}
+            tone={overallReturnsPct >= 0.005 ? 'positive' : overallReturnsPct <= -0.005 ? 'negative' : 'neutral'}
           />
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-4">

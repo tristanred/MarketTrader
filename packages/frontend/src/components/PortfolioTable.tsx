@@ -102,8 +102,8 @@ export function PortfolioTable({ gameId }: { gameId: string }) {
                   <TableCell
                     className={cn(
                       'text-right tabular-nums',
-                      h.unrealizedPnL > 0 && 'text-green-600 dark:text-green-400',
-                      h.unrealizedPnL < 0 && 'text-destructive',
+                      h.unrealizedPnL >= 0.005 && 'text-green-600 dark:text-green-400',
+                      h.unrealizedPnL <= -0.005 && 'text-destructive',
                     )}
                   >
                     {formatUSD(h.unrealizedPnL)} ({formatPct(h.unrealizedPnLPercent)})

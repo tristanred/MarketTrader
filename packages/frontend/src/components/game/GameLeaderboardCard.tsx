@@ -80,8 +80,8 @@ export function GameLeaderboardCard({ gameId }: { gameId: string }) {
                     <TableCell
                       className={cn(
                         'text-right tabular-nums',
-                        totalGain > 0 && 'text-green-600 dark:text-green-400',
-                        totalGain < 0 && 'text-destructive',
+                        totalGain >= 0.005 && 'text-green-600 dark:text-green-400',
+                        totalGain <= -0.005 && 'text-destructive',
                       )}
                     >
                       {formatUSD(totalGain)} ({formatPct(returns)})

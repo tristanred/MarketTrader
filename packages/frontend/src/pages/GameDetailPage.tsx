@@ -31,6 +31,7 @@ import { useQuoteDialogStore } from '@/stores/quoteDialogStore';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ApiError } from '@/lib/api';
 import type { ActivityEvent } from '@/components/game/arena';
+import type { TradeDirection } from '@markettrader/shared';
 
 /**
  * Game-detail "arena" page: three-pane grid composed of nine panels with a
@@ -111,7 +112,10 @@ function ArenaBody({
   const livePrices = useLiveStore((s) => s.pricesBySymbol);
   const user = useAuthStore((s) => s.user);
   const quoteDialog = useQuoteDialogStore();
-  const [tradeDialogOpen, setTradeDialogOpen] = useState(false);
+  const [tradeDialog, setTradeDialog] = useState<{ open: boolean; direction: TradeDirection }>({
+    open: false,
+    direction: 'buy',
+  });
 
   // Watchlist quote rows: read from the live store. Omit price fields when
   // no live tick has arrived yet — exactOptionalPropertyTypes forbids
@@ -132,7 +136,9 @@ function ArenaBody({
       const price = tick?.price ?? h.currentPrice;
       return {
         symbol: h.symbol,
-        name: '',
+        // Server doesn't return company names with holdings yet; fall back to
+        // the symbol so the Name column isn't a row of empty cells.
+        name: h.symbol,
         quantity: h.quantity,
         avgCost: h.avgCostBasis,
         marketValue: price * h.quantity,
@@ -195,7 +201,9 @@ function ArenaBody({
         <QuoteHeader
           symbol={selectedSymbol}
           {...quoteData}
-          {...(selectedSymbol ? { onTrade: () => setTradeDialogOpen(true) } : {})}
+          {...(selectedSymbol
+            ? { onTrade: (direction: TradeDirection) => setTradeDialog({ open: true, direction }) }
+            : {})}
         />
         <ChartPanel symbol={selectedSymbol} />
         <OhlcStrip />
@@ -217,8 +225,9 @@ function ArenaBody({
         onTradeClick={(s) => quoteDialog.openTradeOrder(s)}
       />
       <TradeOrderDialog
-        open={tradeDialogOpen}
+        open={tradeDialog.open}
         initialSymbol={selectedSymbol}
+        initialDirection={tradeDialog.direction}
         gameId={gameId}
         allowShortSelling={gameData.allowShortSelling ?? false}
         allowLimitOrders={gameData.allowLimitOrders ?? false}
@@ -226,10 +235,10 @@ function ArenaBody({
         allowBracketOrders={gameData.allowBracketOrders ?? false}
         allowGTC={gameData.allowGTC ?? false}
         onOpenChange={(open) => {
-          if (!open) setTradeDialogOpen(false);
+          if (!open) setTradeDialog((t) => ({ ...t, open: false }));
         }}
         onSeeQuote={(s) => {
-          setTradeDialogOpen(false);
+          setTradeDialog((t) => ({ ...t, open: false }));
           quoteDialog.openQuote(s);
         }}
       />

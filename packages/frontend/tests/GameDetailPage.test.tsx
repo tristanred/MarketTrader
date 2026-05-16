@@ -4,7 +4,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import { useAuthStore } from '@/stores/authStore';
-import type React from 'react';
 
 vi.mock('@/api/games', async () => {
   const actual = await vi.importActual<typeof import('@/api/games')>('@/api/games');
@@ -147,7 +146,10 @@ describe('GameDetailPage', () => {
     const user = userEvent.setup();
     render(wrap());
     expect(screen.getByTestId('stockchart')).toHaveTextContent('chart-AAPL');
-    await user.click(screen.getByText('NVDA'));
+    // The Holdings table renders NVDA twice (Symbol + Name columns); both
+    // cells live in the same row so clicking the first match triggers the
+    // row-level onSelect handler.
+    await user.click(screen.getAllByText('NVDA')[0]!);
     expect(screen.getByTestId('stockchart')).toHaveTextContent('chart-NVDA');
   });
 

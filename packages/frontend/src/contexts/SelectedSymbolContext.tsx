@@ -47,3 +47,13 @@ export function useSetSelectedSymbol(): SymbolWriter {
   }
   return value;
 }
+
+/**
+ * Returns the setter when called inside a SelectedSymbolProvider, or `null`
+ * when called outside. Use this from components that live above the provider
+ * in the tree (e.g. AppShell-level singletons) and need to update the
+ * selected symbol when one happens to be available.
+ */
+export function useMaybeSetSelectedSymbol(): SymbolWriter | null {
+  return useContext(WriterContext) ?? null;
+}

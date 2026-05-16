@@ -1,10 +1,14 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { Link, useParams } from 'react-router-dom';
 import { Info } from 'lucide-react';
 import { useLiveClock } from '@/hooks/useLiveClock';
 import { INDICES_QUERY_KEY, INDICES_UNAVAILABLE_QUERY_KEY } from '@/hooks/useIndicesSocket';
 import { AboutGameModal } from './AboutGameModal';
 import { useMarketStatus } from '@/api/market-status';
+import { useMaybeSetSelectedSymbol } from '@/contexts/SelectedSymbolContext';
+import { useQuoteDialogStore } from '@/stores/quoteDialogStore';
+import { isIndex } from './TickerTape';
 import type { IndexQuote } from '@markettrader/shared';
 import { cn } from '@/lib/utils';
 
@@ -44,6 +48,10 @@ export function StatusStrip({ gameContext }: StatusStripProps) {
 
   const isOpen = marketStatus.data?.state === 'REGULAR';
   const [aboutOpen, setAboutOpen] = useState(false);
+  const params = useParams();
+  const inGame = !!params.gameId;
+  const setSelectedSymbol = useMaybeSetSelectedSymbol();
+  const openTradeOrder = useQuoteDialogStore((s) => s.openTradeOrder);
 
   return (
     <div className="flex items-center justify-between gap-3 overflow-hidden border-b border-hairline-strong bg-bg/95 px-4 py-1 text-[11px] font-mono text-muted tracking-[0.04em]">
@@ -68,15 +76,48 @@ export function StatusStrip({ gameContext }: StatusStripProps) {
           {unavailable.data ? (
             <span className="text-loss">INDICES UNAVAILABLE</span>
           ) : (
-            indices.data?.map((q) => (
-              <span key={q.symbol} className="flex items-baseline gap-1 whitespace-nowrap">
-                <span className="text-text">{q.symbol}</span>
-                <span>{formatLast(q.last)}</span>
-                <span className={q.changePct >= 0 ? 'text-gain' : 'text-loss'}>
-                  {formatPct(q.changePct)}
-                </span>
-              </span>
-            ))
+            indices.data?.map((q) => {
+              const content = (
+                <>
+                  <span className="text-text">{q.symbol}</span>
+                  <span>{formatLast(q.last)}</span>
+                  <span className={q.changePct >= 0 ? 'text-gain' : 'text-loss'}>
+                    {formatPct(q.changePct)}
+                  </span>
+                </>
+              );
+              const className = 'flex items-baseline gap-1 whitespace-nowrap hover:text-accent';
+              if (!inGame) {
+                return (
+                  <Link key={q.symbol} to={`/symbols/${q.symbol}`} className={className}>
+                    {content}
+                  </Link>
+                );
+              }
+              // Indices aren't tradeable — pivot the arena instead.
+              if (isIndex(q.symbol)) {
+                return (
+                  <button
+                    key={q.symbol}
+                    type="button"
+                    onClick={() => setSelectedSymbol?.(q.symbol)}
+                    className={className}
+                  >
+                    {content}
+                  </button>
+                );
+              }
+              return (
+                <button
+                  key={q.symbol}
+                  type="button"
+                  onClick={() => openTradeOrder(q.symbol)}
+                  className={className}
+                >
+                  {content}
+                </button>
+              );
+            })
           )}
         </span>
       </div>

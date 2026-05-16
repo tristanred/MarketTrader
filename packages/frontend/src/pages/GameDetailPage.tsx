@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
 import { useGame } from '@/api/games';
 import { usePortfolio, useTradeHistory } from '@/api/trades';
@@ -126,13 +126,25 @@ function ArenaBody({
     setArenaSelect(setSelectedSymbol);
     return () => setArenaSelect(null);
   }, [setSelectedSymbol]);
+
+  // The trade/quote dialogs live in a global store so chrome (ticker tape,
+  // status strip) can open them. Reset on unmount so a leftover open state
+  // doesn't follow the user to another game or out of arena.
+  useEffect(() => {
+    return () => {
+      const s = useQuoteDialogStore.getState();
+      s.closeTradeOrder();
+      s.closeQuote();
+    };
+  }, []);
   const livePrices = useLiveStore((s) => s.pricesBySymbol);
   const user = useAuthStore((s) => s.user);
   const quoteDialog = useQuoteDialogStore();
-  const [tradeDialog, setTradeDialog] = useState<{ open: boolean; direction: TradeDirection }>({
-    open: false,
-    direction: 'buy',
-  });
+  const openTradeOrder = useQuoteDialogStore((s) => s.openTradeOrder);
+  const closeTradeOrder = useQuoteDialogStore((s) => s.closeTradeOrder);
+  const tradeOrderOpen = useQuoteDialogStore((s) => s.tradeOrderOpen);
+  const tradeOrderSymbol = useQuoteDialogStore((s) => s.tradeOrderSymbol);
+  const tradeOrderDirection = useQuoteDialogStore((s) => s.tradeOrderDirection);
 
   // Watchlist quote rows: read from the live store. Omit price fields when
   // no live tick has arrived yet — exactOptionalPropertyTypes forbids
@@ -219,7 +231,7 @@ function ArenaBody({
           symbol={selectedSymbol}
           {...quoteData}
           {...(selectedSymbol
-            ? { onTrade: (direction: TradeDirection) => setTradeDialog({ open: true, direction }) }
+            ? { onTrade: (direction: TradeDirection) => openTradeOrder(selectedSymbol, direction) }
             : {})}
         />
         <ChartPanel symbol={selectedSymbol} />
@@ -252,13 +264,13 @@ function ArenaBody({
           // Trade on (the modal lets them jump symbols mid-quote) so
           // TradeOrderDialog opens for the right one.
           setSelectedSymbol(s);
-          setTradeDialog({ open: true, direction: 'buy' });
+          openTradeOrder(s, 'buy');
         }}
       />
       <TradeOrderDialog
-        open={tradeDialog.open}
-        initialSymbol={selectedSymbol}
-        initialDirection={tradeDialog.direction}
+        open={tradeOrderOpen}
+        initialSymbol={tradeOrderSymbol ?? selectedSymbol}
+        initialDirection={tradeOrderDirection}
         gameId={gameId}
         allowShortSelling={gameData.allowShortSelling ?? false}
         allowLimitOrders={gameData.allowLimitOrders ?? false}
@@ -266,10 +278,10 @@ function ArenaBody({
         allowBracketOrders={gameData.allowBracketOrders ?? false}
         allowGTC={gameData.allowGTC ?? false}
         onOpenChange={(open) => {
-          if (!open) setTradeDialog((t) => ({ ...t, open: false }));
+          if (!open) closeTradeOrder();
         }}
         onSeeQuote={(s) => {
-          setTradeDialog((t) => ({ ...t, open: false }));
+          closeTradeOrder();
           quoteDialog.openQuote(s);
         }}
       />

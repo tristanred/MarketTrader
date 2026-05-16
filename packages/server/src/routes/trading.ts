@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
-import { eq, and, desc, inArray } from 'drizzle-orm';
+import { eq, and, desc } from 'drizzle-orm';
 import type { Db } from '../db/index.js';
 import { schema } from '../db/index.js';
 import type { StockProvider } from '../providers/index.js';
@@ -9,7 +9,8 @@ import { StockProviderError, TradeError } from '../providers/index.js';
 import type { MarketStatusProvider } from '../providers/market-status/index.js';
 import type { MarketState } from '@markettrader/shared';
 import { recomputeGameStatus } from '../services/game-status.js';
-import { executeTrade, computeUnrealizedPnL } from '../services/trade.js';
+import { executeTrade } from '../services/trade.js';
+import { loadPlayerPortfolio } from '../services/portfolio.js';
 import {
   reservePendingTrade,
   listPendingTrades,
@@ -112,7 +113,7 @@ export function tradingRoutes(
 
   return async function (rawApp: FastifyInstance): Promise<void> {
     const app = rawApp.withTypeProvider<ZodTypeProvider>();
-    const { games, gamePlayers, portfolios, trades } = schema;
+    const { games, gamePlayers, trades } = schema;
 
     app.post(
       '/games/:id/trades',
@@ -586,77 +587,13 @@ export function tradingRoutes(
           .limit(1);
         if (!gamePlayer) return reply.status(404).send({ error: 'You are not a member of this game' });
 
-        const cashBalance = Number(gamePlayer.cashBalance);
-
-        const holdings = await db
-          .select()
-          .from(portfolios)
-          .where(eq(portfolios.gamePlayerId, gamePlayer.id));
-
-        const enrichedHoldings = await Promise.all(
-          holdings.map(async (h) => {
-            let currentPrice = Number(h.avgCostBasis);
-            try {
-              const quote = await provider.getQuote(h.symbol);
-              currentPrice = quote.price;
-            } catch {
-              // Fall back to cost basis if quote fetch fails
-            }
-            const avgCostBasis = Number(h.avgCostBasis);
-            const marketValue = h.quantity * currentPrice;
-            const unrealizedPnL = computeUnrealizedPnL(h.quantity, avgCostBasis, currentPrice);
-            const unrealizedPnLPercent =
-              avgCostBasis !== 0 ? ((currentPrice - avgCostBasis) / avgCostBasis) * 100 : 0;
-            return {
-              symbol: h.symbol,
-              quantity: h.quantity,
-              avgCostBasis,
-              currentPrice,
-              marketValue,
-              unrealizedPnL,
-              unrealizedPnLPercent,
-            };
-          }),
+        const portfolio = await loadPlayerPortfolio(
+          db,
+          provider,
+          gamePlayer.id,
+          Number(gamePlayer.cashBalance),
         );
-
-        // Open orders (both pending market-on-open and working limit/stop)
-        // hold cash or shares aside: buys debit cashBalance into reservedCash;
-        // sells remove shares from portfolios. Restore both so a queued order
-        // doesn't masquerade as a loss in totalValue / Overall Gains.
-        const reservations = await db
-          .select()
-          .from(trades)
-          .where(
-            and(
-              eq(trades.gamePlayerId, gamePlayer.id),
-              inArray(trades.status, ['pending', 'working']),
-            ),
-          );
-
-        let reservedValue = 0;
-        for (const p of reservations) {
-          if (p.direction === 'buy') {
-            reservedValue += Number(p.reservedCash ?? 0);
-          } else {
-            let price = Number(p.reservedPrice ?? 0);
-            try {
-              const q = await provider.getQuote(p.symbol);
-              price = q.price;
-            } catch {
-              // Fall back to reservedPrice if quote fetch fails
-            }
-            reservedValue += p.quantity * price;
-          }
-        }
-
-        const totalValue =
-          cashBalance +
-          enrichedHoldings.reduce((sum, h) => sum + h.marketValue, 0) +
-          reservedValue;
-
-        return reply
-          .status(200)
-          .send({ cashBalance, holdings: enrichedHoldings, totalValue, reservedValue });
+        return reply.status(200).send(portfolio);
       },
     );
   };

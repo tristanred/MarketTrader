@@ -6,6 +6,7 @@ import { eq } from 'drizzle-orm';
 import type { Db } from '../db/index.js';
 import { schema } from '../db/index.js';
 import { env } from '../env.js';
+import { ADMIN_GROUP_ID } from '../constants/groups.js';
 
 const REFRESH_COOKIE_PATH = '/auth/refresh';
 const REFRESH_TOKEN_MAX_AGE_S = 7 * 24 * 60 * 60;
@@ -53,10 +54,25 @@ const loginSchema = z.object({
  * Rate limits are applied per-route to slow brute-force attempts.
  * Passwords are hashed with argon2; never bcrypt.
  */
+/**
+ * Fetches the group names a user belongs to. Returns an empty array for users
+ * with no memberships. Used by every auth response so the frontend can gate
+ * admin-only UI without an extra round-trip.
+ */
+async function loadUserGroups(db: Db, userId: string): Promise<string[]> {
+  const { groups, userGroups } = schema;
+  const rows = await db
+    .select({ name: groups.name })
+    .from(userGroups)
+    .innerJoin(groups, eq(groups.id, userGroups.groupId))
+    .where(eq(userGroups.userId, userId));
+  return rows.map((r) => r.name);
+}
+
 export function authRoutes(db: Db) {
   return async function (rawApp: FastifyInstance): Promise<void> {
     const app = rawApp.withTypeProvider<ZodTypeProvider>();
-    const { users } = schema;
+    const { users, userGroups } = schema;
 
     app.post('/auth/register', {
       config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
@@ -71,11 +87,30 @@ export function authRoutes(db: Db) {
       const passwordHash = await hash(password);
       let user: { id: string; username: string } | undefined;
       try {
-        const [inserted] = await db
-          .insert(users)
-          .values({ username, passwordHash })
-          .returning({ id: users.id, username: users.username });
-        user = inserted;
+        // Insert user and (atomically) grant admin if no admin exists yet.
+        // Doing both in one tx makes the bootstrap race-safe: two simultaneous
+        // first-registers can't both become admin.
+        user = await db.transaction(async (tx) => {
+          const [inserted] = await tx
+            .insert(users)
+            .values({ username, passwordHash })
+            .returning({ id: users.id, username: users.username });
+          if (!inserted) throw new Error('insert returned no row');
+
+          const [existingAdmin] = await tx
+            .select({ userId: userGroups.userId })
+            .from(userGroups)
+            .where(eq(userGroups.groupId, ADMIN_GROUP_ID))
+            .limit(1);
+
+          if (!existingAdmin) {
+            await tx
+              .insert(userGroups)
+              .values({ userId: inserted.id, groupId: ADMIN_GROUP_ID });
+          }
+
+          return inserted;
+        });
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
         if (msg.includes('UNIQUE constraint failed') || msg.includes('unique constraint')) {
@@ -99,9 +134,10 @@ export function authRoutes(db: Db) {
       // otherwise hand back the previous user's identity.
       issueRefreshCookie(app, reply, { id: user.id, username: user.username });
 
+      const groups = await loadUserGroups(db, user.id);
       return reply.status(201).send({
         token,
-        user: { id: user.id, username: user.username },
+        user: { id: user.id, username: user.username, groups },
       });
     });
 
@@ -116,7 +152,12 @@ export function authRoutes(db: Db) {
       const { username, password } = request.body;
 
       const [user] = await db
-        .select({ id: users.id, username: users.username, passwordHash: users.passwordHash })
+        .select({
+          id: users.id,
+          username: users.username,
+          passwordHash: users.passwordHash,
+          disabled: users.disabled,
+        })
         .from(users)
         .where(eq(users.username, username))
         .limit(1);
@@ -130,6 +171,10 @@ export function authRoutes(db: Db) {
         return reply.status(401).send({ error: 'Invalid credentials' });
       }
 
+      if (user.disabled) {
+        return reply.status(403).send({ error: 'Account disabled' });
+      }
+
       const accessToken = app.jwt.sign(
         { id: user.id, username: user.username },
         { expiresIn: '15m' },
@@ -137,9 +182,10 @@ export function authRoutes(db: Db) {
 
       issueRefreshCookie(app, reply, { id: user.id, username: user.username });
 
+      const groups = await loadUserGroups(db, user.id);
       return reply.status(200).send({
         token: accessToken,
-        user: { id: user.id, username: user.username },
+        user: { id: user.id, username: user.username, groups },
       });
     });
 
@@ -185,9 +231,10 @@ export function authRoutes(db: Db) {
         { expiresIn: '15m' },
       );
 
+      const groups = await loadUserGroups(db, payload.id);
       return reply.status(200).send({
         token: accessToken,
-        user: { id: payload.id, username: payload.username },
+        user: { id: payload.id, username: payload.username, groups },
       });
     });
   };

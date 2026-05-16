@@ -15,7 +15,7 @@ function wrapper() {
 
 describe('usePlaceTrade — response discrimination', () => {
   beforeEach(() => {
-    useAuthStore.setState({ token: 't', user: { id: 'u', username: 'a' }, ready: true });
+    useAuthStore.setState({ token: 't', user: { id: 'u', username: 'a', groups: [] }, ready: true });
   });
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -127,7 +127,7 @@ describe('usePlaceTrade — response discrimination', () => {
 
 describe('useWorkingOrders', () => {
   beforeEach(() => {
-    useAuthStore.setState({ token: 't', user: { id: 'u', username: 'a' }, ready: true });
+    useAuthStore.setState({ token: 't', user: { id: 'u', username: 'a', groups: [] }, ready: true });
   });
   afterEach(() => {
     vi.unstubAllGlobals();

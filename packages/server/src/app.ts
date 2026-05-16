@@ -15,6 +15,8 @@ import { stockRoutes } from './routes/stocks.js';
 import { tradingRoutes } from './routes/trading.js';
 import { marketStatusRoutes } from './routes/market-status.js';
 import { watchlistRoutes } from './routes/watchlists.js';
+import { adminRoutes } from './routes/admin/index.js';
+import { registerAdminGuard } from './plugins/admin-guard.js';
 import type { StockProvider } from './providers/index.js';
 import { CachedProvider, createProvider } from './providers/index.js';
 import type { MarketStatusProvider } from './providers/market-status/index.js';
@@ -35,6 +37,8 @@ export async function buildApp(
     provider?: StockProvider;
     marketStatusProvider?: MarketStatusProvider;
     disablePoller?: boolean;
+    /** When true, registers the rate-limit plugin with no real ceiling. Tests only. */
+    disableRateLimit?: boolean;
     /** Override leaderboard broadcast throttle in ms. Defaults to 1000. Pass 0 in tests. */
     leaderboardThrottleMs?: number;
   } = {},
@@ -44,6 +48,7 @@ export async function buildApp(
     provider: injectedProvider,
     marketStatusProvider: injectedMarketStatus,
     disablePoller = false,
+    disableRateLimit = false,
     leaderboardThrottleMs,
     ...fastifyOpts
   } = opts;
@@ -64,7 +69,7 @@ export async function buildApp(
   await registerSensible(app);
   await registerCookie(app);
   await registerJwt(app);
-  await registerRateLimit(app);
+  await registerRateLimit(app, { disabled: disableRateLimit });
   await registerSwagger(app);
 
   const registry = new GameClientRegistry();
@@ -78,6 +83,8 @@ export async function buildApp(
   );
   await app.register(marketStatusRoutes(marketStatusProvider));
   await app.register(watchlistRoutes(db));
+  await registerAdminGuard(app, db);
+  await app.register(adminRoutes(db, provider));
   await app.register(liveRoute(db, registry));
 
   if (!disablePoller) {

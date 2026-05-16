@@ -4,7 +4,7 @@ import { useAuthStore } from '../src/stores/authStore';
 
 describe('apiFetch', () => {
   beforeEach(() => {
-    useAuthStore.setState({ token: 'old-token', user: { id: 'u1', username: 'alice' }, ready: true });
+    useAuthStore.setState({ token: 'old-token', user: { id: 'u1', username: 'alice', groups: [] }, ready: true });
   });
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -35,7 +35,7 @@ describe('apiFetch', () => {
       if (call === 1) return new Response('unauthorized', { status: 401 });
       if (url.endsWith('/auth/refresh')) {
         return new Response(
-          JSON.stringify({ token: 'new-token', user: { id: 'u1', username: 'alice' } }),
+          JSON.stringify({ token: 'new-token', user: { id: 'u1', username: 'alice', groups: [] } }),
           { status: 200, headers: { 'content-type': 'application/json' } },
         );
       }
@@ -73,7 +73,7 @@ describe('tryRefresh identity check', () => {
     useAuthStore.getState().clear();
   });
 
-  function stubRefresh(user: { id: string; username: string }) {
+  function stubRefresh(user: { id: string; username: string; groups?: string[] }) {
     vi.stubGlobal(
       'fetch',
       vi.fn(async () =>
@@ -94,7 +94,7 @@ describe('tryRefresh identity check', () => {
   });
 
   it('succeeds when the refreshed user matches the previous user', async () => {
-    useAuthStore.setState({ token: 'old', user: { id: 'u1', username: 'alice' }, ready: true });
+    useAuthStore.setState({ token: 'old', user: { id: 'u1', username: 'alice', groups: [] }, ready: true });
     stubRefresh({ id: 'u1', username: 'alice' });
     const ok = await tryRefresh();
     expect(ok).toBe(true);
@@ -104,7 +104,7 @@ describe('tryRefresh identity check', () => {
   it('rejects and clears the store when the refreshed user differs from the previous one', async () => {
     // The bleed-through scenario: someone is signed in as alice but the
     // refresh cookie maps to bob. Refusing the refresh forces re-auth.
-    useAuthStore.setState({ token: 'old', user: { id: 'u1', username: 'alice' }, ready: true });
+    useAuthStore.setState({ token: 'old', user: { id: 'u1', username: 'alice', groups: [] }, ready: true });
     stubRefresh({ id: 'u2', username: 'bob' });
     const ok = await tryRefresh();
     expect(ok).toBe(false);

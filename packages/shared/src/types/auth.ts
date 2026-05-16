@@ -16,6 +16,12 @@ export interface LoginRequest {
 export interface AuthUser {
   id: string;
   username: string;
+  /**
+   * Group memberships for the authenticated user (e.g. `'admin'`).
+   * Used by the frontend to gate admin-only UI. Always populated by
+   * `/auth/login`, `/auth/register`, and `/auth/refresh`.
+   */
+  groups: string[];
 }
 
 /**

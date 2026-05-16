@@ -37,6 +37,9 @@ async function createDatabase(): Promise<AppDb> {
     const { createClient } = await import('@libsql/client');
     const client = createClient({ url: normalizeLibsqlUrl(env.DATABASE_URL) });
     libsqlClient = client;
+    // FK enforcement is per-connection and off by default in libsql. Cascade
+    // and restrict actions in the schema rely on it being on.
+    await client.execute('PRAGMA foreign_keys = ON');
     return drizzleLibsql(client, { schema: sqliteSchema });
   }
 }

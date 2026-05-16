@@ -7,6 +7,7 @@ import {
   pgEnum,
   boolean,
   unique,
+  primaryKey,
 } from 'drizzle-orm/pg-core';
 
 // PostgreSQL enums for status and direction fields; the SQLite schema uses text enums instead.
@@ -35,6 +36,62 @@ export const users = pgTable('users', {
     .$defaultFn(() => crypto.randomUUID()),
   username: text('username').notNull().unique(),
   passwordHash: text('password_hash').notNull(),
+  /** When true, login is rejected with 403. Set by admins via PATCH /admin/users/:id. */
+  disabled: boolean('disabled').notNull().default(false),
+  createdAt: timestamp('created_at', { mode: 'string' }).defaultNow().notNull(),
+});
+
+/**
+ * Authorization groups. Currently a single seeded row: `admin`. Membership is
+ * tracked in {@link userGroups}. Users with no group have no special privileges.
+ */
+export const groups = pgTable('groups', {
+  id: text('id')
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  name: text('name').notNull().unique(),
+  createdAt: timestamp('created_at', { mode: 'string' }).defaultNow().notNull(),
+});
+
+/**
+ * Join table assigning users to authorization groups. Both sides cascade so
+ * deleting a user or a group automatically tidies up memberships.
+ */
+export const userGroups = pgTable(
+  'user_groups',
+  {
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    groupId: text('group_id')
+      .notNull()
+      .references(() => groups.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at', { mode: 'string' }).defaultNow().notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.groupId] })],
+);
+
+/**
+ * Append-only audit log for every action performed via the `/admin/*` API.
+ * Written inside the same transaction as the action it records — so failed
+ * actions leave no log entry, and a logged entry is guaranteed durable.
+ *
+ * `before`/`after`/`metadata` are JSONB. `targetId` is nullable for
+ * system-level actions.
+ */
+export const adminAuditLog = pgTable('admin_audit_log', {
+  id: text('id')
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  adminUserId: text('admin_user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'restrict' }),
+  action: text('action').notNull(),
+  targetType: text('target_type').notNull(),
+  targetId: text('target_id'),
+  before: text('before'),
+  after: text('after'),
+  metadata: text('metadata'),
   createdAt: timestamp('created_at', { mode: 'string' }).defaultNow().notNull(),
 });
 
@@ -77,10 +134,10 @@ export const gamePlayers = pgTable(
       .$defaultFn(() => crypto.randomUUID()),
     gameId: text('game_id')
       .notNull()
-      .references(() => games.id, { onDelete: 'restrict' }),
+      .references(() => games.id, { onDelete: 'cascade' }),
     userId: text('user_id')
       .notNull()
-      .references(() => users.id, { onDelete: 'restrict' }),
+      .references(() => users.id, { onDelete: 'cascade' }),
     cashBalance: decimal('cash_balance', { precision: 15, scale: 2 }).notNull(),
     joinedAt: timestamp('joined_at', { mode: 'string' }).defaultNow().notNull(),
   },
@@ -100,7 +157,7 @@ export const portfolios = pgTable(
       .$defaultFn(() => crypto.randomUUID()),
     gamePlayerId: text('game_player_id')
       .notNull()
-      .references(() => gamePlayers.id, { onDelete: 'restrict' }),
+      .references(() => gamePlayers.id, { onDelete: 'cascade' }),
     symbol: text('symbol').notNull(),
     quantity: integer('quantity').notNull(),
     avgCostBasis: decimal('avg_cost_basis', { precision: 15, scale: 2 }).notNull(),
@@ -119,7 +176,7 @@ export const trades = pgTable('trades', {
     .$defaultFn(() => crypto.randomUUID()),
   gamePlayerId: text('game_player_id')
     .notNull()
-    .references(() => gamePlayers.id, { onDelete: 'restrict' }),
+    .references(() => gamePlayers.id, { onDelete: 'cascade' }),
   symbol: text('symbol').notNull(),
   direction: tradeDirectionEnum('direction').notNull(),
   quantity: integer('quantity').notNull(),

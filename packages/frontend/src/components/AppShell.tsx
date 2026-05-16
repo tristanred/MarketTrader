@@ -3,6 +3,7 @@ import { AppHeader } from '@/components/AppHeader';
 import { StatusStrip, TickerTape } from '@/components/shell';
 import { useIndicesSocket } from '@/hooks/useIndicesSocket';
 import { useGame } from '@/api/games';
+import { getDayCounter } from '@/lib/gameDay';
 
 /**
  * Three-row layout for every authenticated page: AppHeader on top,
@@ -16,11 +17,13 @@ export function AppShell() {
   // useGame tolerates undefined via its own `enabled: !!gameId` guard.
   const game = useGame(gameId ?? '');
 
-  // TODO(phase-3): derive dayCurrent/dayTotal from game.startDate/endDate
-  // when the arena lands. Phase 2 surfaces 1/1 as a known placeholder.
   const ctx =
     gameId && game.data
-      ? { gameId, name: game.data.name, dayCurrent: 1, dayTotal: 1 }
+      ? {
+          gameId,
+          name: game.data.name,
+          ...getDayCounter(game.data.startDate, game.data.endDate, new Date()),
+        }
       : undefined;
 
   return (

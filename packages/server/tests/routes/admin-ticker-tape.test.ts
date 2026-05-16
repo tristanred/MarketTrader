@@ -1,5 +1,7 @@
 import { describe, it, beforeAll, afterAll, expect } from 'vitest';
 import type { FastifyInstance } from 'fastify';
+import WebSocket from 'ws';
+import type { AddressInfo } from 'node:net';
 import { createTestApp } from '../helpers/app.js';
 
 describe('PUT /admin/system-settings/ticker-tape', () => {
@@ -105,5 +107,46 @@ describe('PUT /admin/system-settings/ticker-tape', () => {
     const tapeRow = body.entries.find((r) => r.action === 'system.ticker_tape.update');
     expect(tapeRow).toBeDefined();
     expect(tapeRow!.targetType).toBe('system');
+  });
+
+  it('broadcasts ticker_tape_config_changed on /ws/live after a successful PUT', async () => {
+    // Reuse the main app fixture so we don't spin up a parallel in-memory
+    // DB / event-emitter pair. We need to .listen() to expose a TCP port
+    // for the WS client; the shared in-memory DB pattern means we can't
+    // build a "fresh" app cheaply.
+    await app.listen({ port: 0, host: '127.0.0.1' });
+    const port = (app.server.address() as AddressInfo).port;
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/ws/live?token=${adminToken}`);
+    await new Promise<void>((resolve, reject) => {
+      ws.on('open', () => resolve());
+      ws.on('error', reject);
+    });
+    // Give the server's WS handler time to call registry.add (it runs
+    // after the handshake completes, on the async route body).
+    await new Promise((r) => setTimeout(r, 100));
+
+    const messagePromise = new Promise<{ event: string; data: { symbols: string[] } }>(
+      (resolve, reject) => {
+        const t = setTimeout(() => reject(new Error('no broadcast in 3s')), 3000);
+        ws.on('message', (raw) => {
+          const msg = JSON.parse(raw.toString()) as { event: string };
+          if (msg.event === 'ticker_tape_config_changed') {
+            clearTimeout(t);
+            resolve(msg as { event: string; data: { symbols: string[] } });
+          }
+        });
+      },
+    );
+
+    await app.inject({
+      method: 'PUT',
+      url: '/admin/system-settings/ticker-tape',
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: { symbols: ['INTC', 'AMD'] },
+    });
+
+    const message = await messagePromise;
+    expect(message.data.symbols).toEqual(['INTC', 'AMD']);
+    ws.close();
   });
 });

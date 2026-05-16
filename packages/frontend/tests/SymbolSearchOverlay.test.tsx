@@ -73,40 +73,21 @@ describe('SymbolSearchOverlay', () => {
     expect(screen.getByText('Search symbol')).toBeInTheDocument();
   });
 
-  it('writes to SelectedSymbolContext when inside a game with a provider', async () => {
-    const { SelectedSymbolProvider, useSelectedSymbol } = await import(
-      '@/contexts/SelectedSymbolContext'
-    );
-    function SelectedReader() {
-      const s = useSelectedSymbol();
-      return <div data-testid="selected">{s ?? '(none)'}</div>;
-    }
+  it('invokes the registered arena setter instead of navigating', async () => {
     const user = userEvent.setup();
     useCommandKStore.getState().open$();
-    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    render(
-      <QueryClientProvider client={qc}>
-        <MemoryRouter initialEntries={['/games/g1']}>
-          <Routes>
-            <Route
-              path="/games/:gameId"
-              element={
-                <SelectedSymbolProvider>
-                  <SymbolSearchOverlay />
-                  <SelectedReader />
-                  <LocationProbe />
-                </SelectedSymbolProvider>
-              }
-            />
-          </Routes>
-        </MemoryRouter>
-      </QueryClientProvider>,
-    );
-    await user.type(screen.getByRole('searchbox'), 'AA');
-    const row = await screen.findByText('AAPL');
-    await user.click(row);
-    expect(useCommandKStore.getState().open).toBe(false);
-    expect(screen.getByTestId('selected')).toHaveTextContent('AAPL');
-    expect(screen.getByTestId('location')).toHaveTextContent('/games/g1');
+    const arenaSelect = vi.fn();
+    useCommandKStore.getState().setArenaSelect(arenaSelect);
+    try {
+      render(wrap(<SymbolSearchOverlay />));
+      await user.type(screen.getByRole('searchbox'), 'AA');
+      const row = await screen.findByText('AAPL');
+      await user.click(row);
+      expect(useCommandKStore.getState().open).toBe(false);
+      expect(arenaSelect).toHaveBeenCalledWith('AAPL');
+      expect(screen.getByTestId('location')).toHaveTextContent('/');
+    } finally {
+      useCommandKStore.getState().setArenaSelect(null);
+    }
   });
 });

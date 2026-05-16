@@ -1,5 +1,6 @@
 import { Panel, PanelHeader, PanelBody } from '@/components/panel';
 import { cn } from '@/lib/utils';
+import { useCommandKStore } from '@/stores/commandKStore';
 import type { TradeDirection } from '@markettrader/shared';
 
 export interface QuoteHeaderProps {
@@ -23,7 +24,21 @@ export function QuoteHeader({ symbol, last, changeAbs, changePct, onTrade, class
       <Panel className={className}>
         <PanelHeader>Quote</PanelHeader>
         <PanelBody>
-          <p className="py-3 text-center text-xs text-muted">Select a symbol to see its quote.</p>
+          <div className="flex flex-col items-center gap-2 py-3">
+            <p className="text-center font-mono text-[10px] uppercase tracking-[0.14em] text-muted">
+              ▸ No symbol selected
+            </p>
+            <button
+              type="button"
+              onClick={() => useCommandKStore.getState().open$()}
+              className="inline-flex items-center gap-2 rounded-chip border border-accent bg-accent-bg px-3 py-1.5 font-mono text-xs uppercase tracking-[0.1em] text-accent hover:bg-accent/15 focus:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+            >
+              Search symbols
+              <kbd className="rounded-chip border border-hairline-strong bg-bg px-1.5 py-0.5 font-mono text-[10px] tracking-normal text-muted">
+                ⌘K
+              </kbd>
+            </button>
+          </div>
         </PanelBody>
       </Panel>
     );

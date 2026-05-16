@@ -21,9 +21,10 @@ describe('QuoteHeader', () => {
     expect(onTrade).toHaveBeenLastCalledWith('sell');
   });
 
-  it('shows an empty-state when no symbol is selected', () => {
+  it('shows an empty-state with a search button when no symbol is selected', () => {
     render(<QuoteHeader symbol={null} />);
-    expect(screen.getByText(/select a symbol/i)).toBeInTheDocument();
+    expect(screen.getByText(/no symbol selected/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /search symbols/i })).toBeInTheDocument();
   });
 
   it('disables the BUY/SELL buttons when onTrade is not provided', () => {

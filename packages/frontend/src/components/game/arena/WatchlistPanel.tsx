@@ -1,5 +1,7 @@
+import { useEffect, useState } from 'react';
 import { Panel, PanelHeader, PanelBody } from '@/components/panel';
-import { useCommandKStore } from '@/stores/commandKStore';
+import { SymbolSearch } from '@/components/search';
+import { useAddWatchlistSymbol, useCreateWatchlist } from '@/api/watchlists';
 import { cn } from '@/lib/utils';
 
 export interface WatchlistRow {
@@ -11,33 +13,103 @@ export interface WatchlistRow {
 export interface WatchlistPanelProps {
   rows: WatchlistRow[];
   onSelect?: (symbol: string) => void;
+  /**
+   * The watchlist to add symbols to when the user opens the inline
+   * `+ ADD` affordance. `null` when no watchlist exists yet — the button
+   * renders disabled in that case.
+   */
+  watchlistId?: string | null;
   className?: string;
 }
 
 /**
  * Right-column compact watchlist. Each clickable row drives the arena's
- * SelectedSymbolContext. The "+ ADD" affordance opens the global search
- * overlay; persisting a chosen symbol into the active watchlist is a
- * separate user action handled outside this panel.
+ * SelectedSymbolContext. The "+ ADD" affordance expands an inline search
+ * inside the panel — picking a result calls the add-symbol mutation in
+ * place rather than handing off to the global cmd+k overlay (which used
+ * to lose the user's intent and just open the stock page).
  */
-export function WatchlistPanel({ rows, onSelect, className }: WatchlistPanelProps) {
+export function WatchlistPanel({
+  rows,
+  onSelect,
+  watchlistId = null,
+  className,
+}: WatchlistPanelProps) {
+  const [addOpen, setAddOpen] = useState(false);
+  const [addError, setAddError] = useState<string | null>(null);
+  const addMutation = useAddWatchlistSymbol();
+  const createMutation = useCreateWatchlist();
+
+  // Close the inline add UI on Esc anywhere in the panel.
+  useEffect(() => {
+    if (!addOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setAddOpen(false);
+        setAddError(null);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [addOpen]);
+
+  // If the user has no watchlist yet, the first add auto-creates a
+  // "Default" list. Avoids a dead-end UI for users without a list yet.
+
   return (
     <Panel className={className}>
       <PanelHeader
         right={
-          <button
-            type="button"
-            onClick={() => useCommandKStore.getState().open$()}
-            className="font-mono text-[10px] tracking-[0.14em] text-accent hover:underline"
-          >
-            + ADD
-          </button>
+          addOpen ? (
+            <kbd className="rounded-chip border border-hairline-strong bg-bg px-1.5 py-0.5 font-mono text-[10px] tracking-normal text-muted">
+              ESC
+            </kbd>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setAddOpen(true)}
+              className="font-mono text-[10px] tracking-[0.14em] text-accent hover:underline"
+            >
+              + ADD
+            </button>
+          )
         }
       >
-        Watchlist
+        {addOpen ? 'Add to watchlist' : 'Watchlist'}
       </PanelHeader>
       <PanelBody>
-        {rows.length === 0 ? (
+        {addOpen ? (
+          <div className="flex flex-col gap-1.5">
+            <SymbolSearch
+              autoFocus
+              placeholder="Search symbol to add..."
+              onSelect={async (sym) => {
+                setAddError(null);
+                try {
+                  let targetId = watchlistId;
+                  if (!targetId) {
+                    const created = await createMutation.mutateAsync({
+                      name: 'Default',
+                    });
+                    targetId = created.id;
+                  }
+                  await addMutation.mutateAsync({
+                    id: targetId,
+                    body: { symbol: sym },
+                  });
+                  setAddOpen(false);
+                } catch (err) {
+                  const msg =
+                    err instanceof Error ? err.message : 'Failed to add symbol';
+                  setAddError(msg);
+                }
+              }}
+            />
+            {addError ? (
+              <p className="px-1 font-mono text-[10px] text-loss">{addError}</p>
+            ) : null}
+          </div>
+        ) : rows.length === 0 ? (
           <p className="py-3 text-center text-xs text-muted">Watchlist is empty.</p>
         ) : (
           <ul className="space-y-0.5">

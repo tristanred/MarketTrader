@@ -1,8 +1,19 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi } from 'vitest';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type React from 'react';
 import { WatchlistPanel, type WatchlistRow } from '@/components/game/arena/WatchlistPanel';
-import { useCommandKStore } from '@/stores/commandKStore';
+
+vi.mock('@/api/stocks', () => ({
+  useStockSearch: (query: string) => ({
+    data: query
+      ? [{ symbol: 'MSFT', name: 'Microsoft Corporation' }]
+      : [],
+    isLoading: false,
+    error: null,
+  }),
+}));
 
 const ROWS: WatchlistRow[] = [
   { symbol: 'AAPL', last: 189.42, changePct: 0.84 },
@@ -10,9 +21,14 @@ const ROWS: WatchlistRow[] = [
   { symbol: 'TSLA', last: 241.05, changePct: -1.12 },
 ];
 
+function wrap(ui: React.ReactElement) {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return <QueryClientProvider client={qc}>{ui}</QueryClientProvider>;
+}
+
 describe('WatchlistPanel', () => {
   it('renders each row with symbol, last, and change %', () => {
-    render(<WatchlistPanel rows={ROWS} />);
+    render(wrap(<WatchlistPanel rows={ROWS} />));
     expect(screen.getByText('AAPL')).toBeInTheDocument();
     expect(screen.getByText('189.42')).toBeInTheDocument();
     expect(screen.getByText('+0.84%')).toBeInTheDocument();
@@ -22,22 +38,25 @@ describe('WatchlistPanel', () => {
   it('calls onSelect with the chosen symbol on row click', async () => {
     const user = userEvent.setup();
     const onSelect = vi.fn();
-    render(<WatchlistPanel rows={ROWS} onSelect={onSelect} />);
+    render(wrap(<WatchlistPanel rows={ROWS} onSelect={onSelect} />));
     await user.click(screen.getByText('TSLA'));
     expect(onSelect).toHaveBeenCalledWith('TSLA');
   });
 
   it('renders an empty state when no rows', () => {
-    render(<WatchlistPanel rows={[]} />);
+    render(wrap(<WatchlistPanel rows={[]} />));
     expect(screen.getByText(/empty/i)).toBeInTheDocument();
   });
 
-  it('renders an + ADD button that opens the cmd+k overlay', async () => {
+  it('expands an inline search when + ADD is clicked', async () => {
     const user = userEvent.setup();
-    useCommandKStore.getState().close();
-    render(<WatchlistPanel rows={ROWS} />);
+    render(wrap(<WatchlistPanel rows={ROWS} watchlistId="wl-1" />));
     const addBtn = screen.getByRole('button', { name: /\+ ?ADD/i });
     await user.click(addBtn);
-    expect(useCommandKStore.getState().open).toBe(true);
+    // Header label flips to "Add to watchlist" with an ESC chip.
+    expect(screen.getByText(/add to watchlist/i)).toBeInTheDocument();
+    expect(screen.getByText('ESC')).toBeInTheDocument();
+    // Inline search input is focused.
+    expect(screen.getByPlaceholderText(/search symbol to add/i)).toBeInTheDocument();
   });
 });

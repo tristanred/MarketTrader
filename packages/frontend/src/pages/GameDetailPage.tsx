@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { useGame } from '@/api/games';
 import { usePortfolio, useTradeHistory } from '@/api/trades';
@@ -8,6 +8,7 @@ import { useWatchlists } from '@/api/watchlists';
 import { useWatchlistUiStore } from '@/stores/watchlistUiStore';
 import { useStockQuote } from '@/api/stocks';
 import { useAuthStore } from '@/stores/authStore';
+import { useCommandKStore } from '@/stores/commandKStore';
 import {
   SelectedSymbolProvider,
   useSelectedSymbol,
@@ -52,11 +53,12 @@ export function GameDetailPage() {
     [portfolio.data],
   );
 
-  const watchlistSymbols = useMemo(() => {
+  const activeWatchlist = useMemo(() => {
     const lists = watchlists.data ?? [];
-    const active = lists.find((l) => l.id === selectedWatchlistId) ?? lists[0];
-    return active?.symbols ?? [];
+    return lists.find((l) => l.id === selectedWatchlistId) ?? lists[0] ?? null;
   }, [watchlists.data, selectedWatchlistId]);
+  const watchlistSymbols = activeWatchlist?.symbols ?? [];
+  const activeWatchlistId = activeWatchlist?.id ?? null;
 
   const subscribedSymbols = useMemo(
     () => [...new Set([...heldSymbols, ...watchlistSymbols])],
@@ -86,6 +88,7 @@ export function GameDetailPage() {
         gameData={game.data}
         portfolioData={portfolio.data}
         watchlistSymbols={watchlistSymbols}
+        activeWatchlistId={activeWatchlistId}
         tradeHistory={tradeHistory.data ?? []}
       />
     </SelectedSymbolProvider>
@@ -97,6 +100,7 @@ interface ArenaBodyProps {
   gameData: NonNullable<ReturnType<typeof useGame>['data']>;
   portfolioData: ReturnType<typeof usePortfolio>['data'];
   watchlistSymbols: string[];
+  activeWatchlistId: string | null;
   tradeHistory: NonNullable<ReturnType<typeof useTradeHistory>['data']>;
 }
 
@@ -105,10 +109,20 @@ function ArenaBody({
   gameData,
   portfolioData,
   watchlistSymbols,
+  activeWatchlistId,
   tradeHistory,
 }: ArenaBodyProps) {
   const setSelectedSymbol = useSetSelectedSymbol();
   const selectedSymbol = useSelectedSymbol();
+
+  // Register the arena's selected-symbol setter with the cmd+k store so the
+  // AppShell-level overlay can write back into our context instead of
+  // navigating to /symbols/:symbol. Clean up on unmount.
+  useEffect(() => {
+    const { setArenaSelect } = useCommandKStore.getState();
+    setArenaSelect(setSelectedSymbol);
+    return () => setArenaSelect(null);
+  }, [setSelectedSymbol]);
   const livePrices = useLiveStore((s) => s.pricesBySymbol);
   const user = useAuthStore((s) => s.user);
   const quoteDialog = useQuoteDialogStore();
@@ -212,7 +226,11 @@ function ArenaBody({
 
       <aside className="flex flex-col gap-2">
         <SymbolSearchPanel onSelect={setSelectedSymbol} />
-        <WatchlistPanel rows={watchlistRows} onSelect={setSelectedSymbol} />
+        <WatchlistPanel
+          rows={watchlistRows}
+          onSelect={setSelectedSymbol}
+          watchlistId={activeWatchlistId}
+        />
         <ActivityPanel events={activityEvents} />
       </aside>
 

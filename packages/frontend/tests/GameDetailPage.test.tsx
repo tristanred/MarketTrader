@@ -77,6 +77,8 @@ vi.mock('@/api/trades', () => ({
 
 vi.mock('@/api/watchlists', () => ({
   useWatchlists: () => ({ data: [{ id: 'w1', name: 'Tech', symbols: ['TSLA', 'MSFT'] }] }),
+  useAddWatchlistSymbol: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useCreateWatchlist: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
 
 vi.mock('@/api/stocks', async () => {

@@ -46,9 +46,9 @@ export function StatusStrip({ gameContext }: StatusStripProps) {
   const [aboutOpen, setAboutOpen] = useState(false);
 
   return (
-    <div className="flex items-center justify-between border-b border-hairline-strong bg-bg/95 px-4 py-1 text-[11px] font-mono text-muted tracking-[0.04em]">
-      <div className="flex items-center gap-4">
-        <span className="flex items-center gap-1.5">
+    <div className="flex items-center justify-between gap-3 overflow-hidden border-b border-hairline-strong bg-bg/95 px-4 py-1 text-[11px] font-mono text-muted tracking-[0.04em]">
+      <div className="flex min-w-0 flex-1 items-center gap-4 overflow-hidden">
+        <span className="flex shrink-0 items-center gap-1.5">
           <span
             className={cn(
               'inline-block h-1.5 w-1.5 rounded-full',
@@ -60,26 +60,28 @@ export function StatusStrip({ gameContext }: StatusStripProps) {
           />
           MARKET {isOpen ? 'OPEN' : 'CLOSED'}
         </span>
-        <span>{clock} ET</span>
-        <span className="rounded-chip bg-accent-bg px-2 py-0.5 text-[10px] tracking-[0.14em] text-accent">
+        <span className="shrink-0">{clock} ET</span>
+        <span className="shrink-0 rounded-chip bg-accent-bg px-2 py-0.5 text-[10px] tracking-[0.14em] text-accent">
           LIVE
         </span>
-        {unavailable.data ? (
-          <span className="text-loss">INDICES UNAVAILABLE</span>
-        ) : (
-          indices.data?.map((q) => (
-            <span key={q.symbol} className="flex items-baseline gap-1">
-              <span className="text-text">{q.symbol}</span>
-              <span>{formatLast(q.last)}</span>
-              <span className={q.changePct >= 0 ? 'text-gain' : 'text-loss'}>
-                {formatPct(q.changePct)}
+        <span className="hidden min-w-0 items-center gap-4 overflow-hidden lg:flex">
+          {unavailable.data ? (
+            <span className="text-loss">INDICES UNAVAILABLE</span>
+          ) : (
+            indices.data?.map((q) => (
+              <span key={q.symbol} className="flex items-baseline gap-1 whitespace-nowrap">
+                <span className="text-text">{q.symbol}</span>
+                <span>{formatLast(q.last)}</span>
+                <span className={q.changePct >= 0 ? 'text-gain' : 'text-loss'}>
+                  {formatPct(q.changePct)}
+                </span>
               </span>
-            </span>
-          ))
-        )}
+            ))
+          )}
+        </span>
       </div>
       {gameContext ? (
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2 whitespace-nowrap">
           <span>
             DAY {gameContext.dayCurrent} / {gameContext.dayTotal} · {gameContext.name}
           </span>

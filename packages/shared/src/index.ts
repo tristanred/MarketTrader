@@ -3,5 +3,6 @@ export * from './types/auth.js';
 export * from './types/game.js';
 export * from './types/player.js';
 export * from './types/stock.js';
+export * from './types/system-settings.js';
 export * from './types/watchlist.js';
 export * from './types/websocket.js';

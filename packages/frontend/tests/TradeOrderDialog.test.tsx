@@ -115,21 +115,37 @@ afterEach(() => {
 });
 
 function submitBtn() {
-  return screen.getByRole('button', { name: /submit order/i });
+  // After the redesign the primary CTA reads "Buy/Sell <N> <SYMBOL>" rather
+  // than the generic "Submit Order". Match on the direction verb so the
+  // helper works for both buy and sell flows.
+  return screen.getByRole('button', { name: /^(buy|sell|sell short|buy to cover) \d+ /i });
 }
 
 function termButtons() {
   return {
-    day: screen.getByRole('button', { name: /day order/i }),
+    // The redesigned Term row uses simple "Day" / "Good til canceled" pill
+    // labels — no "Order" suffix.
+    day: screen.getByRole('button', { name: /^day$/i }),
     gtc: screen.getByRole('button', { name: /good til canceled/i }),
   };
 }
+
+const PRICE_TYPE_PILL_NAME: Record<
+  'MARKET' | 'LIMIT' | 'STOP' | 'STOP_LIMIT' | 'BRACKET',
+  RegExp
+> = {
+  MARKET: /^market$/i,
+  LIMIT: /^limit$/i,
+  STOP: /^stop$/i,
+  STOP_LIMIT: /^stop limit$/i,
+  BRACKET: /^bracket$/i,
+};
 
 async function selectPriceType(
   user: ReturnType<typeof userEvent.setup>,
   value: 'MARKET' | 'LIMIT' | 'STOP' | 'STOP_LIMIT' | 'BRACKET',
 ) {
-  await user.selectOptions(screen.getByLabelText(/price type/i), value);
+  await user.click(screen.getByRole('button', { name: PRICE_TYPE_PILL_NAME[value] }));
 }
 
 describe('TradeOrderDialog', () => {
@@ -143,10 +159,9 @@ describe('TradeOrderDialog', () => {
     const { day, gtc } = termButtons();
     expect(day).toBeDisabled();
     expect(gtc).toBeDisabled();
-    expect(day).toHaveAttribute(
-      'title',
-      'Time-in-force does not apply to market orders',
-    );
+    // The redesigned dialog surfaces the reason as inline text rather than
+    // a tooltip on the buttons.
+    expect(screen.getByText(/not used for market orders/i)).toBeInTheDocument();
   });
 
   it('re-enables the term toggle after switching MARKET → LIMIT', async () => {

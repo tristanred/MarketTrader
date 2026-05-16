@@ -11,6 +11,7 @@ import { registerSwagger } from './plugins/swagger.js';
 import { healthRoutes } from './routes/health.js';
 import { authRoutes } from './routes/auth.js';
 import { gameRoutes } from './routes/games.js';
+import { publicGamesRoutes } from './routes/public-games.js';
 import { stockRoutes } from './routes/stocks.js';
 import { tradingRoutes } from './routes/trading.js';
 import { marketStatusRoutes } from './routes/market-status.js';
@@ -103,6 +104,7 @@ export async function buildApp(
   await app.register(healthRoutes);
   await app.register(authRoutes(db));
   await app.register(gameRoutes(db));
+  await app.register(publicGamesRoutes(db));
   await app.register(stockRoutes(db, provider));
   await app.register(
     tradingRoutes(db, provider, marketStatusProvider, registry, leaderboardThrottleMs),

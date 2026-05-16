@@ -88,6 +88,7 @@ export function GameDetailPage() {
         gameData={game.data}
         portfolioData={portfolio.data}
         watchlistSymbols={watchlistSymbols}
+        watchlists={watchlists.data ?? []}
         activeWatchlistId={activeWatchlistId}
         tradeHistory={tradeHistory.data ?? []}
       />
@@ -100,6 +101,7 @@ interface ArenaBodyProps {
   gameData: NonNullable<ReturnType<typeof useGame>['data']>;
   portfolioData: ReturnType<typeof usePortfolio>['data'];
   watchlistSymbols: string[];
+  watchlists: NonNullable<ReturnType<typeof useWatchlists>['data']>;
   activeWatchlistId: string | null;
   tradeHistory: NonNullable<ReturnType<typeof useTradeHistory>['data']>;
 }
@@ -109,6 +111,7 @@ function ArenaBody({
   gameData,
   portfolioData,
   watchlistSymbols,
+  watchlists,
   activeWatchlistId,
   tradeHistory,
 }: ArenaBodyProps) {
@@ -230,6 +233,8 @@ function ArenaBody({
           rows={watchlistRows}
           onSelect={setSelectedSymbol}
           watchlistId={activeWatchlistId}
+          lists={watchlists}
+          onSelectList={(id) => useWatchlistUiStore.getState().setSelected(id)}
         />
         <ActivityPanel events={activityEvents} />
       </aside>
@@ -240,7 +245,14 @@ function ArenaBody({
         onOpenChange={(open) => {
           if (!open) quoteDialog.closeQuote();
         }}
-        onTradeClick={(s) => quoteDialog.openTradeOrder(s)}
+        onTradeClick={(s) => {
+          // QuoteInfoDialog auto-closes after this handler; pivot the
+          // arena's selected symbol to whichever ticker the user clicked
+          // Trade on (the modal lets them jump symbols mid-quote) so
+          // TradeOrderDialog opens for the right one.
+          setSelectedSymbol(s);
+          setTradeDialog({ open: true, direction: 'buy' });
+        }}
       />
       <TradeOrderDialog
         open={tradeDialog.open}

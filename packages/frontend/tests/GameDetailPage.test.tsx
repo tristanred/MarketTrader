@@ -79,6 +79,8 @@ vi.mock('@/api/watchlists', () => ({
   useWatchlists: () => ({ data: [{ id: 'w1', name: 'Tech', symbols: ['TSLA', 'MSFT'] }] }),
   useAddWatchlistSymbol: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useCreateWatchlist: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useRenameWatchlist: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useDeleteWatchlist: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
 
 vi.mock('@/api/stocks', async () => {
@@ -132,7 +134,9 @@ describe('GameDetailPage', () => {
     // getAllByText because the mocked StockChart also emits "chart-AAPL"
     expect(screen.getAllByText(/chart/i).length).toBeGreaterThan(0);
     expect(screen.getByText(/holdings/i)).toBeInTheDocument();
-    expect(screen.getByText(/watchlist/i)).toBeInTheDocument();
+    // WatchlistPanel header is now a switcher button labeled with the active
+    // list's name ("Tech" per the test mock).
+    expect(screen.getByRole('button', { name: /tech/i })).toBeInTheDocument();
     // getAllByText because the panel also shows "No activity yet."
     expect(screen.getAllByText(/activity/i).length).toBeGreaterThan(0);
     expect(screen.getByRole('searchbox')).toBeInTheDocument();

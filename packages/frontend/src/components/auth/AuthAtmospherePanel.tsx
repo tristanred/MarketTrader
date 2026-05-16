@@ -1,11 +1,6 @@
+import { useFeaturedGames } from '@/api/publicGames';
 import { cn } from '@/lib/utils';
-
-const FAUX_LEADERBOARD = [
-  { rank: 1, name: 'tristan', value: '$128,430', pnl: '+28.43%', positive: true },
-  { rank: 2, name: 'marcus', value: '$118,902', pnl: '+18.90%', positive: true },
-  { rank: 3, name: 'jules', value: '$96,210', pnl: '−3.79%', positive: false },
-  { rank: 4, name: 'ari', value: '$94,012', pnl: '−5.99%', positive: false },
-];
+import type { FeaturedGame } from '@markettrader/shared';
 
 const FAUX_TICKER = [
   { symbol: '^GSPC', last: '5,284.12', pct: '+0.32%', positive: true },
@@ -16,12 +11,16 @@ const FAUX_TICKER = [
 ];
 
 /**
- * Decorative side panel for the Login + Register pages. Renders a faux
- * leaderboard and faux ticker strip at low opacity to set the terminal
- * mood without distracting from the form. Pure presentation — no API
- * calls, no live data.
+ * Decorative-but-real side panel for the Login + Register pages. Pulls
+ * the top active tournaments from the public, unauthenticated
+ * `/public/featured-games` endpoint and groups players under each
+ * game so visitors can see what's actually being played. Falls back
+ * silently to a near-empty layout if the request fails — this panel
+ * is `aria-hidden` and exists primarily to set mood.
  */
 export function AuthAtmospherePanel({ className }: { className?: string }) {
+  const featured = useFeaturedGames();
+
   return (
     <div
       aria-hidden="true"
@@ -35,38 +34,91 @@ export function AuthAtmospherePanel({ className }: { className?: string }) {
         MarketTrader
       </div>
 
-      <div className="opacity-25">
-        <div className="mb-2 text-[10px] uppercase tracking-[0.18em] text-muted">Leaderboard</div>
-        <ul className="space-y-1.5">
-          {FAUX_LEADERBOARD.map((row) => (
-            <li
-              key={row.rank}
-              className="grid grid-cols-[28px_1fr_auto_auto] items-baseline gap-3 text-xs"
-            >
-              <span className="font-mono text-[10px] text-muted">
-                {String(row.rank).padStart(2, '0')}
-              </span>
-              <span className="text-text">{row.name}</span>
-              <span className="font-mono text-text">{row.value}</span>
-              <span className={cn('font-mono', row.positive ? 'text-gain' : 'text-loss')}>
-                {row.pnl}
-              </span>
-            </li>
-          ))}
-        </ul>
+      <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-hidden py-8">
+        <div className="text-[10px] font-mono uppercase tracking-[0.18em] text-muted">
+          Top Tournaments
+        </div>
+        <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-hidden">
+          {featured.isLoading ? <FeaturedSkeleton /> : null}
+          {featured.data?.map((game) => <FeaturedGameBlock key={game.id} game={game} />)}
+          {!featured.isLoading && (featured.data?.length ?? 0) === 0 ? (
+            <p className="font-mono text-[11px] text-muted">No active tournaments.</p>
+          ) : null}
+        </div>
       </div>
 
-      <div className="opacity-25">
-        <div className="flex h-6 items-center gap-6 overflow-hidden whitespace-nowrap border-t border-hairline-strong pt-2 font-mono text-[11px]">
-          {FAUX_TICKER.map((t) => (
-            <span key={t.symbol} className="flex items-baseline gap-1">
-              <span className="text-text">{t.symbol}</span>
-              <span className="text-muted">{t.last}</span>
-              <span className={t.positive ? 'text-gain' : 'text-loss'}>{t.pct}</span>
-            </span>
-          ))}
-        </div>
+      <div className="flex h-6 items-center gap-6 overflow-hidden whitespace-nowrap border-t border-hairline-strong pt-2 font-mono text-[11px]">
+        {FAUX_TICKER.map((t) => (
+          <span key={t.symbol} className="flex items-baseline gap-1">
+            <span className="text-text">{t.symbol}</span>
+            <span className="text-muted">{t.last}</span>
+            <span className={t.positive ? 'text-gain' : 'text-loss'}>{t.pct}</span>
+          </span>
+        ))}
       </div>
     </div>
   );
+}
+
+function FeaturedGameBlock({ game }: { game: FeaturedGame }) {
+  return (
+    <div className="flex flex-col">
+      <div className="flex items-baseline justify-between gap-3 border-b border-hairline-strong pb-1">
+        <span className="font-mono text-xs text-text-strong">{game.name}</span>
+        <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted">
+          DAY {game.dayCurrent}/{game.dayTotal}
+        </span>
+      </div>
+      <ul className="mt-1.5 space-y-1">
+        {game.leaderboard.map((row) => (
+          <li
+            key={row.rank}
+            className="grid grid-cols-[28px_1fr_auto_auto] items-baseline gap-3 text-xs"
+          >
+            <span className="font-mono text-[10px] text-muted">
+              {String(row.rank).padStart(2, '0')}
+            </span>
+            <span className="text-text">{row.username}</span>
+            <span className="font-mono text-text">{formatUSD(row.totalValue)}</span>
+            <span
+              className={cn(
+                'font-mono',
+                row.pnlPct >= 0 ? 'text-gain' : 'text-loss',
+              )}
+            >
+              {formatPct(row.pnlPct)}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function FeaturedSkeleton() {
+  return (
+    <div className="flex flex-col gap-4">
+      {[0, 1].map((i) => (
+        <div key={i} className="flex flex-col gap-1.5">
+          <div className="h-3 w-32 rounded-chip bg-hairline" />
+          <div className="h-2 w-full rounded-chip bg-hairline" />
+          <div className="h-2 w-full rounded-chip bg-hairline" />
+          <div className="h-2 w-3/4 rounded-chip bg-hairline" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function formatUSD(n: number): string {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    maximumFractionDigits: 0,
+  }).format(n);
+}
+
+function formatPct(n: number): string {
+  const sign = n > 0 ? '+' : n < 0 ? '−' : '';
+  return `${sign}${Math.abs(n).toFixed(2)}%`;
 }

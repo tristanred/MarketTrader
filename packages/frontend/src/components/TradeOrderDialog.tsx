@@ -666,42 +666,53 @@ function SegmentedTwo({
   const rightActive = !leftActive && !rightOnlyDisabled && !disabled;
   const leftShowActive = leftActive && !disabled;
   return (
-    <div
-      className={cn(
-        'grid grid-cols-2 rounded-md border overflow-hidden bg-muted',
-        disabled && 'opacity-60',
-      )}
-    >
-      <button
-        type="button"
-        onClick={onLeft}
-        disabled={disabled}
-        title={disabled ? disabledHint : undefined}
+    <div>
+      <div
         className={cn(
-          'px-3 py-3 text-sm font-semibold uppercase tracking-wide transition-colors',
-          leftShowActive ? 'bg-foreground text-background' : 'hover:bg-muted-foreground/10',
-          disabled && 'cursor-not-allowed text-muted-foreground hover:bg-transparent',
+          'grid grid-cols-2 overflow-hidden rounded-md border',
+          // When the whole control is disabled (e.g. market orders don't
+          // care about time-in-force) drop the dark `bg-muted` background
+          // so the muted-foreground text is no longer gray-on-gray.
+          disabled ? 'border-dashed border-hairline-strong bg-bg' : 'bg-muted',
         )}
       >
-        {leftLabel}
-      </button>
-      <button
-        type="button"
-        onClick={onRight}
-        disabled={rightOnlyDisabled || disabled}
-        title={
-          disabled ? disabledHint : rightOnlyDisabled ? rightDisabledHint : undefined
-        }
-        className={cn(
-          'px-3 py-3 text-sm font-semibold uppercase tracking-wide transition-colors',
-          rightActive && 'bg-foreground text-background',
-          !rightActive && !rightOnlyDisabled && !disabled && 'hover:bg-muted-foreground/10',
-          (rightOnlyDisabled || disabled) &&
-            'cursor-not-allowed text-muted-foreground hover:bg-transparent',
-        )}
-      >
-        {rightLabel}
-      </button>
+        <button
+          type="button"
+          onClick={onLeft}
+          disabled={disabled}
+          title={disabled ? disabledHint : undefined}
+          className={cn(
+            'px-3 py-3 text-sm font-semibold uppercase tracking-wide transition-colors',
+            leftShowActive
+              ? 'bg-foreground text-background'
+              : !disabled && 'hover:bg-muted-foreground/10',
+            disabled && 'cursor-not-allowed text-muted hover:bg-transparent',
+          )}
+        >
+          {leftLabel}
+        </button>
+        <button
+          type="button"
+          onClick={onRight}
+          disabled={rightOnlyDisabled || disabled}
+          title={
+            disabled ? disabledHint : rightOnlyDisabled ? rightDisabledHint : undefined
+          }
+          className={cn(
+            'px-3 py-3 text-sm font-semibold uppercase tracking-wide transition-colors',
+            rightActive && 'bg-foreground text-background',
+            !rightActive && !rightOnlyDisabled && !disabled && 'hover:bg-muted-foreground/10',
+            (rightOnlyDisabled || disabled) && 'cursor-not-allowed text-muted hover:bg-transparent',
+          )}
+        >
+          {rightLabel}
+        </button>
+      </div>
+      {disabled && disabledHint ? (
+        <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.14em] text-muted">
+          {disabledHint}
+        </p>
+      ) : null}
     </div>
   );
 }

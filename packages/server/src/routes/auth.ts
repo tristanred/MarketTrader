@@ -54,6 +54,21 @@ const loginSchema = z.object({
  * Rate limits are applied per-route to slow brute-force attempts.
  * Passwords are hashed with argon2; never bcrypt.
  */
+/**
+ * Fetches the group names a user belongs to. Returns an empty array for users
+ * with no memberships. Used by every auth response so the frontend can gate
+ * admin-only UI without an extra round-trip.
+ */
+async function loadUserGroups(db: Db, userId: string): Promise<string[]> {
+  const { groups, userGroups } = schema;
+  const rows = await db
+    .select({ name: groups.name })
+    .from(userGroups)
+    .innerJoin(groups, eq(groups.id, userGroups.groupId))
+    .where(eq(userGroups.userId, userId));
+  return rows.map((r) => r.name);
+}
+
 export function authRoutes(db: Db) {
   return async function (rawApp: FastifyInstance): Promise<void> {
     const app = rawApp.withTypeProvider<ZodTypeProvider>();
@@ -119,9 +134,10 @@ export function authRoutes(db: Db) {
       // otherwise hand back the previous user's identity.
       issueRefreshCookie(app, reply, { id: user.id, username: user.username });
 
+      const groups = await loadUserGroups(db, user.id);
       return reply.status(201).send({
         token,
-        user: { id: user.id, username: user.username },
+        user: { id: user.id, username: user.username, groups },
       });
     });
 
@@ -166,9 +182,10 @@ export function authRoutes(db: Db) {
 
       issueRefreshCookie(app, reply, { id: user.id, username: user.username });
 
+      const groups = await loadUserGroups(db, user.id);
       return reply.status(200).send({
         token: accessToken,
-        user: { id: user.id, username: user.username },
+        user: { id: user.id, username: user.username, groups },
       });
     });
 
@@ -214,9 +231,10 @@ export function authRoutes(db: Db) {
         { expiresIn: '15m' },
       );
 
+      const groups = await loadUserGroups(db, payload.id);
       return reply.status(200).send({
         token: accessToken,
-        user: { id: payload.id, username: payload.username },
+        user: { id: payload.id, username: payload.username, groups },
       });
     });
   };

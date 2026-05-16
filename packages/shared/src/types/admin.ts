@@ -107,6 +107,33 @@ export interface AdminAddPlayerRequest {
   userId: string;
 }
 
+/** One row of GET /admin/games/:id/players. */
+export interface AdminGamePlayerRow {
+  playerId: string;
+  userId: string;
+  username: string;
+  cashBalance: number;
+  joinedAt: string;
+}
+
+export interface AdminListGamePlayersResponse {
+  players: AdminGamePlayerRow[];
+}
+
+/** One row of GET /admin/users/:id/players — one per game the user has joined. */
+export interface AdminUserPlayerRow {
+  playerId: string;
+  gameId: string;
+  gameName: string;
+  gameStatus: 'pending' | 'active' | 'ended';
+  cashBalance: number;
+  joinedAt: string;
+}
+
+export interface AdminListUserPlayersResponse {
+  players: AdminUserPlayerRow[];
+}
+
 // ─── Portfolios / cash / holdings ─────────────────────────────────────────────
 
 export interface AdminUpdateCashRequest {
@@ -124,6 +151,26 @@ export interface AdminAdjustHoldingsRequest {
 }
 
 // ─── Trades ───────────────────────────────────────────────────────────────────
+
+/** One row of GET /admin/games/:id/trades — flattened, joined to user for display. */
+export interface AdminTradeRow {
+  id: string;
+  gamePlayerId: string;
+  userId: string;
+  username: string;
+  symbol: string;
+  direction: 'buy' | 'sell';
+  quantity: number;
+  status: 'pending' | 'working' | 'executed' | 'cancelled';
+  orderType: 'market' | 'limit' | 'stop' | 'stop_limit' | 'bracket';
+  price: number | null;
+  placedAt: string;
+}
+
+export interface AdminListGameTradesResponse {
+  trades: AdminTradeRow[];
+  total: number;
+}
 
 export interface AdminForceExecuteTradeRequest {
   /** Override the fill price. Defaults to the latest quote when omitted. */

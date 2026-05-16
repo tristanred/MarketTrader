@@ -52,7 +52,7 @@ describe('useGameSocket', () => {
     vi.useFakeTimers();
     vi.stubGlobal('WebSocket', MockWebSocket as unknown as typeof WebSocket);
     MockWebSocket.instances = [];
-    useAuthStore.setState({ token: 'jwt-abc', user: { id: 'u1', username: 'alice' }, ready: true });
+    useAuthStore.setState({ token: 'jwt-abc', user: { id: 'u1', username: 'alice', groups: [] }, ready: true });
     useLiveStore.getState().reset();
   });
   afterEach(() => {

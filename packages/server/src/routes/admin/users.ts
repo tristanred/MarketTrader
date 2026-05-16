@@ -152,6 +152,32 @@ export function adminUsersRoutes(db: Db) {
       });
     });
 
+    app.get('/admin/users/:id/players', {
+      onRequest: rawApp.requireAdmin,
+      schema: {
+        tags: ['Admin'],
+        summary: 'List a user\'s player memberships across games.',
+        security: [{ bearerAuth: [] }],
+        params: idParams,
+      },
+    }, async (request, reply) => {
+      const { id } = request.params;
+      const rows = await db
+        .select({
+          playerId: gamePlayers.id,
+          gameId: games.id,
+          gameName: games.name,
+          gameStatus: games.status,
+          cashBalance: gamePlayers.cashBalance,
+          joinedAt: gamePlayers.joinedAt,
+        })
+        .from(gamePlayers)
+        .innerJoin(games, eq(games.id, gamePlayers.gameId))
+        .where(eq(gamePlayers.userId, id))
+        .orderBy(desc(gamePlayers.joinedAt));
+      return reply.status(200).send({ players: rows });
+    });
+
     app.patch('/admin/users/:id', {
       onRequest: rawApp.requireAdmin,
       schema: {

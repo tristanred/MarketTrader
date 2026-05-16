@@ -17,7 +17,7 @@ export function adminRoutes(db: Db, provider: StockProvider) {
   return async function (app: FastifyInstance): Promise<void> {
     await app.register(adminUsersRoutes(db));
     await app.register(adminGamesRoutes(db));
-    await app.register(adminPortfoliosRoutes(db));
+    await app.register(adminPortfoliosRoutes(db, provider));
     await app.register(adminTradesRoutes(db, provider));
     await app.register(adminSystemRoutes(db));
     await app.register(adminAuditRoutes(db));

@@ -24,3 +24,8 @@ export const useAuthStore = create<AuthState>((set) => ({
   clear: () => set({ token: null, user: null }),
   setReady: (ready) => set({ ready }),
 }));
+
+/** True iff the current user belongs to the `admin` group. */
+export function useIsAdmin(): boolean {
+  return useAuthStore((s) => s.user?.groups?.includes('admin') ?? false);
+}

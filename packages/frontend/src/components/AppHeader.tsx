@@ -1,12 +1,13 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { useAuthStore } from '@/stores/authStore';
+import { useAuthStore, useIsAdmin } from '@/stores/authStore';
 import { useLogout } from '@/api/auth';
 import { useTheme } from '@/stores/themeStore';
 import { Moon, Sun } from 'lucide-react';
 
 export function AppHeader() {
   const user = useAuthStore((s) => s.user);
+  const isAdmin = useIsAdmin();
   const logout = useLogout();
   const navigate = useNavigate();
   const { theme, toggle } = useTheme();
@@ -18,6 +19,14 @@ export function AppHeader() {
           MarketTrader
         </Link>
         <div className="flex items-center gap-2">
+          {isAdmin && (
+            <Link
+              to="/admin"
+              className="text-sm font-medium text-muted-foreground hover:text-foreground"
+            >
+              Admin
+            </Link>
+          )}
           <Button variant="ghost" size="icon" onClick={toggle} aria-label="Toggle theme">
             {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
           </Button>

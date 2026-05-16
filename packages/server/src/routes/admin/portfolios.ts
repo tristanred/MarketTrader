@@ -4,7 +4,9 @@ import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { and, eq } from 'drizzle-orm';
 import type { Db } from '../../db/index.js';
 import { schema } from '../../db/index.js';
+import type { StockProvider } from '../../providers/index.js';
 import { recordAdminAction } from '../../services/admin-audit.js';
+import { loadPlayerPortfolio } from '../../services/portfolio.js';
 
 const playerParams = z.object({ playerId: z.string() });
 
@@ -22,14 +24,40 @@ const holdingsBody = z.object({
 
 /**
  * Registers admin portfolio / cash routes (all require requireAdmin):
+ *   GET    /admin/players/:playerId/portfolio — read-only enriched view
  *   PATCH  /admin/players/:playerId/cash      — set cashBalance to an absolute value
  *   POST   /admin/players/:playerId/holdings  — add/remove shares of one symbol
  *   DELETE /admin/players/:playerId/holdings  — wipe every holding (cash unchanged)
  */
-export function adminPortfoliosRoutes(db: Db) {
+export function adminPortfoliosRoutes(db: Db, provider: StockProvider) {
   return async function (rawApp: FastifyInstance): Promise<void> {
     const app = rawApp.withTypeProvider<ZodTypeProvider>();
     const { gamePlayers, portfolios } = schema;
+
+    app.get('/admin/players/:playerId/portfolio', {
+      onRequest: rawApp.requireAdmin,
+      schema: {
+        tags: ['Admin'],
+        summary: 'Read a player\'s enriched portfolio (cash + holdings + live quotes).',
+        security: [{ bearerAuth: [] }],
+        params: playerParams,
+      },
+    }, async (request, reply) => {
+      const { playerId } = request.params;
+      const [player] = await db
+        .select({ id: gamePlayers.id, cashBalance: gamePlayers.cashBalance })
+        .from(gamePlayers)
+        .where(eq(gamePlayers.id, playerId))
+        .limit(1);
+      if (!player) return reply.status(404).send({ error: 'Player not found' });
+      const portfolio = await loadPlayerPortfolio(
+        db,
+        provider,
+        player.id,
+        Number(player.cashBalance),
+      );
+      return reply.status(200).send(portfolio);
+    });
 
     app.patch('/admin/players/:playerId/cash', {
       onRequest: rawApp.requireAdmin,

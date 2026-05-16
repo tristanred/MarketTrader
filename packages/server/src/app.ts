@@ -37,6 +37,8 @@ export async function buildApp(
     provider?: StockProvider;
     marketStatusProvider?: MarketStatusProvider;
     disablePoller?: boolean;
+    /** When true, registers the rate-limit plugin with no real ceiling. Tests only. */
+    disableRateLimit?: boolean;
     /** Override leaderboard broadcast throttle in ms. Defaults to 1000. Pass 0 in tests. */
     leaderboardThrottleMs?: number;
   } = {},
@@ -46,6 +48,7 @@ export async function buildApp(
     provider: injectedProvider,
     marketStatusProvider: injectedMarketStatus,
     disablePoller = false,
+    disableRateLimit = false,
     leaderboardThrottleMs,
     ...fastifyOpts
   } = opts;
@@ -66,7 +69,7 @@ export async function buildApp(
   await registerSensible(app);
   await registerCookie(app);
   await registerJwt(app);
-  await registerRateLimit(app);
+  await registerRateLimit(app, { disabled: disableRateLimit });
   await registerSwagger(app);
 
   const registry = new GameClientRegistry();

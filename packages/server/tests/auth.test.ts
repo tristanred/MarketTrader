@@ -20,10 +20,12 @@ describe('POST /auth/register', () => {
       payload: { username: 'alice', password: 'password123' },
     });
     expect(res.statusCode).toBe(201);
-    const body = res.json<{ token: string; user: { id: string; username: string } }>();
+    const body = res.json<{ token: string; user: { id: string; username: string; groups: string[] } }>();
     expect(typeof body.token).toBe('string');
     expect(body.user.username).toBe('alice');
     expect(typeof body.user.id).toBe('string');
+    // First-ever registrant is bootstrapped into the admin group.
+    expect(body.user.groups).toEqual(['admin']);
   });
 
   it('returns 409 when username is already taken', async () => {

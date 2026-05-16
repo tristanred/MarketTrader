@@ -41,6 +41,7 @@ export async function createTestApp(
     provider: provider ?? new MockStockProvider(),
     marketStatusProvider: marketStatusProvider ?? new MockMarketStatusProvider(),
     disablePoller: true,
+    disableRateLimit: true,
     leaderboardThrottleMs: 0,
   });
 }

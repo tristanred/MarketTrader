@@ -52,7 +52,7 @@ const deleteQuery = z.object({ force: z.coerce.boolean().optional().default(fals
 export function adminGamesRoutes(db: Db) {
   return async function (rawApp: FastifyInstance): Promise<void> {
     const app = rawApp.withTypeProvider<ZodTypeProvider>();
-    const { games, gamePlayers, trades, portfolios } = schema;
+    const { games, gamePlayers, trades, portfolios, users } = schema;
 
     app.get('/admin/games', {
       onRequest: rawApp.requireAdmin,
@@ -375,6 +375,91 @@ export function adminGamesRoutes(db: Db) {
       });
 
       return reply.status(204).send();
+    });
+
+    app.get('/admin/games/:id/players', {
+      onRequest: rawApp.requireAdmin,
+      schema: {
+        tags: ['Admin'],
+        summary: 'List players in a game (admin-only, bypasses membership check).',
+        security: [{ bearerAuth: [] }],
+        params: idParams,
+      },
+    }, async (request, reply) => {
+      const { id } = request.params;
+      const rows = await db
+        .select({
+          playerId: gamePlayers.id,
+          userId: gamePlayers.userId,
+          username: schema.users.username,
+          cashBalance: gamePlayers.cashBalance,
+          joinedAt: gamePlayers.joinedAt,
+        })
+        .from(gamePlayers)
+        .innerJoin(schema.users, eq(schema.users.id, gamePlayers.userId))
+        .where(eq(gamePlayers.gameId, id))
+        .orderBy(gamePlayers.joinedAt);
+      return reply.status(200).send({ players: rows });
+    });
+
+    const tradesListQuery = z.object({
+      status: z.enum(['pending', 'working', 'executed', 'cancelled']).optional(),
+      playerId: z.string().optional(),
+      symbol: z.string().optional(),
+      limit: z.coerce.number().int().min(1).max(500).optional().default(100),
+      offset: z.coerce.number().int().min(0).optional().default(0),
+    });
+
+    app.get('/admin/games/:id/trades', {
+      onRequest: rawApp.requireAdmin,
+      schema: {
+        tags: ['Admin'],
+        summary: 'List trades in a game with optional filters (admin-only — all players).',
+        security: [{ bearerAuth: [] }],
+        params: idParams,
+        querystring: tradesListQuery,
+      },
+    }, async (request, reply) => {
+      const { id } = request.params;
+      const { status, playerId, symbol, limit, offset } = request.query;
+
+      const conditions = [eq(gamePlayers.gameId, id)];
+      if (status) conditions.push(eq(trades.status, status));
+      if (playerId) conditions.push(eq(trades.gamePlayerId, playerId));
+      if (symbol) conditions.push(eq(trades.symbol, symbol.toUpperCase()));
+
+      const rows = await db
+        .select({
+          id: trades.id,
+          gamePlayerId: trades.gamePlayerId,
+          userId: gamePlayers.userId,
+          username: users.username,
+          symbol: trades.symbol,
+          direction: trades.direction,
+          quantity: trades.quantity,
+          status: trades.status,
+          orderType: trades.orderType,
+          price: trades.price,
+          placedAt: trades.placedAt,
+        })
+        .from(trades)
+        .innerJoin(gamePlayers, eq(trades.gamePlayerId, gamePlayers.id))
+        .innerJoin(users, eq(users.id, gamePlayers.userId))
+        .where(and(...conditions))
+        .orderBy(desc(trades.placedAt))
+        .limit(limit)
+        .offset(offset);
+
+      const [totalRow] = await db
+        .select({ c: count() })
+        .from(trades)
+        .innerJoin(gamePlayers, eq(trades.gamePlayerId, gamePlayers.id))
+        .where(and(...conditions));
+
+      return reply.status(200).send({
+        trades: rows,
+        total: Number(totalRow?.c ?? 0),
+      });
     });
 
     app.post('/admin/games/:id/cancel-working-orders', {

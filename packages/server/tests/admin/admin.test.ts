@@ -230,4 +230,162 @@ describe('admin portfolio editing + audit log', () => {
   });
 });
 
+describe('admin game players + trades listing', () => {
+  it('lists players in a game and lists/filters trades', async () => {
+    const owner = await registerUser(app, 'adminListOwner');
+    const playerA = await registerUser(app, 'adminListPlayerA');
+
+    // Start date in the recent past so the game is `active` and trades are
+    // accepted (the trading route recomputes status from dates regardless of
+    // any admin-status override).
+    const gameRes = await app.inject({
+      method: 'POST',
+      url: '/games',
+      headers: { Authorization: `Bearer ${owner.token}` },
+      payload: {
+        name: 'List Test',
+        startDate: '2020-01-01T00:00:00.000Z',
+        endDate: '2099-06-01T00:00:00.000Z',
+        startingBalance: 50000,
+      },
+    });
+    const gameId = gameRes.json<{ id: string }>().id;
+
+    const enrolA = await app.inject({
+      method: 'POST',
+      url: `/admin/games/${gameId}/players`,
+      headers: { Authorization: `Bearer ${adminToken}` },
+      payload: { userId: playerA.userId },
+    });
+    expect(enrolA.statusCode).toBe(201);
+
+    // Admin should see both the owner and playerA via the players endpoint,
+    // even though the admin themselves is not a member of this game.
+    const playersRes = await app.inject({
+      method: 'GET',
+      url: `/admin/games/${gameId}/players`,
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    expect(playersRes.statusCode).toBe(200);
+    const players = playersRes.json<{ players: { userId: string }[] }>().players;
+    const ids = players.map((p) => p.userId).sort();
+    expect(ids).toEqual([owner.userId, playerA.userId].sort());
+
+    // Trades list — initially empty.
+    const empty = await app.inject({
+      method: 'GET',
+      url: `/admin/games/${gameId}/trades`,
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    expect(empty.statusCode).toBe(200);
+    expect(empty.json<{ total: number }>().total).toBe(0);
+
+    // Status filter is honored even when empty.
+    const filtered = await app.inject({
+      method: 'GET',
+      url: `/admin/games/${gameId}/trades?status=executed`,
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    expect(filtered.statusCode).toBe(200);
+
+    // Place a real trade and assert the trades response carries username + userId.
+    const place = await app.inject({
+      method: 'POST',
+      url: `/games/${gameId}/trades`,
+      headers: { Authorization: `Bearer ${playerA.token}` },
+      payload: { symbol: 'AAPL', direction: 'buy', quantity: 1 },
+    });
+    // Accept either 201 (executed) or 202 (queued pending) — mock provider behavior may vary.
+    expect([201, 202]).toContain(place.statusCode);
+
+    const withTrades = await app.inject({
+      method: 'GET',
+      url: `/admin/games/${gameId}/trades`,
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    expect(withTrades.statusCode).toBe(200);
+    const body = withTrades.json<{
+      trades: { userId: string; username: string }[];
+      total: number;
+    }>();
+    expect(body.total).toBe(1);
+    expect(body.trades[0]!.userId).toBe(playerA.userId);
+    expect(body.trades[0]!.username).toBe('adminListPlayerA');
+
+    // Non-admin cannot reach either endpoint.
+    const denied1 = await app.inject({
+      method: 'GET',
+      url: `/admin/games/${gameId}/players`,
+      headers: { Authorization: `Bearer ${playerA.token}` },
+    });
+    expect(denied1.statusCode).toBe(403);
+    const denied2 = await app.inject({
+      method: 'GET',
+      url: `/admin/games/${gameId}/trades`,
+      headers: { Authorization: `Bearer ${playerA.token}` },
+    });
+    expect(denied2.statusCode).toBe(403);
+  });
+});
+
+describe('admin player portfolio read', () => {
+  it('returns enriched portfolio for any player; 403 for non-admin', async () => {
+    const owner = await registerUser(app, 'portfReadOwner');
+    const target = await registerUser(app, 'portfReadTarget');
+
+    const gameRes = await app.inject({
+      method: 'POST',
+      url: '/games',
+      headers: { Authorization: `Bearer ${owner.token}` },
+      payload: {
+        name: 'Portf Read',
+        startDate: '2099-01-01T00:00:00.000Z',
+        endDate: '2099-06-01T00:00:00.000Z',
+        startingBalance: 25000,
+      },
+    });
+    const gameId = gameRes.json<{ id: string }>().id;
+
+    const enrol = await app.inject({
+      method: 'POST',
+      url: `/admin/games/${gameId}/players`,
+      headers: { Authorization: `Bearer ${adminToken}` },
+      payload: { userId: target.userId },
+    });
+    const playerId = enrol.json<{ playerId: string }>().playerId;
+
+    const ok = await app.inject({
+      method: 'GET',
+      url: `/admin/players/${playerId}/portfolio`,
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    expect(ok.statusCode).toBe(200);
+    const body = ok.json<{
+      cashBalance: number;
+      holdings: unknown[];
+      totalValue: number;
+      reservedValue: number;
+    }>();
+    expect(body.cashBalance).toBe(25000);
+    expect(body.holdings.length).toBe(0);
+    expect(body.totalValue).toBe(25000);
+    expect(body.reservedValue).toBe(0);
+
+    const notFound = await app.inject({
+      method: 'GET',
+      url: `/admin/players/00000000-0000-0000-0000-000000000000/portfolio`,
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    expect(notFound.statusCode).toBe(404);
+
+    const denied = await app.inject({
+      method: 'GET',
+      url: `/admin/players/${playerId}/portfolio`,
+      headers: { Authorization: `Bearer ${target.token}` },
+    });
+    expect(denied.statusCode).toBe(403);
+  });
+});
+
 void loginToken;
+

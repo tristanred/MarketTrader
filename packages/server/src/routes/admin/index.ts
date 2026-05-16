@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { Db } from '../../db/index.js';
 import type { StockProvider } from '../../providers/index.js';
+import type { SystemSettingsService } from '../../services/system-settings.js';
 import { adminUsersRoutes } from './users.js';
 import { adminGamesRoutes } from './games.js';
 import { adminPortfoliosRoutes } from './portfolios.js';
@@ -13,13 +14,17 @@ import { adminAuditRoutes } from './audit.js';
  * responsible for first registering `registerAdminGuard(app, db)` so each
  * route can attach `rawApp.requireAdmin` as its `onRequest` pre-handler.
  */
-export function adminRoutes(db: Db, provider: StockProvider) {
+export function adminRoutes(
+  db: Db,
+  provider: StockProvider,
+  systemSettings: SystemSettingsService,
+) {
   return async function (app: FastifyInstance): Promise<void> {
     await app.register(adminUsersRoutes(db));
     await app.register(adminGamesRoutes(db));
     await app.register(adminPortfoliosRoutes(db, provider));
     await app.register(adminTradesRoutes(db, provider));
-    await app.register(adminSystemRoutes(db));
+    await app.register(adminSystemRoutes(db, systemSettings));
     await app.register(adminAuditRoutes(db));
   };
 }

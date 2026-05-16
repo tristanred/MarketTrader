@@ -31,4 +31,9 @@ describe('QuoteHeader', () => {
     expect(screen.getByRole('button', { name: /buy/i })).toBeDisabled();
     expect(screen.getByRole('button', { name: /sell/i })).toBeDisabled();
   });
+
+  it('preserves trailing zeros in the last price', () => {
+    render(<QuoteHeader symbol="AAPL" last={189.4} changeAbs={0} changePct={0} />);
+    expect(screen.getByText('189.40')).toBeInTheDocument();
+  });
 });

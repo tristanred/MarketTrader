@@ -33,6 +33,7 @@ export function HoldingsPanel({ rows, onSelect, className }: HoldingsPanelProps)
             <thead>
               <tr className="border-b border-hairline text-[9px] uppercase tracking-[0.16em] text-muted">
                 <th className="py-1 text-left font-medium">Symbol</th>
+                <th className="text-left font-medium">Name</th>
                 <th className="text-right font-medium">Qty</th>
                 <th className="text-right font-medium">Avg Cost</th>
                 <th className="text-right font-medium">Value</th>
@@ -50,6 +51,7 @@ export function HoldingsPanel({ rows, onSelect, className }: HoldingsPanelProps)
                   )}
                 >
                   <td className="py-1 font-mono text-accent">{r.symbol}</td>
+                  <td className="truncate pr-2 text-muted">{r.name}</td>
                   <td className="text-right font-mono">{r.quantity}</td>
                   <td className="text-right font-mono text-muted">{fmt(r.avgCost)}</td>
                   <td className="text-right font-mono">{fmt(r.marketValue)}</td>

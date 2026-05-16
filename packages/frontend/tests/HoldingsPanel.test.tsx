@@ -12,7 +12,9 @@ describe('HoldingsPanel', () => {
   it('renders one row per holding with all columns', () => {
     render(<HoldingsPanel rows={ROWS} />);
     expect(screen.getByText('AAPL')).toBeInTheDocument();
+    expect(screen.getByText('Apple Inc.')).toBeInTheDocument();
     expect(screen.getByText('NVDA')).toBeInTheDocument();
+    expect(screen.getByText('Nvidia')).toBeInTheDocument();
     expect(screen.getByText('120')).toBeInTheDocument();
     expect(screen.getByText('+8.24%')).toBeInTheDocument();
     expect(screen.getByText('+24.03%')).toBeInTheDocument();

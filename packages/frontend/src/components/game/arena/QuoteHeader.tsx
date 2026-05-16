@@ -39,7 +39,7 @@ export function QuoteHeader({ symbol, last, changeAbs, changePct, onTrade, class
           <span className="font-mono text-lg font-bold tracking-tight text-text-strong">{symbol}</span>
           {last !== undefined ? (
             <span className="font-mono text-xl font-semibold tracking-tight text-text-strong">
-              {new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(last)}
+              {new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(last)}
             </span>
           ) : null}
           {changePct !== undefined ? (

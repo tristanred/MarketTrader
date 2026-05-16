@@ -3,47 +3,107 @@
 @tailwind utilities;
 
 @layer base {
+  /* ─── Dark theme (default) ───────────────────────────── */
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
-    --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --border: 214.3 31.8% 91.4%;
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
+    --bg: #0a0b0d;
+    --panel: #0c0d10;
+    --hairline: #161719;
+    --hairline-strong: #1d1f23;
+    --text: #e8e9ea;
+    --text-strong: #f4f4f5;
+    --muted: #6b7280;
+    --accent: #67e8f9;
+    --accent-bg: rgba(103, 232, 249, 0.10);
+    --gain: #10b981;
+    --loss: #ef4444;
     --radius: 0.5rem;
   }
 
+  /* The themeStore writes `.dark` on <html> when dark is active.
+     Dark is the default so `:root` already holds dark values; this
+     selector exists so the variable surface stays explicit for tools
+     and devtools. */
   .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-    --border: 217.2 32.6% 17.5%;
-    --primary: 210 40% 98%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
-    --radius: 0.5rem;
+    --bg: #0a0b0d;
+    --panel: #0c0d10;
+    --hairline: #161719;
+    --hairline-strong: #1d1f23;
+    --text: #e8e9ea;
+    --text-strong: #f4f4f5;
+    --muted: #6b7280;
+    --accent: #67e8f9;
+    --accent-bg: rgba(103, 232, 249, 0.10);
+    --gain: #10b981;
+    --loss: #ef4444;
+  }
+
+  /* ─── Light theme — "Paper" ──────────────────────────── */
+  html:not(.dark) {
+    --bg: #f7f5f0;
+    --panel: #ffffff;
+    --hairline: #ebe7dd;
+    --hairline-strong: #e0dcd2;
+    --text: #1a1a1a;
+    --text-strong: #0a0908;
+    --muted: #6b665c;
+    --accent: #0891b2;
+    --accent-bg: rgba(8, 145, 178, 0.08);
+    --gain: #047857;
+    --loss: #b91c1c;
+  }
+
+  * {
+    border-color: var(--hairline-strong);
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Geist Sans', system-ui, sans-serif;
+    font-feature-settings: 'ss01' 1, 'cv11' 1;
+  }
+
+  /* Numbers must align in tables. */
+  .font-mono,
+  code,
+  kbd,
+  pre,
+  samp {
+    font-feature-settings: 'tnum' 1, 'zero' 1;
+  }
+
+  /* Respect reduced motion globally. Marquee/pulse animations fall back
+     to their static end state. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
   }
 }
 
-@layer base {
-  * {
-    @apply border-border;
+@layer utilities {
+  /* Ticker-tape marquee — used by shell components in a later phase. */
+  @keyframes marquee {
+    from { transform: translateX(0); }
+    to   { transform: translateX(-50%); }
   }
-  body {
-    @apply bg-background text-foreground;
+  .animate-marquee {
+    animation: marquee 40s linear infinite;
+  }
+  .animate-marquee:hover {
+    animation-play-state: paused;
+  }
+
+  @keyframes pulse-dot {
+    0%, 100% { opacity: 1; }
+    50%      { opacity: 0.5; }
+  }
+  .animate-pulse-dot {
+    animation: pulse-dot 1.6s ease-in-out infinite;
   }
 }
 
@@ -55,21 +115,21 @@
    */
   .scrollbar-always-x {
     scrollbar-width: thin;
-    scrollbar-color: hsl(var(--muted-foreground) / 0.4) transparent;
+    scrollbar-color: var(--muted) transparent;
   }
   .scrollbar-always-x::-webkit-scrollbar {
     height: 10px;
     -webkit-appearance: none;
   }
   .scrollbar-always-x::-webkit-scrollbar-track {
-    background: hsl(var(--muted));
+    background: var(--hairline);
     border-radius: 9999px;
   }
   .scrollbar-always-x::-webkit-scrollbar-thumb {
-    background: hsl(var(--muted-foreground) / 0.4);
+    background: var(--muted);
     border-radius: 9999px;
   }
   .scrollbar-always-x::-webkit-scrollbar-thumb:hover {
-    background: hsl(var(--muted-foreground) / 0.6);
+    background: var(--text);
   }
 }

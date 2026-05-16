@@ -7,6 +7,9 @@ import { TICKER_TAPE_QUERY_KEY } from '@/api/systemSettings';
 /** Stable React Query key for the live indices cache. */
 export const INDICES_QUERY_KEY = ['indices'] as const;
 
+/** Cache key flagging that the provider couldn't fetch index quotes this tick. */
+export const INDICES_UNAVAILABLE_QUERY_KEY = ['indices-unavailable'] as const;
+
 /**
  * Subscribes to `/ws/live` for app-wide chrome data (indices + ticker-tape
  * config changes). Writes `IndexQuote[]` into the React Query cache keyed
@@ -38,6 +41,10 @@ export function useIndicesSocket(): void {
         }
         if (msg.event === 'indices') {
           queryClient.setQueryData<IndexQuote[]>(INDICES_QUERY_KEY, msg.data.quotes);
+          queryClient.setQueryData<boolean>(
+            INDICES_UNAVAILABLE_QUERY_KEY,
+            msg.data.unavailable ?? false,
+          );
         } else if (msg.event === 'ticker_tape_config_changed') {
           void queryClient.invalidateQueries({ queryKey: TICKER_TAPE_QUERY_KEY });
         }

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Info } from 'lucide-react';
 import { useLiveClock } from '@/hooks/useLiveClock';
-import { INDICES_QUERY_KEY } from '@/hooks/useIndicesSocket';
+import { INDICES_QUERY_KEY, INDICES_UNAVAILABLE_QUERY_KEY } from '@/hooks/useIndicesSocket';
 import { AboutGameModal } from './AboutGameModal';
 import { useMarketStatus } from '@/api/market-status';
 import type { IndexQuote } from '@markettrader/shared';
@@ -34,7 +34,7 @@ export function StatusStrip({ gameContext }: StatusStripProps) {
     initialData: [],
   });
   const unavailable = useQuery<boolean>({
-    queryKey: ['indices-unavailable'],
+    queryKey: INDICES_UNAVAILABLE_QUERY_KEY,
     enabled: false,
     initialData: false,
   });

@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import { StatusStrip } from '@/components/shell/StatusStrip';
-import { INDICES_QUERY_KEY } from '@/hooks/useIndicesSocket';
+import { INDICES_QUERY_KEY, INDICES_UNAVAILABLE_QUERY_KEY } from '@/hooks/useIndicesSocket';
 import type { IndexQuote } from '@markettrader/shared';
 import type React from 'react';
 
@@ -51,7 +51,7 @@ describe('StatusStrip', () => {
   it('renders INDICES UNAVAILABLE when the cache holds an unavailable payload', () => {
     const { qc, ui } = wrap(<StatusStrip />);
     qc.setQueryData(INDICES_QUERY_KEY, []);
-    qc.setQueryData(['indices-unavailable'], true);
+    qc.setQueryData(INDICES_UNAVAILABLE_QUERY_KEY, true);
     render(ui);
     expect(screen.getByText(/INDICES UNAVAILABLE/i)).toBeInTheDocument();
   });

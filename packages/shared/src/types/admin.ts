@@ -199,3 +199,8 @@ export interface AdminStatsResponse {
   rowCounts: Record<string, number>;
   uptimeSeconds: number;
 }
+
+/** Body for `PUT /admin/system-settings/ticker-tape`. */
+export interface AdminUpdateTickerTapeRequest {
+  symbols: string[];
+}

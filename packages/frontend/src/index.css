@@ -59,11 +59,11 @@
   body {
     background: var(--bg);
     color: var(--text);
-    font-family: 'Geist', system-ui, sans-serif;
+    font-family: 'Geist Sans', system-ui, sans-serif;
     font-feature-settings: 'ss01' 1, 'cv11' 1;
   }
 
-  /* Tabular numerics on every mono run — numbers must align in tables. */
+  /* Numbers must align in tables. */
   .font-mono,
   code,
   kbd,
@@ -98,7 +98,6 @@
     animation-play-state: paused;
   }
 
-  /* Market-open pulse dot. */
   @keyframes pulse-dot {
     0%, 100% { opacity: 1; }
     50%      { opacity: 0.5; }

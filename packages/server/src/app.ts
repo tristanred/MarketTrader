@@ -91,6 +91,15 @@ export async function buildApp(
     indicesBroadcaster.stop();
   });
 
+  // Fan ticker-tape config changes out to every connected /ws/live client so
+  // the frontend can invalidate its cached symbol list without polling.
+  systemSettings.on('change', (symbols: string[]) => {
+    globalRegistry.broadcast({
+      event: 'ticker_tape_config_changed',
+      data: { symbols, at: new Date().toISOString() },
+    });
+  });
+
   await app.register(healthRoutes);
   await app.register(authRoutes(db));
   await app.register(gameRoutes(db));
@@ -102,7 +111,7 @@ export async function buildApp(
   await app.register(watchlistRoutes(db));
   await app.register(systemSettingsRoutes(systemSettings));
   await registerAdminGuard(app, db);
-  await app.register(adminRoutes(db, provider));
+  await app.register(adminRoutes(db, provider, systemSettings));
   await app.register(liveRoute(db, registry));
   await app.register(globalLiveRoute(globalRegistry));
 

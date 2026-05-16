@@ -5,12 +5,16 @@ import { count } from 'drizzle-orm';
 import type { Db } from '../../db/index.js';
 import { schema } from '../../db/index.js';
 import { recordAdminAction } from '../../services/admin-audit.js';
+import type { SystemSettingsService } from '../../services/system-settings.js';
 
 const symbolParams = z.object({ symbol: z.string().min(1).max(10) });
 const priceBody = z.object({
   price: z.number().positive(),
   change: z.number().optional(),
   changePercent: z.number().optional(),
+});
+const tickerTapeBody = z.object({
+  symbols: z.array(z.string().trim().min(1).max(12)).min(1).max(100),
 });
 
 const PROCESS_START = Date.now();
@@ -25,7 +29,7 @@ const PROCESS_START = Date.now();
  * doesn't carry an admin hook yet, and threading one through is its own piece
  * of work. Tracked as a follow-up.
  */
-export function adminSystemRoutes(db: Db) {
+export function adminSystemRoutes(db: Db, systemSettings: SystemSettingsService) {
   return async function (rawApp: FastifyInstance): Promise<void> {
     const app = rawApp.withTypeProvider<ZodTypeProvider>();
     const { stockPriceCache, users, games, gamePlayers, trades, portfolios, adminAuditLog } = schema;
@@ -114,6 +118,43 @@ export function adminSystemRoutes(db: Db) {
         },
         uptimeSeconds: Math.floor((Date.now() - PROCESS_START) / 1000),
       });
+    });
+
+    /**
+     * Replaces the ticker-tape symbol list atomically — the settings write and
+     * audit-log entry land in the same transaction so neither can succeed
+     * without the other. The 'change' event fired by the service causes
+     * IndicesBroadcaster to refresh its subscription set.
+     */
+    app.put('/admin/system-settings/ticker-tape', {
+      onRequest: rawApp.requireAdmin,
+      schema: {
+        tags: ['Admin'],
+        summary: 'Replace the ticker-tape symbol list.',
+        security: [{ bearerAuth: [] }],
+        body: tickerTapeBody,
+      },
+    }, async (request, reply) => {
+      const { symbols } = request.body;
+      const adminId = request.user.id;
+
+      const before = await systemSettings.getTickerTapeSymbols();
+      const after = symbols.map((s) => s.trim().toUpperCase());
+
+      await db.transaction(async (tx) => {
+        await systemSettings.setTickerTapeSymbolsInTx(tx, symbols, adminId);
+        await recordAdminAction(tx, {
+          adminUserId: adminId,
+          action: 'system.ticker_tape.update',
+          targetType: 'system',
+          targetId: 'ticker_tape_symbols',
+          before: before ?? null,
+          after: { symbols: after },
+        });
+      });
+
+      const persisted = await systemSettings.getTickerTapeSymbols();
+      return reply.send(persisted);
     });
   };
 }

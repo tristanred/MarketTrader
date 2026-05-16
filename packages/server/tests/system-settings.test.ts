@@ -6,11 +6,17 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { SystemSettingsService } from '../src/services/system-settings.js';
 import type { Db } from '../src/db/index.js';
+import { schema } from '../src/db/index.js';
 
 const __dir = path.dirname(fileURLToPath(import.meta.url));
 
 async function makeDb(): Promise<Db> {
-  const client = createClient({ url: ':memory:' });
+  // `file::memory:?cache=shared` is the only libsql in-memory URL that
+  // lets pool connections share state — required for db.transaction() to
+  // see the migrated schema. The shared DB persists across tests in the
+  // same vitest worker, so the suite truncates system_settings in
+  // beforeEach instead of building a fresh DB per test.
+  const client = createClient({ url: 'file::memory:?cache=shared' });
   const db = drizzle(client);
   await migrate(db, {
     migrationsFolder: path.resolve(__dir, '..', 'drizzle', 'sqlite'),
@@ -24,6 +30,9 @@ describe('SystemSettingsService', () => {
 
   beforeEach(async () => {
     db = await makeDb();
+    // The shared in-memory DB persists across tests; truncate so each test
+    // starts from an empty system_settings table.
+    await db.delete(schema.systemSettings);
     svc = new SystemSettingsService(db);
   });
 
@@ -84,5 +93,28 @@ describe('SystemSettingsService', () => {
     await svc.ensureSeeded();
     expect(events.length).toBe(1);
     expect(events[0]).toContain('^GSPC');
+  });
+
+  it('setTickerTapeSymbolsInTx rolls back when the surrounding tx fails', async () => {
+    await expect(
+      db.transaction(async (tx) => {
+        await svc.setTickerTapeSymbolsInTx(tx, ['CUSTOM-TX'], 'tx-user');
+        throw new Error('rollback');
+      }),
+    ).rejects.toThrow('rollback');
+
+    const after = await svc.getTickerTapeSymbols();
+    expect(after).toBeNull();
+  });
+
+  it('setTickerTapeSymbolsInTx persists + emits when the tx commits', async () => {
+    const events: string[][] = [];
+    svc.on('change', (s) => events.push(s));
+    await db.transaction(async (tx) => {
+      await svc.setTickerTapeSymbolsInTx(tx, ['  msft ', 'AAPL'], 'admin-1');
+    });
+    const after = await svc.getTickerTapeSymbols();
+    expect(after!.symbols).toEqual(['MSFT', 'AAPL']);
+    expect(events).toEqual([['MSFT', 'AAPL']]);
   });
 });

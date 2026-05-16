@@ -1,17 +1,13 @@
 import type { WebSocket } from 'ws';
 import type { LiveWsMessage } from '@markettrader/shared';
 
-interface ClientEntry {
-  userId: string;
-}
-
 /**
  * Per-app-instance registry of clients connected to the global `/ws/live`
  * socket. Unlike {@link GameClientRegistry}, there's no per-game scope —
  * every connected client receives every broadcast.
  */
 export class GlobalClientRegistry {
-  private readonly clients = new Map<WebSocket, ClientEntry>();
+  private readonly clients = new Map<WebSocket, { userId: string }>();
 
   get size(): number {
     return this.clients.size;

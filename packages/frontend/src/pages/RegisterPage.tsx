@@ -6,7 +6,7 @@ import { useRegister } from '@/api/auth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { AuthAtmospherePanel } from '@/components/auth/AuthAtmospherePanel';
 import { ApiError } from '@/lib/api';
 
 const schema = z.object({
@@ -41,45 +41,61 @@ export function RegisterPage() {
         : null;
 
   return (
-    <main className="min-h-screen bg-background flex items-center justify-center p-4">
-      <Card className="w-full max-w-sm">
-        <CardHeader>
-          <CardTitle>Create account</CardTitle>
-        </CardHeader>
-        <CardContent>
+    <main className="grid min-h-screen bg-bg text-text lg:grid-cols-[3fr_2fr]">
+      <AuthAtmospherePanel />
+      <div className="flex items-center justify-center p-6 sm:p-10">
+        <div className="w-full max-w-sm space-y-6">
+          <div className="space-y-1">
+            <h1 className="text-xl font-bold tracking-[-0.02em] text-text-strong">Create account</h1>
+            <p className="text-xs text-muted">First registrant becomes admin.</p>
+          </div>
           <form onSubmit={onSubmit} className="space-y-4">
             <div className="space-y-1">
-              <Label htmlFor="username">Username</Label>
-              <Input id="username" autoComplete="username" {...form.register('username')} />
+              <Label htmlFor="username" className="text-xs uppercase tracking-[0.14em] text-muted">
+                Username
+              </Label>
+              <Input
+                id="username"
+                autoComplete="username"
+                className="font-mono"
+                {...form.register('username')}
+              />
               {form.formState.errors.username && (
-                <p className="text-xs text-destructive">{form.formState.errors.username.message}</p>
+                <p className="text-xs text-loss">{form.formState.errors.username.message}</p>
               )}
             </div>
             <div className="space-y-1">
-              <Label htmlFor="password">Password</Label>
+              <Label htmlFor="password" className="text-xs uppercase tracking-[0.14em] text-muted">
+                Password
+              </Label>
               <Input
                 id="password"
                 type="password"
                 autoComplete="new-password"
+                className="font-mono"
                 {...form.register('password')}
               />
               {form.formState.errors.password && (
-                <p className="text-xs text-destructive">{form.formState.errors.password.message}</p>
+                <p className="text-xs text-loss">{form.formState.errors.password.message}</p>
               )}
             </div>
-            {errorMessage && <p className="text-sm text-destructive">{errorMessage}</p>}
-            <Button type="submit" className="w-full" disabled={register.isPending}>
+            {errorMessage && <p className="text-sm text-loss">{errorMessage}</p>}
+            <Button
+              type="submit"
+              className="w-full font-mono uppercase tracking-[0.1em]"
+              disabled={register.isPending}
+            >
               {register.isPending ? 'Creating…' : 'Create account'}
             </Button>
           </form>
-          <p className="mt-4 text-sm text-muted-foreground">
+          <p className="text-xs text-muted">
             Already have an account?{' '}
-            <Link to="/login" className="underline text-foreground">
+            <Link to="/login" className="text-accent hover:underline">
               Sign in
             </Link>
           </p>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     </main>
   );
 }

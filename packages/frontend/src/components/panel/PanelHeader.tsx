@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { cn } from '@/lib/utils';
 
+/** Props for {@link PanelHeader}. Extends all standard `<div>` attributes. */
 export interface PanelHeaderProps extends React.HTMLAttributes<HTMLDivElement> {
   /** Right-aligned slot, typically a "LIVE" pill or an action affordance. */
   right?: React.ReactNode;
@@ -22,7 +23,10 @@ export const PanelHeader = React.forwardRef<HTMLDivElement, PanelHeaderProps>(
       )}
       {...props}
     >
-      <span className={cn('font-mono uppercase tracking-[0.14em] text-muted')}>{children}</span>
+      {/* Typography classes are repeated on this span so getByText() lands on an
+          element carrying them — Panel.test.tsx asserts them on the label. Don't
+          DRY this up without updating those assertions. */}
+      <span className="font-mono uppercase tracking-[0.14em] text-muted">{children}</span>
       {right ? <span className="flex items-center gap-2">{right}</span> : null}
     </div>
   ),

@@ -26,6 +26,12 @@ importers:
 
   packages/frontend:
     dependencies:
+      '@fontsource/geist-mono':
+        specifier: ^5.2.7
+        version: 5.2.7
+      '@fontsource/geist-sans':
+        specifier: ^5.2.5
+        version: 5.2.5
       '@hookform/resolvers':
         specifier: ^3.9.0
         version: 3.10.0(react-hook-form@7.75.0(react@19.2.6))
@@ -1214,6 +1220,12 @@ packages:
 
   '@floating-ui/utils@0.2.11':
     resolution: {integrity: sha512-RiB/yIh78pcIxl6lLMG0CgBXAZ2Y0eVHqMPYugu+9U0AeT6YBeiJpf7lbdJNIugFP5SIjwNRgo4DhR1Qxi26Gg==}
+
+  '@fontsource/geist-mono@5.2.7':
+    resolution: {integrity: sha512-xVPVFISJg/K0VVd+aQN0Y7X/sw9hUcJPyDWFJ5GpyU3bHELhoRsJkPSRSHXW32mOi0xZCUQDOaPj1sqIFJ1FGg==}
+
+  '@fontsource/geist-sans@5.2.5':
+    resolution: {integrity: sha512-anllOHyJbElRs9fV15TeDRqAeb1IKm4bSknPl6ZMoyPTx1BBy7logudcUwpNjmQLkzn4Q0JGQLRCUKJYoyST6A==}
 
   '@hookform/resolvers@3.10.0':
     resolution: {integrity: sha512-79Dv+3mDF7i+2ajj7SkypSKHhl1cbln1OGavqrsF7p6mbUv11xpqpacPsGDCTRvCSjEEIez2ef1NveSVL3b0Ag==}
@@ -5015,6 +5027,10 @@ snapshots:
       react-dom: 19.2.6(react@19.2.6)
 
   '@floating-ui/utils@0.2.11': {}
+
+  '@fontsource/geist-mono@5.2.7': {}
+
+  '@fontsource/geist-sans@5.2.5': {}
 
   '@hookform/resolvers@3.10.0(react-hook-form@7.75.0(react@19.2.6))':
     dependencies:

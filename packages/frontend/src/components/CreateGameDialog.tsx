@@ -89,7 +89,7 @@ export function CreateGameDialog() {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button>Create game</Button>
+        <Button className="font-mono uppercase tracking-[0.1em]">+ New game</Button>
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>

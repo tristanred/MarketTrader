@@ -43,6 +43,13 @@
       "when": 1778811591513,
       "tag": "0005_deep_vargas",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1778901597571,
+      "tag": "0006_fearless_thunderbolt",
+      "breakpoints": true
     }
   ]
 }

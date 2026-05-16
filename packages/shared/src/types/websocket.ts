@@ -1,6 +1,7 @@
 import type { StockQuote } from './stock.js';
 import type { LeaderboardEntry } from './game.js';
 import type { TradeDirection, WorkingOrder } from './player.js';
+import type { IndexQuote } from './system-settings.js';
 
 /**
  * Pushed by the server every 5 seconds with fresh quotes for all symbols
@@ -75,3 +76,30 @@ export type WsServerEvent =
 
 /** Union of all event shapes a client can send to the server. */
 export type WsClientEvent = WsSubscribeEvent;
+
+/**
+ * Pushed by the server every 5 seconds on the global `/ws/live` socket with
+ * fresh quotes for major indices (^GSPC/^IXIC/^DJI) plus all configured
+ * ticker-tape symbols. `unavailable: true` means the active provider could
+ * not fetch indices (e.g. Alpaca) — UI should render an explicit indicator.
+ */
+export interface WsIndicesEvent {
+  event: 'indices';
+  data: {
+    quotes: IndexQuote[];
+    at: string;
+    unavailable?: boolean;
+  };
+}
+
+/** Pushed on the global socket when an admin changes the ticker-tape symbol list. */
+export interface WsTickerTapeConfigChangedEvent {
+  event: 'ticker_tape_config_changed';
+  data: {
+    symbols: string[];
+    at: string;
+  };
+}
+
+/** Union of every message that can be sent on the global `/ws/live` socket. */
+export type LiveWsMessage = WsIndicesEvent | WsTickerTapeConfigChangedEvent;

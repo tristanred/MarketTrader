@@ -7,40 +7,62 @@ export default {
   theme: {
     extend: {
       colors: {
-        background: 'hsl(var(--background))',
-        foreground: 'hsl(var(--foreground))',
-        muted: {
-          DEFAULT: 'hsl(var(--muted))',
-          foreground: 'hsl(var(--muted-foreground))',
+        bg: 'var(--bg)',
+        panel: 'var(--panel)',
+        hairline: {
+          DEFAULT: 'var(--hairline)',
+          strong: 'var(--hairline-strong)',
         },
-        border: 'hsl(var(--border))',
-        input: 'hsl(var(--border))',
-        ring: 'hsl(var(--primary))',
+        text: {
+          DEFAULT: 'var(--text)',
+          strong: 'var(--text-strong)',
+        },
+        muted: 'var(--muted)',
+        accent: {
+          DEFAULT: 'var(--accent)',
+          bg: 'var(--accent-bg)',
+        },
+        gain: 'var(--gain)',
+        loss: 'var(--loss)',
+
+        // ─── Compatibility aliases ──────────────────────────────
+        // Existing ShadCN UI primitives reference these names. Map
+        // them to the new tokens so we don't have to rewrite every
+        // component in this phase. Later phases remove unused ones.
+        background: 'var(--bg)',
+        foreground: 'var(--text)',
+        border: 'var(--hairline-strong)',
+        input: 'var(--hairline-strong)',
+        ring: 'var(--accent)',
         card: {
-          DEFAULT: 'hsl(var(--card))',
-          foreground: 'hsl(var(--card-foreground))',
+          DEFAULT: 'var(--panel)',
+          foreground: 'var(--text)',
         },
         primary: {
-          DEFAULT: 'hsl(var(--primary))',
-          foreground: 'hsl(var(--primary-foreground))',
+          DEFAULT: 'var(--accent)',
+          foreground: 'var(--bg)',
         },
         destructive: {
-          DEFAULT: 'hsl(var(--destructive))',
-          foreground: 'hsl(var(--destructive-foreground))',
-        },
-        accent: {
-          DEFAULT: 'hsl(var(--accent))',
-          foreground: 'hsl(var(--accent-foreground))',
+          DEFAULT: 'var(--loss)',
+          foreground: '#ffffff',
         },
         success: {
-          DEFAULT: 'hsl(142.1 76.2% 36.3%)',
-          foreground: 'hsl(0 0% 100%)',
+          DEFAULT: 'var(--gain)',
+          foreground: '#ffffff',
         },
+        'muted-foreground': 'var(--muted)',
+        'accent-foreground': 'var(--text-strong)',
+      },
+      fontFamily: {
+        sans: ['Geist', 'system-ui', 'sans-serif'],
+        mono: ['Geist Mono', 'ui-monospace', 'SFMono-Regular', 'monospace'],
       },
       borderRadius: {
         lg: 'var(--radius)',
         md: 'calc(var(--radius) - 2px)',
         sm: 'calc(var(--radius) - 4px)',
+        panel: '6px',
+        chip: '4px',
       },
       keyframes: {
         'accordion-down': {

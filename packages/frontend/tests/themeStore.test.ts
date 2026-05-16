@@ -26,8 +26,10 @@ describe('themeStore', () => {
     mod.useThemeStore.getState().toggle();
     expect(mod.useThemeStore.getState().theme).toBe('light');
     expect(window.localStorage.getItem('mt:theme')).toBe('light');
+    expect(document.documentElement.classList.contains('dark')).toBe(false);
     mod.useThemeStore.getState().toggle();
     expect(mod.useThemeStore.getState().theme).toBe('dark');
     expect(window.localStorage.getItem('mt:theme')).toBe('dark');
+    expect(document.documentElement.classList.contains('dark')).toBe(true);
   });
 });

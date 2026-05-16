@@ -74,11 +74,28 @@ export class SystemSettingsService extends EventEmitter {
   }
 
   /**
-   * Replaces the persisted ticker-tape symbol list. Symbols are uppercased
-   * and trimmed. Throws on empty input. Caller is responsible for validating
-   * each symbol exists upstream — the service is dialect-agnostic.
+   * Replaces the persisted ticker-tape symbol list using the top-level db
+   * handle. For atomic admin writes that also touch the audit log, use
+   * {@link setTickerTapeSymbolsInTx} so both rows land in the same
+   * transaction.
    */
   async setTickerTapeSymbols(symbols: string[], actorId: string | null): Promise<void> {
+    return this.setTickerTapeSymbolsInTx(this.db, symbols, actorId);
+  }
+
+  /**
+   * Transaction-aware variant of {@link setTickerTapeSymbols}. The caller
+   * passes its own tx handle so the write and any related audit entry
+   * commit atomically. The 'change' event fires after the inner write
+   * completes — callers should avoid irreversible side effects in
+   * 'change' listeners, since the surrounding transaction may still roll
+   * back.
+   */
+  async setTickerTapeSymbolsInTx(
+    db: Pick<Db, 'insert'>,
+    symbols: string[],
+    actorId: string | null,
+  ): Promise<void> {
     const normalized = symbols.map((s) => s.trim().toUpperCase()).filter(Boolean);
     if (normalized.length === 0) {
       throw new Error('ticker_tape_symbols cannot be empty');
@@ -87,7 +104,7 @@ export class SystemSettingsService extends EventEmitter {
     const value = JSON.stringify({ symbols: normalized });
     const now = new Date().toISOString();
 
-    await this.db
+    await db
       .insert(schema.systemSettings)
       .values({ key: KEY_TICKER_TAPE, value, updatedAt: now, updatedBy: actorId })
       .onConflictDoUpdate({

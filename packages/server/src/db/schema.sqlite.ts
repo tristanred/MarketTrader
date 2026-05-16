@@ -275,3 +275,18 @@ export const watchlistItems = sqliteTable(
   },
   (t) => [unique().on(t.watchlistId, t.symbol)],
 );
+
+/**
+ * Server-managed runtime configuration. Keys are stable strings; values are
+ * JSON-encoded text (the service layer handles encoding/decoding). Phase 2
+ * ships exactly one key: `ticker_tape_symbols`. Admin editing arrives in phase 4.
+ */
+export const systemSettings = sqliteTable('system_settings', {
+  key: text('key').primaryKey(),
+  value: text('value').notNull(),
+  updatedAt: text('updated_at')
+    .default(sql`(datetime('now'))`)
+    .notNull(),
+  /** User id of the most recent writer; null when seeded by the server. */
+  updatedBy: text('updated_by'),
+});

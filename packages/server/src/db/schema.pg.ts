@@ -252,3 +252,18 @@ export const watchlistItems = pgTable(
   },
   (t) => [unique().on(t.watchlistId, t.symbol)],
 );
+
+/**
+ * Server-managed runtime configuration. Mirrors the SQLite variant; stores
+ * JSON as text in both dialects so the service layer handles encoding.
+ * Phase 2 seeds `ticker_tape_symbols`; phase 4 adds admin editing.
+ */
+export const systemSettings = pgTable('system_settings', {
+  key: text('key').primaryKey(),
+  value: text('value').notNull(),
+  updatedAt: timestamp('updated_at', { mode: 'string', withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  /** User id of the most recent writer; null when seeded by the server. */
+  updatedBy: text('updated_by'),
+});

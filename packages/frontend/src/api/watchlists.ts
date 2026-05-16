@@ -24,8 +24,8 @@ export function useCreateWatchlist() {
     mutationFn: (body: CreateWatchlistRequest) =>
       apiFetch<Watchlist>('/watchlists', { method: 'POST', body }),
     // Write the new list into the cache synchronously so callers that switch
-    // selection right after mutateAsync() see it on the next render — otherwise
-    // the refetch race lets WatchlistTab's effect snap the selection back.
+    // selection right after mutateAsync() see it on the next render —
+    // otherwise the server refetch can race ahead and snap the selection back.
     onSuccess: (created) => {
       qc.setQueryData<Watchlist[]>(watchlistKeys.all, (prev) =>
         prev ? (prev.some((w) => w.id === created.id) ? prev : [...prev, created]) : [created],

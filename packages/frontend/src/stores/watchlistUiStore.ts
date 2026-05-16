@@ -1,10 +1,10 @@
 import { create } from 'zustand';
 
 /**
- * Per-session UI state for the Watchlist tab in HoldingsSidebar.
- * `selectedWatchlistId` is the dropdown's current pick; `editMode` toggles
- * the search-autocomplete editor (pencil → DONE) over the table view.
- * Both reset on reload — server data is the source of truth for lists.
+ * Per-session UI state for the player's active watchlist.
+ * `selectedWatchlistId` is the dropdown's current pick; `editMode` is a
+ * carryover toggle reserved for a future inline editor. Both reset on
+ * reload — server data is the source of truth for lists.
  */
 interface WatchlistUiState {
   selectedWatchlistId: string | null;

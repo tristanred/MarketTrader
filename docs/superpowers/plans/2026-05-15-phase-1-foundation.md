@@ -297,7 +297,7 @@ Open `packages/frontend/src/index.css`. Replace the entire `@layer base` block t
   body {
     background: var(--bg);
     color: var(--text);
-    font-family: 'Geist', system-ui, sans-serif;
+    font-family: 'Geist Sans', system-ui, sans-serif;
     font-feature-settings: 'ss01' 1, 'cv11' 1;
   }
 
@@ -448,7 +448,7 @@ export default {
         'accent-foreground': 'var(--text-strong)',
       },
       fontFamily: {
-        sans: ['Geist', 'system-ui', 'sans-serif'],
+        sans: ['Geist Sans', 'system-ui', 'sans-serif'],
         mono: ['Geist Mono', 'ui-monospace', 'SFMono-Regular', 'monospace'],
       },
       borderRadius: {

@@ -41,7 +41,7 @@ Both themes share the same semantic token names; the values change per theme.
 | `--gain` | `#10b981` | Positive P&L only |
 | `--loss` | `#ef4444` | Negative P&L only |
 
-**Light theme — "Paper"** (`<html data-theme="light">`)
+**Light theme — "Paper"** (active when `<html>` does **not** have the `.dark` class; the dark theme is keyed on `.dark`)
 | Token | Value | Use |
 |---|---|---|
 | `--bg` | `#f7f5f0` | App background (warm off-white) |
@@ -258,7 +258,7 @@ Two ways to handle the new global channel:
 - Replace `packages/frontend/src/index.css` palette section with the two-theme CSS-variable system (§2). Hex values, not HSL.
 - Update `tailwind.config.ts`:
   - `colors.accent`, `colors.gain`, `colors.loss`, `colors.panel`, `colors.hairline`, `colors.muted`, `colors.text`, `colors.bg` all reference vars.
-  - `fontFamily.sans = ['Geist', 'system-ui', 'sans-serif']`, `fontFamily.mono = ['Geist Mono', 'ui-monospace', 'monospace']`.
+  - `fontFamily.sans = ['Geist Sans', 'system-ui', 'sans-serif']`, `fontFamily.mono = ['Geist Mono', 'ui-monospace', 'monospace']`. Note: `@fontsource/geist-sans` registers the typeface as `'Geist Sans'` (with a space), not `'Geist'` — naming it `'Geist'` silently falls through to `system-ui`.
   - `borderRadius.panel: '6px'`, `borderRadius.chip: '4px'`.
   - `keyframes.marquee: { from: { transform: 'translateX(0)' }, to: { transform: 'translateX(-50%)' } }` + `animation.marquee: 'marquee 40s linear infinite'`.
 - Add `@fontsource/geist-sans` and `@fontsource/geist-mono` to `packages/frontend/package.json`. Import weights 400/500/600/700 from each in `main.tsx`.
@@ -364,7 +364,7 @@ Each phase is independent and lands as a separate PR.
 - `LeaderboardPanel`: current user's row is marked with the accent left border.
 - `StatusStrip`: ticks the clock once per second; reflects index-quote updates; shows `INDICES UNAVAILABLE` on `unavailable: true` payload.
 - `SymbolSearch`: opens on `cmd+k`, closes on Esc, result click writes to context (in-game) or navigates (out-of-game).
-- Theme switching: setting `data-theme="light"` on `<html>` flips all tokens; no component remount required (snapshot of rendered styles before/after).
+- Theme switching: removing the `.dark` class from `<html>` flips all tokens to the Paper light theme; adding it flips back to dark. No component remount required (snapshot of rendered styles before/after).
 
 ### Playwright e2e
 - New spec: sign in → open a game → click a holdings row → assert `QuoteHeader` symbol updates without navigation.

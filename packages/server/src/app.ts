@@ -28,7 +28,10 @@ import {
 } from './providers/market-status/index.js';
 import { env } from './env.js';
 import { GameClientRegistry } from './ws/registry.js';
+import { GlobalClientRegistry } from './ws/global-registry.js';
 import { liveRoute } from './ws/live-route.js';
+import { globalLiveRoute } from './ws/global-live-route.js';
+import { IndicesBroadcaster } from './ws/indices-broadcaster.js';
 import { startPricePoller } from './ws/price-poller.js';
 import { startPendingOrdersWorker } from './workers/pending-orders.js';
 import { attachSentry } from './observability/sentry.js';
@@ -75,9 +78,18 @@ export async function buildApp(
   await registerSwagger(app);
 
   const registry = new GameClientRegistry();
+  const globalRegistry = new GlobalClientRegistry();
 
   const systemSettings = new SystemSettingsService(db);
   await systemSettings.ensureSeeded();
+
+  const indicesBroadcaster = new IndicesBroadcaster(provider, systemSettings, globalRegistry);
+  if (!disablePoller) {
+    await indicesBroadcaster.start();
+  }
+  app.addHook('onClose', async () => {
+    indicesBroadcaster.stop();
+  });
 
   await app.register(healthRoutes);
   await app.register(authRoutes(db));
@@ -92,6 +104,7 @@ export async function buildApp(
   await registerAdminGuard(app, db);
   await app.register(adminRoutes(db, provider));
   await app.register(liveRoute(db, registry));
+  await app.register(globalLiveRoute(globalRegistry));
 
   if (!disablePoller) {
     const handle = startPricePoller(db, provider, registry);

@@ -5,6 +5,7 @@ import {
   SelectedSymbolProvider,
   useSelectedSymbol,
   useSetSelectedSymbol,
+  useMaybeSetSelectedSymbol,
 } from '@/contexts/SelectedSymbolContext';
 
 function Reader() {
@@ -69,5 +70,54 @@ describe('SelectedSymbolContext', () => {
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
     expect(() => render(<Reader />)).toThrow(/SelectedSymbolProvider/i);
     spy.mockRestore();
+  });
+
+  it('useMaybeSetSelectedSymbol returns the setter inside the provider', async () => {
+    const user = userEvent.setup();
+    const onResult = vi.fn();
+    function MaybeWriter() {
+      const set = useMaybeSetSelectedSymbol();
+      return (
+        <button
+          type="button"
+          onClick={() => {
+            onResult(set !== null);
+            set?.('MSFT');
+          }}
+          data-testid="maybe-writer"
+        >
+          maybe-set
+        </button>
+      );
+    }
+    render(
+      <SelectedSymbolProvider>
+        <Reader />
+        <MaybeWriter />
+      </SelectedSymbolProvider>,
+    );
+    await user.click(screen.getByTestId('maybe-writer'));
+    expect(onResult).toHaveBeenCalledWith(true);
+    expect(screen.getByTestId('reader')).toHaveTextContent('MSFT');
+  });
+
+  it('useMaybeSetSelectedSymbol returns null outside the provider', async () => {
+    const user = userEvent.setup();
+    const onResult = vi.fn();
+    function MaybeWriter() {
+      const set = useMaybeSetSelectedSymbol();
+      return (
+        <button
+          type="button"
+          onClick={() => onResult(set !== null)}
+          data-testid="maybe-writer"
+        >
+          maybe-set
+        </button>
+      );
+    }
+    render(<MaybeWriter />);
+    await user.click(screen.getByTestId('maybe-writer'));
+    expect(onResult).toHaveBeenCalledWith(false);
   });
 });

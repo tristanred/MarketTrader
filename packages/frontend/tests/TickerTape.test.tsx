@@ -1,10 +1,12 @@
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, it, expect } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import { TickerTape } from '@/components/shell/TickerTape';
 import { INDICES_QUERY_KEY } from '@/hooks/useIndicesSocket';
 import { TICKER_TAPE_QUERY_KEY } from '@/api/systemSettings';
+import { SelectedSymbolProvider, useSelectedSymbol } from '@/contexts/SelectedSymbolContext';
 import type { IndexQuote } from '@markettrader/shared';
 import type React from 'react';
 
@@ -51,5 +53,41 @@ describe('TickerTape', () => {
       </QueryClientProvider>,
     );
     expect(container.textContent).toBe('');
+  });
+
+  it('writes to SelectedSymbolContext when clicked in-game', async () => {
+    const user = userEvent.setup();
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    qc.setQueryData(TICKER_TAPE_QUERY_KEY, {
+      symbols: ['AAPL'],
+      updatedAt: '2026-05-15T14:00:00Z',
+    });
+    qc.setQueryData<IndexQuote[]>(INDICES_QUERY_KEY, [
+      { symbol: 'AAPL', last: 189.42, changeAbs: 1.57, changePct: 0.84 },
+    ]);
+    function SelectedReader() {
+      const s = useSelectedSymbol();
+      return <div data-testid="selected">{s ?? '(none)'}</div>;
+    }
+    render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter initialEntries={['/games/g1']}>
+          <Routes>
+            <Route
+              path="/games/:gameId"
+              element={
+                <SelectedSymbolProvider>
+                  <TickerTape />
+                  <SelectedReader />
+                </SelectedSymbolProvider>
+              }
+            />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    const items = screen.getAllByText('AAPL');
+    await user.click(items[0]!);
+    expect(screen.getByTestId('selected')).toHaveTextContent('AAPL');
   });
 });

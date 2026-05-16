@@ -1,4 +1,5 @@
 import { Panel, PanelHeader, PanelBody } from '@/components/panel';
+import { useCommandKStore } from '@/stores/commandKStore';
 import { cn } from '@/lib/utils';
 
 export interface WatchlistRow {
@@ -15,13 +16,26 @@ export interface WatchlistPanelProps {
 
 /**
  * Right-column compact watchlist. Each clickable row drives the arena's
- * SelectedSymbolContext (wired by phase 3c). The "+ ADD" action lives in
- * the panel header and is reserved for phase 3c.
+ * SelectedSymbolContext. The "+ ADD" affordance opens the global search
+ * overlay; persisting a chosen symbol into the active watchlist is a
+ * separate user action handled outside this panel.
  */
 export function WatchlistPanel({ rows, onSelect, className }: WatchlistPanelProps) {
   return (
     <Panel className={className}>
-      <PanelHeader>Watchlist</PanelHeader>
+      <PanelHeader
+        right={
+          <button
+            type="button"
+            onClick={() => useCommandKStore.getState().open$()}
+            className="font-mono text-[10px] tracking-[0.14em] text-accent hover:underline"
+          >
+            + ADD
+          </button>
+        }
+      >
+        Watchlist
+      </PanelHeader>
       <PanelBody>
         {rows.length === 0 ? (
           <p className="py-3 text-center text-xs text-muted">Watchlist is empty.</p>

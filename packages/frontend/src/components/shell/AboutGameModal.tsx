@@ -8,9 +8,9 @@ export interface AboutGameModalProps {
 }
 
 /**
- * Game info modal opened from the status strip's `[i]` button. Renders the
- * same game-info content that AboutThisGameCard shows on the game-detail
- * page; phase 3 replaces the card.
+ * Game info modal opened from the status strip's `[i]` button. Renders
+ * the game's name, status, player count, and starting cash. The arena
+ * page itself shows live state; this modal is the static info surface.
  */
 export function AboutGameModal({ gameId, open, onOpenChange }: AboutGameModalProps) {
   const game = useGame(gameId);

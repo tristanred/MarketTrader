@@ -3,12 +3,15 @@ import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { SymbolSearch } from './SymbolSearch';
 import { useCommandKStore } from '@/stores/commandKStore';
 import { useGame } from '@/api/games';
+import { useMaybeSetSelectedSymbol } from '@/contexts/SelectedSymbolContext';
 
 /**
  * Modal wrapper around {@link SymbolSearch} opened by cmd+k. Mounted once
- * at AppShell level. Phase 3a always navigates to `/symbols/:symbol` on
- * select; phase 3c swaps the in-game path to a `SelectedSymbolContext`
- * write so the user stays in the arena.
+ * at AppShell level. When inside `/games/:gameId` AND the arena has
+ * mounted a SelectedSymbolProvider, picking a result writes the symbol
+ * into that context and closes — the user stays in the arena. Outside a
+ * game (or before the arena mounts), falls back to navigating to
+ * `/symbols/:symbol`.
  */
 export function SymbolSearchOverlay() {
   const open = useCommandKStore((s) => s.open);
@@ -16,6 +19,7 @@ export function SymbolSearchOverlay() {
   const navigate = useNavigate();
   const params = useParams();
   const game = useGame(params.gameId ?? '');
+  const setSelectedSymbol = useMaybeSetSelectedSymbol();
 
   return (
     <Dialog
@@ -31,6 +35,10 @@ export function SymbolSearchOverlay() {
           placeholder="Search symbol..."
           onSelect={(symbol) => {
             close();
+            if (params.gameId && setSelectedSymbol) {
+              setSelectedSymbol(symbol);
+              return;
+            }
             navigate(`/symbols/${symbol}`);
           }}
         />

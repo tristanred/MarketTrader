@@ -26,6 +26,8 @@ const PRICE_TYPE_TO_ORDER_TYPE: Record<PriceType, OrderType> = {
 interface TradeOrderDialogProps {
   open: boolean;
   initialSymbol: string | null;
+  /** Direction the dialog opens on. Defaults to 'buy'. */
+  initialDirection?: TradeDirection;
   gameId: string;
   /** When false, SELL SHORT and BUY TO COVER tabs are hidden entirely. */
   allowShortSelling: boolean;
@@ -61,6 +63,7 @@ const COMMISSION_USD = 0;
 export function TradeOrderDialog({
   open,
   initialSymbol,
+  initialDirection = 'buy',
   gameId,
   allowShortSelling,
   allowLimitOrders,
@@ -73,7 +76,7 @@ export function TradeOrderDialog({
   const [activeSymbol, setActiveSymbol] = useState<string | null>(initialSymbol);
   const [searchQuery, setSearchQuery] = useState('');
   const [showSuggestions, setShowSuggestions] = useState(false);
-  const [direction, setDirection] = useState<DirectionTab>('buy');
+  const [direction, setDirection] = useState<DirectionTab>(initialDirection);
   const [quantity, setQuantity] = useState<number>(1);
   const [term, setTerm] = useState<Term>('DAY');
   const [priceType, setPriceType] = useState<PriceType>('MARKET');
@@ -87,7 +90,7 @@ export function TradeOrderDialog({
       setActiveSymbol(initialSymbol);
       setSearchQuery('');
       setShowSuggestions(false);
-      setDirection('buy');
+      setDirection(initialDirection);
       setQuantity(1);
       setTerm('DAY');
       setPriceType('MARKET');
@@ -96,7 +99,7 @@ export function TradeOrderDialog({
       setTakeProfitPrice('');
       setStopLossPrice('');
     }
-  }, [open, initialSymbol]);
+  }, [open, initialSymbol, initialDirection]);
 
   const debouncedQuery = useDebouncedValue(searchQuery, 250);
   const search = useStockSearch(debouncedQuery);

@@ -2,13 +2,15 @@ import { useQuery } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router-dom';
 import { useTickerTapeSymbols } from '@/hooks/useTickerTapeSymbols';
 import { INDICES_QUERY_KEY } from '@/hooks/useIndicesSocket';
+import { useMaybeSetSelectedSymbol } from '@/contexts/SelectedSymbolContext';
 import type { IndexQuote } from '@markettrader/shared';
 
 /**
  * Sticky bottom chrome row: a left-scrolling marquee of server-configured
- * symbols + their latest quotes. Hovering pauses the animation; clicking a
- * symbol navigates to `/symbols/:symbol` (outside a game) — phase 3 wires
- * the in-game click into the SelectedSymbolContext.
+ * symbols + their latest quotes. Outside a game, clicking a symbol
+ * navigates to `/symbols/:symbol`. Inside a game with the arena mounted,
+ * clicking writes the symbol into SelectedSymbolContext so the center
+ * column updates in place.
  */
 export function TickerTape() {
   const symbols = useTickerTapeSymbols();
@@ -20,7 +22,8 @@ export function TickerTape() {
     initialData: [],
   });
   const params = useParams();
-  const inGame = !!params.gameId;
+  const setSelectedSymbol = useMaybeSetSelectedSymbol();
+  const inGame = !!params.gameId && !!setSelectedSymbol;
 
   if (symbols.length === 0) return null;
 
@@ -56,14 +59,18 @@ export function TickerTape() {
               ) : null}
             </span>
           );
+          const key = `${it.symbol}-${idx}`;
           return inGame ? (
-            <span key={`${it.symbol}-${idx}`}>{content}</span>
-          ) : (
-            <Link
-              key={`${it.symbol}-${idx}`}
-              to={`/symbols/${it.symbol}`}
+            <button
+              key={key}
+              type="button"
+              onClick={() => setSelectedSymbol!(it.symbol)}
               className="hover:text-accent"
             >
+              {content}
+            </button>
+          ) : (
+            <Link key={key} to={`/symbols/${it.symbol}`} className="hover:text-accent">
               {content}
             </Link>
           );

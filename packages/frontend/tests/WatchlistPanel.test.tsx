@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi } from 'vitest';
 import { WatchlistPanel, type WatchlistRow } from '@/components/game/arena/WatchlistPanel';
+import { useCommandKStore } from '@/stores/commandKStore';
 
 const ROWS: WatchlistRow[] = [
   { symbol: 'AAPL', last: 189.42, changePct: 0.84 },
@@ -29,5 +30,14 @@ describe('WatchlistPanel', () => {
   it('renders an empty state when no rows', () => {
     render(<WatchlistPanel rows={[]} />);
     expect(screen.getByText(/empty/i)).toBeInTheDocument();
+  });
+
+  it('renders an + ADD button that opens the cmd+k overlay', async () => {
+    const user = userEvent.setup();
+    useCommandKStore.getState().close();
+    render(<WatchlistPanel rows={ROWS} />);
+    const addBtn = screen.getByRole('button', { name: /\+ ?ADD/i });
+    await user.click(addBtn);
+    expect(useCommandKStore.getState().open).toBe(true);
   });
 });

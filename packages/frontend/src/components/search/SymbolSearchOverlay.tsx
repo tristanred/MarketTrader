@@ -1,7 +1,8 @@
 import { useNavigate, useParams } from 'react-router-dom';
-import { Dialog, DialogContent } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { SymbolSearch } from './SymbolSearch';
 import { useCommandKStore } from '@/stores/commandKStore';
+import { useGame } from '@/api/games';
 
 /**
  * Modal wrapper around {@link SymbolSearch} opened by cmd+k. Mounted once
@@ -14,10 +15,17 @@ export function SymbolSearchOverlay() {
   const close = useCommandKStore((s) => s.close);
   const navigate = useNavigate();
   const params = useParams();
+  const game = useGame(params.gameId ?? '');
 
   return (
-    <Dialog open={open} onOpenChange={(o) => (o ? null : close())}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) close();
+      }}
+    >
       <DialogContent className="max-w-lg">
+        <DialogTitle className="sr-only">Search symbol</DialogTitle>
         <SymbolSearch
           autoFocus
           placeholder="Search symbol..."
@@ -27,8 +35,8 @@ export function SymbolSearchOverlay() {
           }}
         />
         <div className="mt-2 flex justify-between text-[10px] text-muted">
-          <span>↵ to open · Esc to close</span>
-          {params.gameId ? <span>In game: {params.gameId}</span> : null}
+          <span>Click to select · Esc to close</span>
+          {params.gameId && game.data ? <span>In: {game.data.name}</span> : null}
         </div>
       </DialogContent>
     </Dialog>

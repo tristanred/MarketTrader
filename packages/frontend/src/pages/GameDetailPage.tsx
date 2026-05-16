@@ -242,6 +242,7 @@ function ArenaBody({
       <QuoteInfoDialog
         open={quoteDialog.open}
         symbol={quoteDialog.symbol}
+        gameId={gameId}
         onOpenChange={(open) => {
           if (!open) quoteDialog.closeQuote();
         }}

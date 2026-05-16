@@ -12,6 +12,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from '@/components/ui/toast';
 import { ConfirmDialog } from '@/components/admin/ConfirmDialog';
 import { toastApiError } from '@/components/admin/adminErrors';
+import { TickerTapeEditor } from '@/components/admin/TickerTapeEditor';
 
 export function AdminSystemPage() {
   const stats = useAdminStats();
@@ -137,6 +138,8 @@ export function AdminSystemPage() {
           </Button>
         </CardContent>
       </Card>
+
+      <TickerTapeEditor />
 
       <ConfirmDialog
         open={showFlush}

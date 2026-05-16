@@ -28,13 +28,16 @@ export interface StatusStripProps {
 export function StatusStrip({ gameContext }: StatusStripProps) {
   const clock = useLiveClock();
   const marketStatus = useMarketStatus();
+  // Cache is fed by useIndicesSocket — queryFn is a no-op since we never fetch.
   const indices = useQuery<IndexQuote[]>({
     queryKey: INDICES_QUERY_KEY,
+    queryFn: () => [],
     enabled: false,
     initialData: [],
   });
   const unavailable = useQuery<boolean>({
     queryKey: INDICES_UNAVAILABLE_QUERY_KEY,
+    queryFn: () => false,
     enabled: false,
     initialData: false,
   });

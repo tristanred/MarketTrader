@@ -12,8 +12,10 @@ import type { IndexQuote } from '@markettrader/shared';
  */
 export function TickerTape() {
   const symbols = useTickerTapeSymbols();
+  // Cache is fed by useIndicesSocket — queryFn is a no-op since we never fetch.
   const quotes = useQuery<IndexQuote[]>({
     queryKey: INDICES_QUERY_KEY,
+    queryFn: () => [],
     enabled: false,
     initialData: [],
   });

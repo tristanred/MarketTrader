@@ -47,7 +47,7 @@ describe('SystemSettingsService', () => {
     expect(tape!.symbols).toEqual(['CUSTOM']);
   });
 
-  it('persists symbols and updatedBy on setTickerTapeSymbols', async () => {
+  it('persists symbols on setTickerTapeSymbols', async () => {
     await svc.setTickerTapeSymbols(['AAPL', 'NVDA'], 'admin-42');
     const tape = await svc.getTickerTapeSymbols();
     expect(tape!.symbols).toEqual(['AAPL', 'NVDA']);
@@ -60,15 +60,29 @@ describe('SystemSettingsService', () => {
     expect(tape!.symbols).toEqual(['AAPL', 'MSFT']);
   });
 
+  it('silently drops whitespace-only entries', async () => {
+    await svc.setTickerTapeSymbols(['  ', 'AAPL'], 'user');
+    const tape = await svc.getTickerTapeSymbols();
+    expect(tape!.symbols).toEqual(['AAPL']);
+  });
+
   it('rejects an empty list', async () => {
     await expect(svc.setTickerTapeSymbols([], 'user')).rejects.toThrow(/empty/i);
   });
 
-  it('emits a change event after a write', async () => {
+  it('emits a change event after setTickerTapeSymbols', async () => {
     const events: string[][] = [];
     svc.on('change', (symbols) => events.push(symbols));
     await svc.setTickerTapeSymbols(['AAPL'], 'user');
     await svc.setTickerTapeSymbols(['MSFT'], 'user');
     expect(events).toEqual([['AAPL'], ['MSFT']]);
+  });
+
+  it('emits a change event on first ensureSeeded', async () => {
+    const events: string[][] = [];
+    svc.on('change', (s) => events.push(s));
+    await svc.ensureSeeded();
+    expect(events.length).toBe(1);
+    expect(events[0]).toContain('^GSPC');
   });
 });

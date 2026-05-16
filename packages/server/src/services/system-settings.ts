@@ -31,8 +31,9 @@ interface PersistedTape {
  * later phases without rewriting the API.
  *
  * Emits a `'change'` event with the new symbol array after every successful
- * `setTickerTapeSymbols` call. Consumed by `indicesBroadcaster` to refresh
- * its subscription set without polling.
+ * write — both `ensureSeeded` on first boot and `setTickerTapeSymbols` on
+ * admin updates. Consumed by `indicesBroadcaster` to refresh its
+ * subscription set without polling.
  */
 export class SystemSettingsService extends EventEmitter {
   constructor(private readonly db: Db) {

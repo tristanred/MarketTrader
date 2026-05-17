@@ -43,6 +43,13 @@ type GameOpts = {
   startDate?: string;
   endDate?: string;
   startingBalance?: number;
+  /** Alias accepted for test ergonomics. Mapped to `startingBalance`. */
+  startingCash?: number;
+  allowShortSelling?: boolean;
+  allowLimitOrders?: boolean;
+  allowStopOrders?: boolean;
+  allowBracketOrders?: boolean;
+  allowGTC?: boolean;
 };
 
 /** Subset of the POST /games response that fixtures rely on. */
@@ -215,7 +222,21 @@ export const testFixtures = base.extend<Fixtures, WorkerFixtures>({
           name: opts?.name ?? uniqueName('game'),
           startDate,
           endDate,
-          startingBalance: opts?.startingBalance ?? 100_000,
+          startingBalance:
+            opts?.startingBalance ?? opts?.startingCash ?? 100_000,
+          ...(opts?.allowShortSelling !== undefined && {
+            allowShortSelling: opts.allowShortSelling,
+          }),
+          ...(opts?.allowLimitOrders !== undefined && {
+            allowLimitOrders: opts.allowLimitOrders,
+          }),
+          ...(opts?.allowStopOrders !== undefined && {
+            allowStopOrders: opts.allowStopOrders,
+          }),
+          ...(opts?.allowBracketOrders !== undefined && {
+            allowBracketOrders: opts.allowBracketOrders,
+          }),
+          ...(opts?.allowGTC !== undefined && { allowGTC: opts.allowGTC }),
         },
       });
       expect(

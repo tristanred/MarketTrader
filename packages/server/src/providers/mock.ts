@@ -25,8 +25,8 @@ export const MOCK_PRICE_MAP: Record<string, number> = {
 /**
  * In-process {@link StockProvider} with hardcoded prices, used exclusively by
  * the e2e integration test suite. Avoids external network calls and keeps
- * portfolio math deterministic. Unimplemented methods throw — they are filled
- * in by later tasks in the integration-test-suite plan.
+ * portfolio math deterministic. `getDetails` is filled in by a later task in
+ * the integration-test-suite plan.
  */
 export class MockProvider implements StockProvider {
   private readonly prices: Record<string, number>;
@@ -67,7 +67,7 @@ export class MockProvider implements StockProvider {
       '6mo': 180,
       '1y': 250,
     };
-    const n = counts[range] ?? 30;
+    const n = counts[range];
 
     const sym = symbol.toUpperCase();
     const seed = [...sym].reduce((a, c) => a + c.charCodeAt(0), 0);

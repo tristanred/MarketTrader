@@ -2,19 +2,14 @@ import { useQuery } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router-dom';
 import { useTickerTapeSymbols } from '@/hooks/useTickerTapeSymbols';
 import { INDICES_QUERY_KEY } from '@/hooks/useIndicesSocket';
-import { useMaybeSetSelectedSymbol } from '@/contexts/SelectedSymbolContext';
-import { useQuoteDialogStore } from '@/stores/quoteDialogStore';
+import { useSetSelectedSymbol } from '@/contexts/SelectedSymbolContext';
 import type { IndexQuote } from '@markettrader/shared';
 
 /**
  * Sticky bottom chrome row: a left-scrolling marquee of server-configured
- * symbols + their latest quotes. Click behavior depends on context:
- * - Inside a game, a tradeable symbol opens the Trade Order dialog for that
- *   game (so the user can buy/sell without leaving the arena).
- * - Inside a game, an index (symbol prefixed with `^`) pivots the arena's
- *   center column to that symbol — indices can't be traded.
- * - Outside a game, every click navigates to `/symbols/:symbol` where the
- *   user picks which game to trade in.
+ * symbols + their latest quotes. Inside a game, clicking a chip pivots the
+ * arena's center column to that symbol. Outside a game, it navigates to
+ * `/symbols/:symbol` so the user can pick which game to trade in.
  */
 export function TickerTape() {
   const symbols = useTickerTapeSymbols();
@@ -26,8 +21,7 @@ export function TickerTape() {
     initialData: [],
   });
   const params = useParams();
-  const setSelectedSymbol = useMaybeSetSelectedSymbol();
-  const openTradeOrder = useQuoteDialogStore((s) => s.openTradeOrder);
+  const setSelectedSymbol = useSetSelectedSymbol();
   const inGame = !!params.gameId;
 
   if (symbols.length === 0) return null;
@@ -64,71 +58,23 @@ export function TickerTape() {
               ) : null}
             </span>
           );
-          return (
-            <TickerItem
-              key={`${it.symbol}-${idx}`}
-              symbol={it.symbol}
-              inGame={inGame}
-              onTradeInGame={openTradeOrder}
-              onPivotArena={setSelectedSymbol}
+          const key = `${it.symbol}-${idx}`;
+          return inGame ? (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setSelectedSymbol(it.symbol)}
+              className="hover:text-accent"
             >
               {content}
-            </TickerItem>
+            </button>
+          ) : (
+            <Link key={key} to={`/symbols/${it.symbol}`} className="hover:text-accent">
+              {content}
+            </Link>
           );
         })}
       </div>
     </div>
   );
-}
-
-/**
- * Routes a click on a ticker chip to the correct destination based on
- * context. Kept as a module-level helper (not inlined) so the same logic
- * can be reused by {@link StatusStrip} and any future chrome surface.
- */
-function TickerItem({
-  symbol,
-  inGame,
-  onTradeInGame,
-  onPivotArena,
-  children,
-}: {
-  symbol: string;
-  inGame: boolean;
-  onTradeInGame: (symbol: string) => void;
-  onPivotArena: ((symbol: string) => void) | null;
-  children: React.ReactNode;
-}) {
-  if (!inGame) {
-    return (
-      <Link to={`/symbols/${symbol}`} className="hover:text-accent">
-        {children}
-      </Link>
-    );
-  }
-  // Indices (^GSPC, ^IXIC, ^DJI) aren't tradeable — pivot the arena instead.
-  if (isIndex(symbol)) {
-    return (
-      <button
-        type="button"
-        onClick={() => onPivotArena?.(symbol)}
-        className="hover:text-accent"
-      >
-        {children}
-      </button>
-    );
-  }
-  return (
-    <button
-      type="button"
-      onClick={() => onTradeInGame(symbol)}
-      className="hover:text-accent"
-    >
-      {children}
-    </button>
-  );
-}
-
-export function isIndex(symbol: string): boolean {
-  return symbol.startsWith('^');
 }

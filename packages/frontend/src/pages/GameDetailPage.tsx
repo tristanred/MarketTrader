@@ -10,7 +10,6 @@ import { useStockQuote } from '@/api/stocks';
 import { useAuthStore } from '@/stores/authStore';
 import { useCommandKStore } from '@/stores/commandKStore';
 import {
-  SelectedSymbolProvider,
   useSelectedSymbol,
   useSetSelectedSymbol,
 } from '@/contexts/SelectedSymbolContext';
@@ -82,17 +81,16 @@ export function GameDetailPage() {
   }
 
   return (
-    <SelectedSymbolProvider initial={initialSymbol}>
-      <ArenaBody
-        gameId={gameId}
-        gameData={game.data}
-        portfolioData={portfolio.data}
-        watchlistSymbols={watchlistSymbols}
-        watchlists={watchlists.data ?? []}
-        activeWatchlistId={activeWatchlistId}
-        tradeHistory={tradeHistory.data ?? []}
-      />
-    </SelectedSymbolProvider>
+    <ArenaBody
+      gameId={gameId}
+      gameData={game.data}
+      portfolioData={portfolio.data}
+      watchlistSymbols={watchlistSymbols}
+      watchlists={watchlists.data ?? []}
+      activeWatchlistId={activeWatchlistId}
+      tradeHistory={tradeHistory.data ?? []}
+      initialSymbol={initialSymbol}
+    />
   );
 }
 
@@ -104,6 +102,8 @@ interface ArenaBodyProps {
   watchlists: NonNullable<ReturnType<typeof useWatchlists>['data']>;
   activeWatchlistId: string | null;
   tradeHistory: NonNullable<ReturnType<typeof useTradeHistory>['data']>;
+  /** Symbol to seed the arena's center column when nothing is selected yet. */
+  initialSymbol: string | null;
 }
 
 function ArenaBody({
@@ -114,9 +114,23 @@ function ArenaBody({
   watchlists,
   activeWatchlistId,
   tradeHistory,
+  initialSymbol,
 }: ArenaBodyProps) {
   const setSelectedSymbol = useSetSelectedSymbol();
   const selectedSymbol = useSelectedSymbol();
+
+  // The SelectedSymbolProvider lives at shell level so global chrome can
+  // pivot the arena. On first arena render, seed it from the user's
+  // first holding (or whatever the caller passed) if nothing is selected
+  // yet — without the seed the center column starts empty.
+  useEffect(() => {
+    if (selectedSymbol === null && initialSymbol) {
+      setSelectedSymbol(initialSymbol);
+    }
+    // Run once per mount; subsequent navigations within the arena are
+    // handled by the chrome and panels writing directly to the setter.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Register the arena's selected-symbol setter with the cmd+k store so the
   // AppShell-level overlay can write back into our context instead of

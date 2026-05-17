@@ -1,26 +1,14 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import { TickerTape } from '@/components/shell/TickerTape';
 import { INDICES_QUERY_KEY } from '@/hooks/useIndicesSocket';
 import { TICKER_TAPE_QUERY_KEY } from '@/api/systemSettings';
 import { SelectedSymbolProvider, useSelectedSymbol } from '@/contexts/SelectedSymbolContext';
-import { useQuoteDialogStore } from '@/stores/quoteDialogStore';
 import type { IndexQuote } from '@markettrader/shared';
 import type React from 'react';
-
-beforeEach(() => {
-  // The trade-dialog store is module-level singleton; reset between tests.
-  useQuoteDialogStore.setState({
-    symbol: null,
-    open: false,
-    tradeOrderSymbol: null,
-    tradeOrderOpen: false,
-    tradeOrderDirection: 'buy',
-  });
-});
 
 function wrap(ui: React.ReactElement) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -35,7 +23,9 @@ function wrap(ui: React.ReactElement) {
   ]);
   return (
     <QueryClientProvider client={qc}>
-      <MemoryRouter>{ui}</MemoryRouter>
+      <MemoryRouter>
+        <SelectedSymbolProvider>{ui}</SelectedSymbolProvider>
+      </MemoryRouter>
     </QueryClientProvider>
   );
 }
@@ -61,13 +51,17 @@ describe('TickerTape', () => {
     const qc = new QueryClient();
     const { container } = render(
       <QueryClientProvider client={qc}>
-        <MemoryRouter><TickerTape /></MemoryRouter>
+        <MemoryRouter>
+          <SelectedSymbolProvider>
+            <TickerTape />
+          </SelectedSymbolProvider>
+        </MemoryRouter>
       </QueryClientProvider>,
     );
     expect(container.textContent).toBe('');
   });
 
-  it('opens the trade dialog when a tradeable symbol is clicked in-game', async () => {
+  it('pivots the arena when a symbol is clicked in-game', async () => {
     const user = userEvent.setup();
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     qc.setQueryData(TICKER_TAPE_QUERY_KEY, {
@@ -77,31 +71,35 @@ describe('TickerTape', () => {
     qc.setQueryData<IndexQuote[]>(INDICES_QUERY_KEY, [
       { symbol: 'AAPL', last: 189.42, changeAbs: 1.57, changePct: 0.84 },
     ]);
+    function SelectedReader() {
+      const s = useSelectedSymbol();
+      return <div data-testid="selected">{s ?? '(none)'}</div>;
+    }
     render(
       <QueryClientProvider client={qc}>
         <MemoryRouter initialEntries={['/games/g1']}>
-          <Routes>
-            <Route
-              path="/games/:gameId"
-              element={
-                <SelectedSymbolProvider>
-                  <TickerTape />
-                </SelectedSymbolProvider>
-              }
-            />
-          </Routes>
+          <SelectedSymbolProvider>
+            <Routes>
+              <Route
+                path="/games/:gameId"
+                element={
+                  <>
+                    <TickerTape />
+                    <SelectedReader />
+                  </>
+                }
+              />
+            </Routes>
+          </SelectedSymbolProvider>
         </MemoryRouter>
       </QueryClientProvider>,
     );
     const items = screen.getAllByText('AAPL');
     await user.click(items[0]!);
-    const state = useQuoteDialogStore.getState();
-    expect(state.tradeOrderOpen).toBe(true);
-    expect(state.tradeOrderSymbol).toBe('AAPL');
-    expect(state.tradeOrderDirection).toBe('buy');
+    expect(screen.getByTestId('selected')).toHaveTextContent('AAPL');
   });
 
-  it('pivots the arena instead of opening trade dialog when an index is clicked in-game', async () => {
+  it('pivots the arena even for index symbols (^GSPC) when clicked in-game', async () => {
     const user = userEvent.setup();
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     qc.setQueryData(TICKER_TAPE_QUERY_KEY, {
@@ -118,24 +116,25 @@ describe('TickerTape', () => {
     render(
       <QueryClientProvider client={qc}>
         <MemoryRouter initialEntries={['/games/g1']}>
-          <Routes>
-            <Route
-              path="/games/:gameId"
-              element={
-                <SelectedSymbolProvider>
-                  <TickerTape />
-                  <SelectedReader />
-                </SelectedSymbolProvider>
-              }
-            />
-          </Routes>
+          <SelectedSymbolProvider>
+            <Routes>
+              <Route
+                path="/games/:gameId"
+                element={
+                  <>
+                    <TickerTape />
+                    <SelectedReader />
+                  </>
+                }
+              />
+            </Routes>
+          </SelectedSymbolProvider>
         </MemoryRouter>
       </QueryClientProvider>,
     );
     const items = screen.getAllByText('^GSPC');
     await user.click(items[0]!);
     expect(screen.getByTestId('selected')).toHaveTextContent('^GSPC');
-    expect(useQuoteDialogStore.getState().tradeOrderOpen).toBe(false);
   });
 
   it('links to /symbols/:symbol when clicked outside a game', () => {

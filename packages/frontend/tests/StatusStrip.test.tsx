@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import { StatusStrip } from '@/components/shell/StatusStrip';
 import { INDICES_QUERY_KEY, INDICES_UNAVAILABLE_QUERY_KEY } from '@/hooks/useIndicesSocket';
+import { SelectedSymbolProvider } from '@/contexts/SelectedSymbolContext';
 import type { IndexQuote } from '@markettrader/shared';
 import type React from 'react';
 
@@ -13,7 +14,9 @@ function wrap(ui: React.ReactElement) {
     qc,
     ui: (
       <QueryClientProvider client={qc}>
-        <MemoryRouter>{ui}</MemoryRouter>
+        <MemoryRouter>
+          <SelectedSymbolProvider>{ui}</SelectedSymbolProvider>
+        </MemoryRouter>
       </QueryClientProvider>
     ),
   };

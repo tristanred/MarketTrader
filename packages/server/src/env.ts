@@ -61,8 +61,9 @@ function validatedMarketHoursMode(): MarketHoursMode {
 /**
  * Pick the market-status provider. Defaults to matching `STOCK_PROVIDER` when
  * unset, so swapping the price provider doesn't silently break the chart's
- * market-hours gating. Operators can override to `static` for an offline,
- * key-less fallback at any time.
+ * market-hours gating. When `STOCK_PROVIDER=mock`, defaults to `'static'`
+ * (the market-status union has no `'mock'`). Operators can override to
+ * `'static'` for an offline, key-less fallback at any time.
  */
 function validatedMarketStatusProvider(stockProvider: StockProvider): MarketStatusProviderName {
   const raw = process.env.MARKET_STATUS_PROVIDER;

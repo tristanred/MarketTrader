@@ -19,7 +19,11 @@ export default defineConfig({
       timeout: 60_000,
       cwd: '../..',
       env: {
-        DATABASE_URL: ':memory:',
+        // libsql opens a fresh per-connection in-memory DB for plain ':memory:',
+        // so migrations applied during startup are invisible to subsequent query
+        // connections. The `file::memory:?cache=shared` URI shares one DB across
+        // all connections in the process.
+        DATABASE_URL: 'file::memory:?cache=shared',
         JWT_SECRET: 'e2e-test-secret-key-for-playwright-only-not-prod',
         CORS_ORIGIN: 'http://127.0.0.1:5173',
         PORT: '3000',

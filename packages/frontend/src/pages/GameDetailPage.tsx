@@ -120,17 +120,17 @@ function ArenaBody({
   const selectedSymbol = useSelectedSymbol();
 
   // The SelectedSymbolProvider lives at shell level so global chrome can
-  // pivot the arena. On first arena render, seed it from the user's
-  // first holding (or whatever the caller passed) if nothing is selected
-  // yet — without the seed the center column starts empty.
+  // pivot the arena. Seed the context from the user's first holding (or
+  // whatever the caller passed) once data is available. Reacting to
+  // `initialSymbol` matters because portfolio.data resolves after the
+  // first paint — a mount-only effect would fire before holdings load.
+  // Once the user picks anything explicitly, `selectedSymbol` is set
+  // and the guard stops this effect from clobbering their choice.
   useEffect(() => {
     if (selectedSymbol === null && initialSymbol) {
       setSelectedSymbol(initialSymbol);
     }
-    // Run once per mount; subsequent navigations within the arena are
-    // handled by the chrome and panels writing directly to the setter.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [selectedSymbol, initialSymbol, setSelectedSymbol]);
 
   // Register the arena's selected-symbol setter with the cmd+k store so the
   // AppShell-level overlay can write back into our context instead of

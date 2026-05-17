@@ -32,7 +32,7 @@ describe('MockProvider.getQuote', () => {
 });
 
 describe('MockProvider.searchSymbols', () => {
-  it('returns matches by case-insensitive prefix', async () => {
+  it('returns matches by case-insensitive substring', async () => {
     const p = new MockProvider();
     const r = await p.searchSymbols('aa');
     expect(r.map((x: { symbol: string }) => x.symbol)).toContain('AAPL');

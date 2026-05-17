@@ -48,8 +48,14 @@ export class MockProvider implements StockProvider {
     };
   }
 
-  async searchSymbols(_query: string): Promise<StockSearchResult[]> {
-    throw new Error('not implemented');
+  async searchSymbols(query: string): Promise<StockSearchResult[]> {
+    const q = query.trim().toUpperCase();
+    const symbols = Object.keys(this.prices);
+    const matches = q === '' ? symbols : symbols.filter((s) => s.includes(q));
+    return matches.slice(0, 10).map((symbol) => ({
+      symbol,
+      name: `${symbol} Mock Corp.`,
+    }));
   }
 
   async getHistory(_symbol: string, _range: StockHistoryRange): Promise<StockHistoryBar[]> {

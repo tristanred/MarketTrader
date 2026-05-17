@@ -30,3 +30,23 @@ describe('MockProvider.getQuote', () => {
     expect(q.price).toBe(999);
   });
 });
+
+describe('MockProvider.searchSymbols', () => {
+  it('returns matches by case-insensitive prefix', async () => {
+    const p = new MockProvider();
+    const r = await p.searchSymbols('aa');
+    expect(r.map((x) => x.symbol)).toContain('AAPL');
+  });
+
+  it('returns at most 10 results', async () => {
+    const p = new MockProvider();
+    const r = await p.searchSymbols('');
+    expect(r.length).toBeLessThanOrEqual(10);
+  });
+
+  it('returns an empty list for no matches', async () => {
+    const p = new MockProvider();
+    const r = await p.searchSymbols('ZZZZZZ');
+    expect(r).toEqual([]);
+  });
+});

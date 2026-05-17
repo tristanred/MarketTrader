@@ -44,7 +44,10 @@ export function usePortfolio(gameId: string) {
     queryKey: tradeKeys.portfolio(gameId),
     queryFn: () => apiFetch<PortfolioResponse>(`/games/${gameId}/portfolio`),
     enabled: !!gameId,
-    refetchInterval: 30_000,
+    // Live updates arrive via the per-game WebSocket invalidating this query
+    // on trade_executed / order_cancelled. The 5-min interval is a stale-tab
+    // safety net, not the primary refresh path.
+    refetchInterval: 300_000,
   });
 }
 
@@ -142,7 +145,9 @@ export function useWorkingOrders(gameId: string) {
     queryKey: tradeKeys.working(gameId),
     queryFn: () => apiFetch<WorkingOrder[]>(`/games/${gameId}/trades?status=working`),
     enabled: !!gameId,
-    refetchInterval: 30_000,
+    // WS invalidates this on order_placed / order_cancelled / order_triggered /
+    // trade_executed. Polling here is a stale-tab safety net.
+    refetchInterval: 300_000,
   });
 }
 
@@ -165,7 +170,9 @@ export function usePendingTrades(gameId: string) {
     queryKey: tradeKeys.pending(gameId),
     queryFn: () => apiFetch<PendingTrade[]>(`/games/${gameId}/trades/pending`),
     enabled: !!gameId,
-    refetchInterval: 30_000,
+    // WS invalidates this on trade_executed / order_cancelled. Polling here
+    // is a stale-tab safety net.
+    refetchInterval: 300_000,
   });
 }
 

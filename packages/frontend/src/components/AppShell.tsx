@@ -2,6 +2,7 @@ import { Outlet, useParams } from 'react-router-dom';
 import { AppHeader } from '@/components/AppHeader';
 import { StatusStrip, TickerTape } from '@/components/shell';
 import { SymbolSearchOverlay } from '@/components/search';
+import { SelectedSymbolProvider } from '@/contexts/SelectedSymbolContext';
 import { useIndicesSocket } from '@/hooks/useIndicesSocket';
 import { useCommandK } from '@/hooks/useCommandK';
 import { useGame } from '@/api/games';
@@ -30,14 +31,20 @@ export function AppShell() {
       : undefined;
 
   return (
-    <div className="flex min-h-screen flex-col bg-bg text-text">
-      <AppHeader />
-      <StatusStrip {...(ctx ? { gameContext: ctx } : {})} />
-      <main className="flex-1">
-        <Outlet />
-      </main>
-      <TickerTape />
-      <SymbolSearchOverlay />
-    </div>
+    // The provider lives at shell level so global chrome (TickerTape,
+    // StatusStrip, cmd+k overlay) can write the user's selected symbol
+    // into the same context the in-game arena reads. Reset on game
+    // change via the keyed remount.
+    <SelectedSymbolProvider key={gameId ?? 'no-game'}>
+      <div className="flex min-h-screen flex-col bg-bg text-text">
+        <AppHeader />
+        <StatusStrip {...(ctx ? { gameContext: ctx } : {})} />
+        <main className="flex-1">
+          <Outlet />
+        </main>
+        <TickerTape />
+        <SymbolSearchOverlay />
+      </div>
+    </SelectedSymbolProvider>
   );
 }

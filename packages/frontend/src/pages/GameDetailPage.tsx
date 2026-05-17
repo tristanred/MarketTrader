@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
 import { useGame } from '@/api/games';
 import { usePortfolio, useTradeHistory } from '@/api/trades';
@@ -10,7 +10,6 @@ import { useStockQuote } from '@/api/stocks';
 import { useAuthStore } from '@/stores/authStore';
 import { useCommandKStore } from '@/stores/commandKStore';
 import {
-  SelectedSymbolProvider,
   useSelectedSymbol,
   useSetSelectedSymbol,
 } from '@/contexts/SelectedSymbolContext';
@@ -82,17 +81,16 @@ export function GameDetailPage() {
   }
 
   return (
-    <SelectedSymbolProvider initial={initialSymbol}>
-      <ArenaBody
-        gameId={gameId}
-        gameData={game.data}
-        portfolioData={portfolio.data}
-        watchlistSymbols={watchlistSymbols}
-        watchlists={watchlists.data ?? []}
-        activeWatchlistId={activeWatchlistId}
-        tradeHistory={tradeHistory.data ?? []}
-      />
-    </SelectedSymbolProvider>
+    <ArenaBody
+      gameId={gameId}
+      gameData={game.data}
+      portfolioData={portfolio.data}
+      watchlistSymbols={watchlistSymbols}
+      watchlists={watchlists.data ?? []}
+      activeWatchlistId={activeWatchlistId}
+      tradeHistory={tradeHistory.data ?? []}
+      initialSymbol={initialSymbol}
+    />
   );
 }
 
@@ -104,6 +102,8 @@ interface ArenaBodyProps {
   watchlists: NonNullable<ReturnType<typeof useWatchlists>['data']>;
   activeWatchlistId: string | null;
   tradeHistory: NonNullable<ReturnType<typeof useTradeHistory>['data']>;
+  /** Symbol to seed the arena's center column when nothing is selected yet. */
+  initialSymbol: string | null;
 }
 
 function ArenaBody({
@@ -114,9 +114,23 @@ function ArenaBody({
   watchlists,
   activeWatchlistId,
   tradeHistory,
+  initialSymbol,
 }: ArenaBodyProps) {
   const setSelectedSymbol = useSetSelectedSymbol();
   const selectedSymbol = useSelectedSymbol();
+
+  // The SelectedSymbolProvider lives at shell level so global chrome can
+  // pivot the arena. Seed the context from the user's first holding (or
+  // whatever the caller passed) once data is available. Reacting to
+  // `initialSymbol` matters because portfolio.data resolves after the
+  // first paint — a mount-only effect would fire before holdings load.
+  // Once the user picks anything explicitly, `selectedSymbol` is set
+  // and the guard stops this effect from clobbering their choice.
+  useEffect(() => {
+    if (selectedSymbol === null && initialSymbol) {
+      setSelectedSymbol(initialSymbol);
+    }
+  }, [selectedSymbol, initialSymbol, setSelectedSymbol]);
 
   // Register the arena's selected-symbol setter with the cmd+k store so the
   // AppShell-level overlay can write back into our context instead of
@@ -126,13 +140,25 @@ function ArenaBody({
     setArenaSelect(setSelectedSymbol);
     return () => setArenaSelect(null);
   }, [setSelectedSymbol]);
+
+  // The trade/quote dialogs live in a global store so chrome (ticker tape,
+  // status strip) can open them. Reset on unmount so a leftover open state
+  // doesn't follow the user to another game or out of arena.
+  useEffect(() => {
+    return () => {
+      const s = useQuoteDialogStore.getState();
+      s.closeTradeOrder();
+      s.closeQuote();
+    };
+  }, []);
   const livePrices = useLiveStore((s) => s.pricesBySymbol);
   const user = useAuthStore((s) => s.user);
   const quoteDialog = useQuoteDialogStore();
-  const [tradeDialog, setTradeDialog] = useState<{ open: boolean; direction: TradeDirection }>({
-    open: false,
-    direction: 'buy',
-  });
+  const openTradeOrder = useQuoteDialogStore((s) => s.openTradeOrder);
+  const closeTradeOrder = useQuoteDialogStore((s) => s.closeTradeOrder);
+  const tradeOrderOpen = useQuoteDialogStore((s) => s.tradeOrderOpen);
+  const tradeOrderSymbol = useQuoteDialogStore((s) => s.tradeOrderSymbol);
+  const tradeOrderDirection = useQuoteDialogStore((s) => s.tradeOrderDirection);
 
   // Watchlist quote rows: read from the live store. Omit price fields when
   // no live tick has arrived yet — exactOptionalPropertyTypes forbids
@@ -219,7 +245,7 @@ function ArenaBody({
           symbol={selectedSymbol}
           {...quoteData}
           {...(selectedSymbol
-            ? { onTrade: (direction: TradeDirection) => setTradeDialog({ open: true, direction }) }
+            ? { onTrade: (direction: TradeDirection) => openTradeOrder(selectedSymbol, direction) }
             : {})}
         />
         <ChartPanel symbol={selectedSymbol} />
@@ -242,6 +268,7 @@ function ArenaBody({
       <QuoteInfoDialog
         open={quoteDialog.open}
         symbol={quoteDialog.symbol}
+        gameId={gameId}
         onOpenChange={(open) => {
           if (!open) quoteDialog.closeQuote();
         }}
@@ -251,13 +278,13 @@ function ArenaBody({
           // Trade on (the modal lets them jump symbols mid-quote) so
           // TradeOrderDialog opens for the right one.
           setSelectedSymbol(s);
-          setTradeDialog({ open: true, direction: 'buy' });
+          openTradeOrder(s, 'buy');
         }}
       />
       <TradeOrderDialog
-        open={tradeDialog.open}
-        initialSymbol={selectedSymbol}
-        initialDirection={tradeDialog.direction}
+        open={tradeOrderOpen}
+        initialSymbol={tradeOrderSymbol ?? selectedSymbol}
+        initialDirection={tradeOrderDirection}
         gameId={gameId}
         allowShortSelling={gameData.allowShortSelling ?? false}
         allowLimitOrders={gameData.allowLimitOrders ?? false}
@@ -265,10 +292,10 @@ function ArenaBody({
         allowBracketOrders={gameData.allowBracketOrders ?? false}
         allowGTC={gameData.allowGTC ?? false}
         onOpenChange={(open) => {
-          if (!open) setTradeDialog((t) => ({ ...t, open: false }));
+          if (!open) closeTradeOrder();
         }}
         onSeeQuote={(s) => {
-          setTradeDialog((t) => ({ ...t, open: false }));
+          closeTradeOrder();
           quoteDialog.openQuote(s);
         }}
       />

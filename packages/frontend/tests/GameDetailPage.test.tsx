@@ -103,15 +103,20 @@ vi.mock('@/components/StockChart', () => ({
 }));
 
 import { GameDetailPage } from '@/pages/GameDetailPage';
+import { SelectedSymbolProvider } from '@/contexts/SelectedSymbolContext';
 
 function wrap(initialPath = '/games/g1') {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return (
     <QueryClientProvider client={qc}>
       <MemoryRouter initialEntries={[initialPath]}>
-        <Routes>
-          <Route path="/games/:gameId" element={<GameDetailPage />} />
-        </Routes>
+        {/* In production the provider lives in AppShell; tests mount the
+            page directly so we wrap here. */}
+        <SelectedSymbolProvider>
+          <Routes>
+            <Route path="/games/:gameId" element={<GameDetailPage />} />
+          </Routes>
+        </SelectedSymbolProvider>
       </MemoryRouter>
     </QueryClientProvider>
   );

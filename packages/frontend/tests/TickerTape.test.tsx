@@ -23,7 +23,9 @@ function wrap(ui: React.ReactElement) {
   ]);
   return (
     <QueryClientProvider client={qc}>
-      <MemoryRouter>{ui}</MemoryRouter>
+      <MemoryRouter>
+        <SelectedSymbolProvider>{ui}</SelectedSymbolProvider>
+      </MemoryRouter>
     </QueryClientProvider>
   );
 }
@@ -49,13 +51,17 @@ describe('TickerTape', () => {
     const qc = new QueryClient();
     const { container } = render(
       <QueryClientProvider client={qc}>
-        <MemoryRouter><TickerTape /></MemoryRouter>
+        <MemoryRouter>
+          <SelectedSymbolProvider>
+            <TickerTape />
+          </SelectedSymbolProvider>
+        </MemoryRouter>
       </QueryClientProvider>,
     );
     expect(container.textContent).toBe('');
   });
 
-  it('writes to SelectedSymbolContext when clicked in-game', async () => {
+  it('pivots the arena when a symbol is clicked in-game', async () => {
     const user = userEvent.setup();
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     qc.setQueryData(TICKER_TAPE_QUERY_KEY, {
@@ -72,22 +78,70 @@ describe('TickerTape', () => {
     render(
       <QueryClientProvider client={qc}>
         <MemoryRouter initialEntries={['/games/g1']}>
-          <Routes>
-            <Route
-              path="/games/:gameId"
-              element={
-                <SelectedSymbolProvider>
-                  <TickerTape />
-                  <SelectedReader />
-                </SelectedSymbolProvider>
-              }
-            />
-          </Routes>
+          <SelectedSymbolProvider>
+            <Routes>
+              <Route
+                path="/games/:gameId"
+                element={
+                  <>
+                    <TickerTape />
+                    <SelectedReader />
+                  </>
+                }
+              />
+            </Routes>
+          </SelectedSymbolProvider>
         </MemoryRouter>
       </QueryClientProvider>,
     );
     const items = screen.getAllByText('AAPL');
     await user.click(items[0]!);
     expect(screen.getByTestId('selected')).toHaveTextContent('AAPL');
+  });
+
+  it('pivots the arena even for index symbols (^GSPC) when clicked in-game', async () => {
+    const user = userEvent.setup();
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    qc.setQueryData(TICKER_TAPE_QUERY_KEY, {
+      symbols: ['^GSPC'],
+      updatedAt: '2026-05-15T14:00:00Z',
+    });
+    qc.setQueryData<IndexQuote[]>(INDICES_QUERY_KEY, [
+      { symbol: '^GSPC', last: 5284.12, changeAbs: 16.83, changePct: 0.32 },
+    ]);
+    function SelectedReader() {
+      const s = useSelectedSymbol();
+      return <div data-testid="selected">{s ?? '(none)'}</div>;
+    }
+    render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter initialEntries={['/games/g1']}>
+          <SelectedSymbolProvider>
+            <Routes>
+              <Route
+                path="/games/:gameId"
+                element={
+                  <>
+                    <TickerTape />
+                    <SelectedReader />
+                  </>
+                }
+              />
+            </Routes>
+          </SelectedSymbolProvider>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    const items = screen.getAllByText('^GSPC');
+    await user.click(items[0]!);
+    expect(screen.getByTestId('selected')).toHaveTextContent('^GSPC');
+  });
+
+  it('links to /symbols/:symbol when clicked outside a game', () => {
+    render(wrap(<TickerTape />));
+    const link = screen.getAllByRole('link').find((a) =>
+      a.getAttribute('href') === '/symbols/AAPL',
+    );
+    expect(link).toBeDefined();
   });
 });

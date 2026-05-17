@@ -16,6 +16,9 @@
     --accent-bg: rgba(103, 232, 249, 0.10);
     --gain: #10b981;
     --loss: #ef4444;
+    --disabled-fg: #4b5260;
+    --disabled-bg: #0d0f12;
+    --disabled-border: #1a1d24;
     --radius: 0.5rem;
   }
 
@@ -35,6 +38,9 @@
     --accent-bg: rgba(103, 232, 249, 0.10);
     --gain: #10b981;
     --loss: #ef4444;
+    --disabled-fg: #4b5260;
+    --disabled-bg: #0d0f12;
+    --disabled-border: #1a1d24;
   }
 
   /* ─── Light theme — "Paper" ──────────────────────────── */
@@ -50,6 +56,9 @@
     --accent-bg: rgba(8, 145, 178, 0.08);
     --gain: #047857;
     --loss: #b91c1c;
+    --disabled-fg: #a8a294;
+    --disabled-bg: #f0ece2;
+    --disabled-border: #d8d2c3;
   }
 
   * {

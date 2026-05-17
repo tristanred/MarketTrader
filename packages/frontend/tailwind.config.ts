@@ -24,6 +24,11 @@ export default {
         },
         gain: 'var(--gain)',
         loss: 'var(--loss)',
+        disabled: {
+          fg: 'var(--disabled-fg)',
+          bg: 'var(--disabled-bg)',
+          border: 'var(--disabled-border)',
+        },
 
         // ─── Compatibility aliases ──────────────────────────────
         // Existing ShadCN UI primitives reference these names. Map

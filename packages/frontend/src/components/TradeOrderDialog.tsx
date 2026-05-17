@@ -2,13 +2,13 @@ import { useEffect, useMemo, useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { useStockSearch, useStockDetails, useStockQuote } from '@/api/stocks';
 import { usePlaceTrade, usePortfolio } from '@/api/trades';
 import { useLiveStore } from '@/stores/liveStore';
 import { toast } from '@/components/ui/toast';
 import { ApiError } from '@/lib/api';
 import { cn, formatUSD, SYMBOL_RE } from '@/lib/utils';
+import { projectAllocation, projectPositionAfter, type PositionSnapshot } from '@/lib/positionMath';
 import type { OrderType, PlaceTradeRequest, TradeDirection } from '@markettrader/shared';
 
 type Term = 'DAY' | 'GTC';
@@ -31,13 +31,13 @@ interface TradeOrderDialogProps {
   gameId: string;
   /** When false, SELL SHORT and BUY TO COVER tabs are hidden entirely. */
   allowShortSelling: boolean;
-  /** Per-game gate. When false, LIMIT and STOP_LIMIT options are disabled. */
+  /** Per-game gate. When false, LIMIT and STOP_LIMIT options are hidden. */
   allowLimitOrders: boolean;
-  /** Per-game gate. When false, STOP and STOP_LIMIT options are disabled. */
+  /** Per-game gate. When false, STOP and STOP_LIMIT options are hidden. */
   allowStopOrders: boolean;
-  /** Per-game gate. When false, BRACKET is disabled. */
+  /** Per-game gate. When false, BRACKET is hidden. */
   allowBracketOrders: boolean;
-  /** Per-game gate. When false, the GTC tab is disabled. */
+  /** Per-game gate. When false, the GTC option is hidden (and the Term row may collapse). */
   allowGTC: boolean;
   onOpenChange: (open: boolean) => void;
   onSeeQuote: (symbol: string) => void;
@@ -56,9 +56,10 @@ const COMMISSION_USD = 0;
 
 /**
  * Rich trade-entry dialog launched from {@link QuoteInfoDialog}'s "Trade" button.
- * Renders the full order-ticket UI (term, price type, summary, commission) but
- * the backend only consumes `{symbol, direction, quantity}` today — extra
- * controls are disabled until backend support lands.
+ * Renders a sticky mini-quote at the top so the price never leaves the screen
+ * during sizing, then walks the user through direction → size → order options →
+ * summary. Per-game feature flags hide order types entirely rather than
+ * showing them disabled — see {@link TradeOrderDialogProps}.
  */
 export function TradeOrderDialog({
   open,
@@ -114,9 +115,7 @@ export function TradeOrderDialog({
   const displayPrice = livePrice ?? quote.data?.price ?? details.data?.price;
 
   // Prefill price fields with the current quote when the user switches into
-  // a price type that needs one and the field is empty. Avoids forcing the
-  // user to retype the share price they just looked at. Existing entries
-  // are never overwritten — a typed value wins over the auto-default.
+  // a price type that needs one and the field is empty.
   useEffect(() => {
     if (displayPrice === undefined || displayPrice <= 0) return;
     const fmt = (n: number) => n.toFixed(2);
@@ -128,9 +127,6 @@ export function TradeOrderDialog({
       if (limitPrice === '') setLimitPrice(fmt(displayPrice));
       if (stopPrice === '') setStopPrice(fmt(displayPrice));
     } else if (priceType === 'BRACKET') {
-      // Bracket entry is left empty (defaults to market entry — usually
-      // what the user wants). TP/SL get ±5% of current price, on the side
-      // matching the direction.
       const isBuySide = direction === 'buy';
       const offset = displayPrice * 0.05;
       const tpDefault = isBuySide ? displayPrice + offset : displayPrice - offset;
@@ -144,9 +140,11 @@ export function TradeOrderDialog({
   const totalPortfolioValue = portfolio.data?.totalValue ?? 0;
   const heldQuantity = useMemo(() => {
     if (!activeSymbol) return 0;
-    return (
-      portfolio.data?.holdings.find((h) => h.symbol === activeSymbol)?.quantity ?? 0
-    );
+    return portfolio.data?.holdings.find((h) => h.symbol === activeSymbol)?.quantity ?? 0;
+  }, [portfolio.data, activeSymbol]);
+  const heldAvgCost = useMemo(() => {
+    if (!activeSymbol) return 0;
+    return portfolio.data?.holdings.find((h) => h.symbol === activeSymbol)?.avgCostBasis ?? 0;
   }, [portfolio.data, activeSymbol]);
 
   const isBuy = direction === 'buy';
@@ -164,10 +162,37 @@ export function TradeOrderDialog({
   const orderValue = (displayPrice ?? 0) * effectiveQuantity;
   const total = orderValue + COMMISSION_USD;
 
-  const allocationPct = useMemo(() => {
-    if (totalPortfolioValue <= 0) return 0;
-    return Math.min(100, (orderValue / totalPortfolioValue) * 100);
-  }, [orderValue, totalPortfolioValue]);
+  const currentPosition: PositionSnapshot = useMemo(
+    () => ({
+      shares: heldQuantity,
+      avgCost: heldAvgCost,
+      value: heldQuantity * (displayPrice ?? 0),
+    }),
+    [heldQuantity, heldAvgCost, displayPrice],
+  );
+  const afterPosition = useMemo(
+    () => projectPositionAfter(currentPosition, tradeDirection, effectiveQuantity, displayPrice ?? 0),
+    [currentPosition, tradeDirection, effectiveQuantity, displayPrice],
+  );
+  const allocation = useMemo(
+    () =>
+      projectAllocation({
+        totalBefore: totalPortfolioValue,
+        cashBefore: cashBalance,
+        currentPositionValue: currentPosition.value,
+        direction: tradeDirection,
+        tradeNotional: orderValue,
+        positionValueAfter: afterPosition.value,
+      }),
+    [
+      totalPortfolioValue,
+      cashBalance,
+      currentPosition.value,
+      tradeDirection,
+      orderValue,
+      afterPosition.value,
+    ],
+  );
 
   const handlePickSymbol = (next: string) => {
     setActiveSymbol(next);
@@ -187,7 +212,6 @@ export function TradeOrderDialog({
     setStopLossPrice('');
   };
 
-  // Progressive-disclosure visibility helpers.
   const showLimitPrice = priceType === 'LIMIT' || priceType === 'STOP_LIMIT' || priceType === 'BRACKET';
   const showStopPrice = priceType === 'STOP' || priceType === 'STOP_LIMIT';
   const showBracket = priceType === 'BRACKET';
@@ -205,7 +229,6 @@ export function TradeOrderDialog({
     if (priceType === 'STOP_LIMIT') return parsedLimit > 0 && parsedStop > 0;
     if (priceType === 'BRACKET') {
       if (!(parsedTP > 0) || !(parsedSL > 0)) return false;
-      // For a long entry: TP must be above SL. For a short entry: TP below SL.
       return tradeDirection === 'buy' ? parsedTP > parsedSL : parsedTP < parsedSL;
     }
     return false;
@@ -218,6 +241,18 @@ export function TradeOrderDialog({
     maxQuantity >= 1 &&
     priceFieldsValid &&
     !place.isPending;
+
+  const submitLabel = (() => {
+    if (place.isPending) return 'Submitting…';
+    if (!activeSymbol) return 'Submit Order';
+    const verb = (() => {
+      if (direction === 'buy') return 'Buy';
+      if (direction === 'sell') return 'Sell';
+      if (direction === 'sell-short') return 'Sell short';
+      return 'Buy to cover';
+    })();
+    return `${verb} ${effectiveQuantity} ${activeSymbol}`;
+  })();
 
   const handleSubmit = async () => {
     if (!activeSymbol || !canSubmit) return;
@@ -281,263 +316,323 @@ export function TradeOrderDialog({
   };
 
   const isValidSearchSymbol = SYMBOL_RE.test(searchQuery.trim().toUpperCase());
+  const changeUp = (details.data?.change ?? 0) >= 0;
+
+  // Enabled order-type pills derived from per-game flags. Market is always
+  // present. Stop-limit requires both limit AND stop. Hidden when disabled.
+  const enabledTypes: PriceType[] = ['MARKET'];
+  if (allowLimitOrders) enabledTypes.push('LIMIT');
+  if (allowStopOrders) enabledTypes.push('STOP');
+  if (allowLimitOrders && allowStopOrders) enabledTypes.push('STOP_LIMIT');
+  if (allowBracketOrders) enabledTypes.push('BRACKET');
+
+  // Term row visibility:
+  //   - hidden entirely when GTC is not allowed (only Day exists, no choice)
+  //   - visible-disabled when current type is Market (TIF doesn't apply)
+  //   - visible-active otherwise
+  const termRowVisible = allowGTC;
+  const termRowDisabled = priceType === 'MARKET';
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl p-0 gap-0 overflow-hidden">
-        <DialogHeader className="border-b px-6 py-4">
-          <DialogTitle className="uppercase tracking-wide">Trade Order</DialogTitle>
+      <DialogContent className="sm:max-w-[680px] p-0 gap-0 overflow-hidden">
+        <DialogHeader className="sr-only">
+          <DialogTitle>Trade Order</DialogTitle>
         </DialogHeader>
 
-        <div className="max-h-[75vh] overflow-y-auto px-6 py-4 space-y-4 bg-muted/30">
-          {/* Symbol search */}
-          <div className="relative">
-            <Input
-              placeholder="Enter Company or Symbol"
-              value={searchQuery}
-              onChange={(e) => {
-                setSearchQuery(e.target.value);
-                setShowSuggestions(true);
-              }}
-              onFocus={() => setShowSuggestions(true)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && isValidSearchSymbol) {
-                  e.preventDefault();
-                  handlePickSymbol(searchQuery.trim().toUpperCase());
-                }
-              }}
-              autoComplete="off"
-              className="bg-background"
-            />
-            {showSuggestions && search.data && search.data.length > 0 && (
-              <ul className="absolute z-10 mt-1 max-h-44 w-full overflow-auto rounded-md border bg-background shadow-md">
-                {search.data.slice(0, 8).map((r) => (
-                  <li key={r.symbol}>
-                    <button
-                      type="button"
-                      className="w-full px-3 py-2 text-left text-sm hover:bg-accent"
-                      onClick={() => handlePickSymbol(r.symbol)}
+        {/* Sticky mini-quote header */}
+        {activeSymbol && (
+          <div className="sticky top-0 z-10 border-b border-hairline-strong bg-bg px-6 py-4">
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-accent-bg px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wider text-accent">
+                  <span className="h-1.5 w-1.5 rounded-full bg-gain animate-pulse-dot" />
+                  {activeSymbol}
+                </span>
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-semibold text-text-strong">
+                    {details.data?.companyName ?? activeSymbol}
+                  </div>
+                  {details.data?.exchange && (
+                    <div className="text-[10px] uppercase tracking-[0.14em] text-muted">
+                      {details.data.exchange}
+                    </div>
+                  )}
+                </div>
+              </div>
+              {displayPrice !== undefined && (
+                <div className="text-right">
+                  <div className="font-mono text-xl font-bold leading-none tabular-nums">
+                    {formatUSD(displayPrice)}
+                  </div>
+                  {details.data && (
+                    <div
+                      className={cn(
+                        'mt-1 font-mono text-xs font-semibold tabular-nums',
+                        changeUp ? 'text-gain' : 'text-loss',
+                      )}
                     >
-                      <span className="font-medium">{r.symbol}</span>
-                      <span className="ml-2 text-muted-foreground">{r.name}</span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
+                      <span aria-hidden>{changeUp ? '▲' : '▼'}</span>{' '}
+                      {(details.data.change ?? 0) >= 0 ? '+' : ''}
+                      {(details.data.change ?? 0).toFixed(2)} ·{' '}
+                      {(details.data.changePercent ?? 0).toFixed(2)}%
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
+        )}
 
-          {/* Direction tabs */}
-          <DirectionTabs
-            value={direction}
-            onChange={setDirection}
-            allowShortSelling={allowShortSelling}
-          />
+        <div className="max-h-[70vh] overflow-y-auto px-6 py-5 space-y-5">
+          {/* Symbol search — only shown when no symbol is selected yet */}
+          {!activeSymbol && (
+            <div className="relative">
+              <Input
+                placeholder="Enter Company or Symbol"
+                value={searchQuery}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setShowSuggestions(true);
+                }}
+                onFocus={() => setShowSuggestions(true)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && isValidSearchSymbol) {
+                    e.preventDefault();
+                    handlePickSymbol(searchQuery.trim().toUpperCase());
+                  }
+                }}
+                autoComplete="off"
+                className="bg-background"
+              />
+              {showSuggestions && search.data && search.data.length > 0 && (
+                <ul className="absolute z-10 mt-1 max-h-44 w-full overflow-auto rounded-md border bg-background shadow-md">
+                  {search.data.slice(0, 8).map((r) => (
+                    <li key={r.symbol}>
+                      <button
+                        type="button"
+                        className="w-full px-3 py-2 text-left text-sm hover:bg-accent"
+                        onClick={() => handlePickSymbol(r.symbol)}
+                      >
+                        <span className="font-medium">{r.symbol}</span>
+                        <span className="ml-2 text-muted-foreground">{r.name}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
 
           {activeSymbol && (
             <>
-              {/* Symbol meta */}
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <span className="inline-flex items-center rounded bg-primary px-2 py-0.5 text-xs font-semibold uppercase text-primary-foreground">
-                    {activeSymbol}
+              {/* Direction tabs */}
+              <DirectionTabs
+                value={direction}
+                onChange={setDirection}
+                allowShortSelling={allowShortSelling}
+              />
+
+              {/* SIZE */}
+              <section className="space-y-3">
+                <div className="flex items-baseline justify-between">
+                  <h3 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-text-strong">
+                    Size
+                  </h3>
+                  <span className="text-[10px] uppercase tracking-[0.14em] text-muted">
+                    {isBuy ? `Buying power ${formatUSD(cashBalance)}` : `Held ${heldQuantity}`}
                   </span>
-                  {details.data?.exchange && (
-                    <span className="text-xs text-muted-foreground tracking-wide">
-                      U.S.: {details.data.exchange}
-                    </span>
-                  )}
                 </div>
-                <h2 className="text-2xl font-bold">
-                  {details.data?.companyName ?? activeSymbol}
-                </h2>
-                <hr />
-              </div>
 
-              {/* Quantity slider + big number */}
-              <div className="space-y-2">
-                <div className="flex items-end justify-between gap-4">
-                  <div className="flex-1">
-                    <input
-                      type="range"
-                      min={1}
-                      max={Math.max(1, maxQuantity)}
-                      step={1}
-                      value={effectiveQuantity}
-                      onChange={(e) => setQuantity(Number(e.target.value) || 1)}
-                      disabled={maxQuantity < 1}
-                      className="w-full accent-foreground"
-                    />
+                <div className="grid grid-cols-[1fr_auto] gap-3">
+                  <div className="rounded-md border border-hairline-strong bg-panel px-4 py-3 flex items-center justify-between gap-3">
+                    <div className="flex-1">
+                      <div className="text-[10px] uppercase tracking-[0.14em] text-muted">
+                        Shares
+                      </div>
+                      <Input
+                        type="number"
+                        min={1}
+                        max={maxQuantity > 0 ? maxQuantity : undefined}
+                        step={1}
+                        value={effectiveQuantity}
+                        onChange={(e) =>
+                          setQuantity(Math.max(1, Math.floor(Number(e.target.value) || 1)))
+                        }
+                        className="mt-1 h-auto border-0 bg-transparent p-0 font-mono text-3xl font-bold leading-none focus-visible:ring-0"
+                      />
+                    </div>
+                    <div className="text-right">
+                      <div className="text-[10px] uppercase tracking-[0.14em] text-muted">
+                        ≈ Amount
+                      </div>
+                      <div className="mt-1 font-mono text-lg font-semibold tabular-nums">
+                        {displayPrice !== undefined ? formatUSD(orderValue) : '—'}
+                      </div>
+                    </div>
                   </div>
-                  <div className="flex items-baseline gap-2">
-                    <Input
-                      type="number"
-                      min={1}
-                      max={maxQuantity > 0 ? maxQuantity : undefined}
-                      step={1}
-                      value={effectiveQuantity}
-                      onChange={(e) =>
-                        setQuantity(Math.max(1, Math.floor(Number(e.target.value) || 1)))
-                      }
-                      className="w-24 text-right text-2xl font-bold h-12 bg-background"
-                    />
-                    <span className="text-2xl font-bold">
-                      {effectiveQuantity === 1 ? 'Share' : 'Shares'}
-                    </span>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setQuantity(Math.max(1, maxQuantity))}
+                    disabled={maxQuantity < 1}
+                    className="rounded-md border border-hairline-strong bg-panel px-4 text-[11px] font-semibold uppercase tracking-[0.14em] text-accent hover:bg-accent-bg disabled:opacity-50 disabled:hover:bg-panel"
+                  >
+                    Max {maxQuantity}
+                  </button>
                 </div>
-                <p className="text-right text-xs text-muted-foreground">
-                  Use the slider to set a value or enter one manually.
-                  {isBuy
-                    ? ` Max ${maxQuantity} (affordable).`
-                    : ` Max ${maxQuantity} (held).`}
-                </p>
-              </div>
 
-              {/* Portfolio Allocation */}
-              <div className="space-y-1">
-                <Label>Portfolio Allocation</Label>
-                <div className="h-3 w-full rounded bg-muted">
-                  <div
-                    className="h-full rounded bg-green-600"
-                    style={{ width: `${allocationPct}%` }}
-                  />
-                </div>
-              </div>
-
-              {/* Term */}
-              <div className="space-y-1">
-                <Label>Term</Label>
-                <SegmentedTwo
-                  leftLabel="Day Order"
-                  rightLabel="Good Til Canceled"
-                  leftActive={term === 'DAY'}
-                  onLeft={() => setTerm('DAY')}
-                  onRight={allowGTC ? () => setTerm('GTC') : undefined}
-                  rightDisabledHint="Not enabled for this game"
-                  disabled={priceType === 'MARKET'}
-                  disabledHint="Time-in-force does not apply to market orders"
+                <input
+                  type="range"
+                  min={1}
+                  max={Math.max(1, maxQuantity)}
+                  step={1}
+                  value={effectiveQuantity}
+                  onChange={(e) => setQuantity(Number(e.target.value) || 1)}
+                  disabled={maxQuantity < 1}
+                  className="w-full accent-accent"
                 />
-              </div>
 
-              {/* Price Type */}
-              <div className="space-y-1">
-                <Label htmlFor="price-type">Price Type</Label>
-                <select
-                  id="price-type"
-                  value={priceType}
-                  onChange={(e) => setPriceType(e.target.value as PriceType)}
-                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm uppercase tracking-wide font-semibold focus:outline-none focus:ring-2 focus:ring-ring"
-                >
-                  <option value="MARKET">MARKET</option>
-                  <option value="LIMIT" disabled={!allowLimitOrders}>
-                    LIMIT{!allowLimitOrders && ' (not enabled)'}
-                  </option>
-                  <option value="STOP" disabled={!allowStopOrders}>
-                    STOP{!allowStopOrders && ' (not enabled)'}
-                  </option>
-                  <option value="STOP_LIMIT" disabled={!allowLimitOrders || !allowStopOrders}>
-                    STOP-LIMIT{(!allowLimitOrders || !allowStopOrders) && ' (not enabled)'}
-                  </option>
-                  <option value="BRACKET" disabled={!allowBracketOrders}>
-                    BRACKET{!allowBracketOrders && ' (not enabled)'}
-                  </option>
-                </select>
-              </div>
+                <div className="flex gap-2">
+                  <QuickFill label="+10" onClick={() => bumpQty(setQuantity, effectiveQuantity, 10, maxQuantity)} disabled={maxQuantity < 1} />
+                  <QuickFill label="+25" onClick={() => bumpQty(setQuantity, effectiveQuantity, 25, maxQuantity)} disabled={maxQuantity < 1} />
+                  <QuickFill label="+100" onClick={() => bumpQty(setQuantity, effectiveQuantity, 100, maxQuantity)} disabled={maxQuantity < 1} />
+                  <QuickFill label="25%" onClick={() => setQuantity(Math.max(1, Math.floor(maxQuantity * 0.25)))} disabled={maxQuantity < 1} />
+                  <QuickFill label="50%" onClick={() => setQuantity(Math.max(1, Math.floor(maxQuantity * 0.5)))} disabled={maxQuantity < 1} />
+                </div>
+              </section>
 
-              {/* Progressive price inputs */}
-              {(showLimitPrice || showStopPrice) && (
-                <div className="grid grid-cols-2 gap-4">
-                  {showLimitPrice && (
-                    <div className="space-y-1">
-                      <Label htmlFor="limit-price">
-                        {showBracket ? 'Entry Limit (optional)' : 'Limit Price'}
-                      </Label>
-                      <Input
+              {/* PORTFOLIO ALLOCATION */}
+              {totalPortfolioValue > 0 && (
+                <section className="space-y-2">
+                  <div className="text-[10px] uppercase tracking-[0.14em] text-muted">
+                    Portfolio after this trade
+                  </div>
+                  <AllocationBar
+                    positionPct={allocation.positionPct}
+                    cashPct={allocation.cashPct}
+                    otherPct={allocation.otherPct}
+                    symbol={activeSymbol}
+                  />
+                </section>
+              )}
+
+              {/* POSITION COMPARE — only when there's a position before or after */}
+              {(currentPosition.shares > 0 || afterPosition.shares > 0) && (
+                <section className="space-y-2">
+                  <div className="flex items-baseline justify-between">
+                    <h3 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-text-strong">
+                      Position
+                    </h3>
+                    <span className="text-[10px] uppercase tracking-[0.14em] text-muted">
+                      Current → After
+                    </span>
+                  </div>
+                  <PositionCompare current={currentPosition} after={afterPosition} />
+                </section>
+              )}
+
+              {/* ORDER OPTIONS */}
+              <section className="space-y-3">
+                <div className="flex items-baseline justify-between">
+                  <h3 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-text-strong">
+                    Order
+                  </h3>
+                  <span className="text-[10px] uppercase tracking-[0.14em] text-muted">
+                    Defaults work for most trades
+                  </span>
+                </div>
+
+                {/* Type pill row */}
+                <PillRow label="Type">
+                  {enabledTypes.map((t) => (
+                    <Pill key={t} active={priceType === t} onClick={() => setPriceType(t)}>
+                      {labelForType(t)}
+                    </Pill>
+                  ))}
+                </PillRow>
+
+                {/* Conditional price fields */}
+                {(showLimitPrice || showStopPrice) && (
+                  <div className="grid grid-cols-2 gap-3">
+                    {showLimitPrice && (
+                      <PriceField
                         id="limit-price"
-                        type="number"
-                        step="0.01"
-                        min={0}
-                        placeholder={showBracket ? 'Market entry if blank' : '$'}
+                        label={showBracket ? 'Entry limit (optional)' : 'Limit price'}
                         value={limitPrice}
-                        onChange={(e) => setLimitPrice(e.target.value)}
-                        className="bg-background"
+                        onChange={setLimitPrice}
+                        {...(displayPrice !== undefined && parsedLimit > 0 && {
+                          deltaVsLast: { last: displayPrice, value: parsedLimit },
+                        })}
+                        invalid={limitPriceRequired && limitPrice.length > 0 && !(parsedLimit > 0)}
                       />
-                      {limitPriceRequired && limitPrice.length > 0 && !(parsedLimit > 0) && (
-                        <p className="text-xs text-destructive">Must be greater than 0</p>
-                      )}
-                    </div>
-                  )}
-                  {showStopPrice && (
-                    <div className="space-y-1">
-                      <Label htmlFor="stop-price">Stop Price</Label>
-                      <Input
+                    )}
+                    {showStopPrice && (
+                      <PriceField
                         id="stop-price"
-                        type="number"
-                        step="0.01"
-                        min={0}
-                        placeholder="$"
+                        label="Stop price"
                         value={stopPrice}
-                        onChange={(e) => setStopPrice(e.target.value)}
-                        className="bg-background"
+                        onChange={setStopPrice}
+                        {...(displayPrice !== undefined && parsedStop > 0 && {
+                          deltaVsLast: { last: displayPrice, value: parsedStop },
+                        })}
+                        invalid={stopPrice.length > 0 && !(parsedStop > 0)}
                       />
-                      {stopPrice.length > 0 && !(parsedStop > 0) && (
-                        <p className="text-xs text-destructive">Must be greater than 0</p>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
+                    )}
+                  </div>
+                )}
 
-              {showBracket && (
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-1">
-                    <Label htmlFor="tp-price">Take Profit</Label>
-                    <Input
+                {showBracket && (
+                  <div className="grid grid-cols-2 gap-3">
+                    <PriceField
                       id="tp-price"
-                      type="number"
-                      step="0.01"
-                      min={0}
-                      placeholder="$"
+                      label="Take profit"
                       value={takeProfitPrice}
-                      onChange={(e) => setTakeProfitPrice(e.target.value)}
-                      className="bg-background"
+                      onChange={setTakeProfitPrice}
                     />
-                  </div>
-                  <div className="space-y-1">
-                    <Label htmlFor="sl-price">Stop Loss</Label>
-                    <Input
+                    <PriceField
                       id="sl-price"
-                      type="number"
-                      step="0.01"
-                      min={0}
-                      placeholder="$"
+                      label="Stop loss"
                       value={stopLossPrice}
-                      onChange={(e) => setStopLossPrice(e.target.value)}
-                      className="bg-background"
+                      onChange={setStopLossPrice}
                     />
+                    {parsedTP > 0 &&
+                      parsedSL > 0 &&
+                      (tradeDirection === 'buy' ? parsedTP <= parsedSL : parsedTP >= parsedSL) && (
+                        <p className="col-span-2 text-xs text-loss">
+                          {tradeDirection === 'buy'
+                            ? 'Take profit must be greater than stop loss for a long bracket.'
+                            : 'Take profit must be less than stop loss for a short bracket.'}
+                        </p>
+                      )}
                   </div>
-                  {parsedTP > 0 && parsedSL > 0 && (
-                    (tradeDirection === 'buy' ? parsedTP <= parsedSL : parsedTP >= parsedSL) && (
-                      <p className="col-span-2 text-xs text-destructive">
-                        {tradeDirection === 'buy'
-                          ? 'Take profit must be greater than stop loss for a long bracket.'
-                          : 'Take profit must be less than stop loss for a short bracket.'}
-                      </p>
-                    )
-                  )}
-                </div>
-              )}
+                )}
 
-              {/* Order summary */}
-              <div className="space-y-2">
-                <Label>Order Summary</Label>
-                <div className="rounded-md border bg-background">
+                {/* Term pill row */}
+                {termRowVisible && (
+                  <PillRow
+                    label="Term"
+                    disabled={termRowDisabled}
+                    {...(termRowDisabled && { reason: 'Not used for market orders' })}
+                  >
+                    <Pill active={term === 'DAY'} disabled={termRowDisabled} onClick={() => setTerm('DAY')}>
+                      Day
+                    </Pill>
+                    <Pill active={term === 'GTC'} disabled={termRowDisabled} onClick={() => setTerm('GTC')}>
+                      Good til canceled
+                    </Pill>
+                  </PillRow>
+                )}
+              </section>
+
+              {/* SUMMARY */}
+              <section className="space-y-2">
+                <div className="text-[10px] uppercase tracking-[0.14em] text-muted">Summary</div>
+                <div className="rounded-md border border-hairline-strong bg-panel font-mono">
                   <SummaryRow
                     label="Price per share"
                     value={displayPrice !== undefined ? formatUSD(displayPrice) : '—'}
                   />
-                  <SummaryRow label="Amount" value={String(effectiveQuantity)} />
+                  <SummaryRow label="Quantity" value={String(effectiveQuantity)} />
                   <SummaryRow label="Commission" value={formatUSD(COMMISSION_USD)} />
                   <SummaryRow
                     label="Total"
@@ -551,16 +646,16 @@ export function TradeOrderDialog({
                     last
                   />
                 </div>
-                <p className="text-right text-xs text-muted-foreground">
-                  *Estimate based on current quote price
+                <p className="text-right text-[10px] uppercase tracking-[0.14em] text-muted">
+                  * Estimate at current quote price
                 </p>
-              </div>
+              </section>
             </>
           )}
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between gap-2 border-t bg-background px-6 py-3">
+        <div className="flex items-center justify-between gap-2 border-t border-hairline-strong bg-bg px-6 py-3">
           <Button
             type="button"
             variant="outline"
@@ -581,17 +676,41 @@ export function TradeOrderDialog({
             </Button>
             <Button
               type="button"
-              className="uppercase tracking-wide bg-violet-600 hover:bg-violet-700 text-white"
+              className="uppercase tracking-wider px-6"
               onClick={handleSubmit}
               disabled={!canSubmit}
             >
-              {place.isPending ? 'Submitting…' : 'Submit Order'}
+              {submitLabel}
             </Button>
           </div>
         </div>
       </DialogContent>
     </Dialog>
   );
+}
+
+function bumpQty(
+  setQuantity: (n: number) => void,
+  current: number,
+  delta: number,
+  max: number,
+) {
+  setQuantity(Math.min(Math.max(1, current + delta), Math.max(1, max)));
+}
+
+function labelForType(t: PriceType): string {
+  switch (t) {
+    case 'MARKET':
+      return 'Market';
+    case 'LIMIT':
+      return 'Limit';
+    case 'STOP':
+      return 'Stop';
+    case 'STOP_LIMIT':
+      return 'Stop limit';
+    case 'BRACKET':
+      return 'Bracket';
+  }
 }
 
 function DirectionTabs({
@@ -603,21 +722,21 @@ function DirectionTabs({
   onChange: (next: DirectionTab) => void;
   allowShortSelling: boolean;
 }) {
-  const tabs: { key: DirectionTab; label: string; disabled?: boolean }[] =
+  const tabs: { key: DirectionTab; label: string; tone: 'buy' | 'sell'; disabled?: boolean }[] =
     allowShortSelling
       ? [
-          { key: 'buy', label: 'Buy' },
-          { key: 'sell-short', label: 'Sell Short', disabled: true },
-          { key: 'sell', label: 'Sell' },
-          { key: 'buy-to-cover', label: 'Buy to Cover', disabled: true },
+          { key: 'buy', label: 'Buy', tone: 'buy' },
+          { key: 'sell', label: 'Sell', tone: 'sell' },
+          { key: 'sell-short', label: 'Sell short', tone: 'sell', disabled: true },
+          { key: 'buy-to-cover', label: 'Buy to cover', tone: 'buy', disabled: true },
         ]
       : [
-          { key: 'buy', label: 'Buy' },
-          { key: 'sell', label: 'Sell' },
+          { key: 'buy', label: 'Buy', tone: 'buy' },
+          { key: 'sell', label: 'Sell', tone: 'sell' },
         ];
   const gridClass = allowShortSelling ? 'grid-cols-4' : 'grid-cols-2';
   return (
-    <div className={cn('grid rounded-md border overflow-hidden bg-background', gridClass)}>
+    <div className={cn('grid gap-1 rounded-md border border-hairline-strong bg-panel p-1', gridClass)}>
       {tabs.map((t) => {
         const active = value === t.key;
         return (
@@ -627,11 +746,11 @@ function DirectionTabs({
             disabled={t.disabled}
             onClick={() => !t.disabled && onChange(t.key)}
             className={cn(
-              'px-3 py-3 text-sm font-semibold uppercase tracking-wide transition-colors',
-              active && 'bg-foreground text-background',
-              !active && !t.disabled && 'hover:bg-muted',
-              t.disabled &&
-                'cursor-not-allowed text-muted-foreground bg-[repeating-linear-gradient(45deg,transparent,transparent_6px,rgba(0,0,0,0.05)_6px,rgba(0,0,0,0.05)_12px)]',
+              'rounded-[6px] px-3 py-2.5 text-[11px] font-bold uppercase tracking-[0.14em] transition-colors',
+              !active && !t.disabled && 'text-muted hover:text-text',
+              active && t.tone === 'buy' && 'bg-gain/10 text-gain shadow-[inset_0_0_0_1px_rgba(16,185,129,0.3)]',
+              active && t.tone === 'sell' && 'bg-loss/10 text-loss shadow-[inset_0_0_0_1px_rgba(239,68,68,0.3)]',
+              t.disabled && 'cursor-not-allowed text-disabled-fg',
             )}
             title={t.disabled ? 'Coming soon' : undefined}
           >
@@ -643,76 +762,267 @@ function DirectionTabs({
   );
 }
 
-function SegmentedTwo({
-  leftLabel,
-  rightLabel,
-  leftActive,
-  onLeft,
-  onRight,
-  rightDisabledHint,
+function PillRow({
+  label,
+  children,
   disabled = false,
-  disabledHint,
+  reason,
 }: {
-  leftLabel: string;
-  rightLabel: string;
-  leftActive: boolean;
-  onLeft: () => void;
-  onRight: (() => void) | undefined;
-  rightDisabledHint?: string;
+  label: string;
+  children: React.ReactNode;
   disabled?: boolean;
-  disabledHint?: string;
+  reason?: string;
 }) {
-  const rightOnlyDisabled = !onRight;
-  const rightActive = !leftActive && !rightOnlyDisabled && !disabled;
-  const leftShowActive = leftActive && !disabled;
   return (
-    <div>
-      <div
+    <div className="flex flex-wrap items-center gap-2">
+      <span
         className={cn(
-          'grid grid-cols-2 overflow-hidden rounded-md border',
-          // When the whole control is disabled (e.g. market orders don't
-          // care about time-in-force) drop the dark `bg-muted` background
-          // so the muted-foreground text is no longer gray-on-gray.
-          disabled ? 'border-dashed border-hairline-strong bg-bg' : 'bg-muted',
+          'min-w-[44px] text-[10px] font-semibold uppercase tracking-[0.14em]',
+          disabled ? 'text-disabled-fg' : 'text-muted',
         )}
       >
-        <button
-          type="button"
-          onClick={onLeft}
-          disabled={disabled}
-          title={disabled ? disabledHint : undefined}
-          className={cn(
-            'px-3 py-3 text-sm font-semibold uppercase tracking-wide transition-colors',
-            leftShowActive
-              ? 'bg-foreground text-background'
-              : !disabled && 'hover:bg-muted-foreground/10',
-            disabled && 'cursor-not-allowed text-muted hover:bg-transparent',
-          )}
-        >
-          {leftLabel}
-        </button>
-        <button
-          type="button"
-          onClick={onRight}
-          disabled={rightOnlyDisabled || disabled}
-          title={
-            disabled ? disabledHint : rightOnlyDisabled ? rightDisabledHint : undefined
-          }
-          className={cn(
-            'px-3 py-3 text-sm font-semibold uppercase tracking-wide transition-colors',
-            rightActive && 'bg-foreground text-background',
-            !rightActive && !rightOnlyDisabled && !disabled && 'hover:bg-muted-foreground/10',
-            (rightOnlyDisabled || disabled) && 'cursor-not-allowed text-muted hover:bg-transparent',
-          )}
-        >
-          {rightLabel}
-        </button>
+        {label}
+      </span>
+      {children}
+      {disabled && reason && (
+        <span className="ml-auto inline-flex items-center gap-1.5 text-[10px] uppercase tracking-[0.14em] text-disabled-fg">
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden>
+            <circle cx="5" cy="5" r="4" stroke="currentColor" strokeWidth="1" />
+            <path d="M5 3v3" stroke="currentColor" strokeWidth="1" strokeLinecap="round" />
+            <circle cx="5" cy="7.5" r="0.6" fill="currentColor" />
+          </svg>
+          {reason}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function Pill({
+  active,
+  disabled = false,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  disabled?: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      className={cn(
+        'rounded-full border px-3.5 py-1.5 text-[11px] font-semibold uppercase tracking-wider transition-colors',
+        disabled && [
+          'cursor-not-allowed border-disabled-border bg-disabled-bg text-disabled-fg',
+          active && 'shadow-none',
+        ],
+        !disabled && !active && 'border-hairline-strong bg-panel text-muted hover:text-text hover:border-muted',
+        !disabled && active && 'border-accent/40 bg-accent-bg text-accent shadow-[inset_0_0_0_1px_rgba(103,232,249,0.15)]',
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
+function PriceField({
+  id,
+  label,
+  value,
+  onChange,
+  deltaVsLast,
+  invalid,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  deltaVsLast?: { last: number; value: number };
+  invalid?: boolean;
+}) {
+  return (
+    <div className="rounded-md border border-hairline-strong bg-panel px-3 py-2.5">
+      <label htmlFor={id} className="text-[10px] uppercase tracking-[0.14em] text-muted">
+        {label}
+      </label>
+      <Input
+        id={id}
+        type="number"
+        step="0.01"
+        min={0}
+        placeholder="$"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="mt-1 h-auto border-0 bg-transparent p-0 font-mono text-lg font-bold focus-visible:ring-0"
+      />
+      {invalid && <p className="mt-1 text-[10px] text-loss">Must be greater than 0</p>}
+      {!invalid && deltaVsLast && (
+        <DeltaVsLast last={deltaVsLast.last} value={deltaVsLast.value} />
+      )}
+    </div>
+  );
+}
+
+function DeltaVsLast({ last, value }: { last: number; value: number }) {
+  const diff = value - last;
+  const pct = last > 0 ? (diff / last) * 100 : 0;
+  const up = diff >= 0;
+  return (
+    <div className="mt-1 font-mono text-[11px] tabular-nums">
+      <span className="text-muted">vs last </span>
+      <span className={up ? 'text-gain' : 'text-loss'}>
+        {up ? '+' : ''}
+        {diff.toFixed(2)}
+      </span>{' '}
+      <span className="text-muted">·</span>{' '}
+      <span className={up ? 'text-gain' : 'text-loss'}>
+        {up ? '+' : ''}
+        {pct.toFixed(2)}%
+      </span>
+    </div>
+  );
+}
+
+function QuickFill({
+  label,
+  onClick,
+  disabled,
+}: {
+  label: string;
+  onClick: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className="flex-1 rounded-md border border-hairline-strong bg-panel py-2 text-[11px] font-semibold uppercase tracking-wider text-muted transition-colors hover:border-accent/40 hover:text-accent disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-hairline-strong disabled:hover:text-muted"
+    >
+      {label}
+    </button>
+  );
+}
+
+function AllocationBar({
+  positionPct,
+  cashPct,
+  otherPct,
+  symbol,
+}: {
+  positionPct: number;
+  cashPct: number;
+  otherPct: number;
+  symbol: string;
+}) {
+  const totalShown = positionPct + cashPct + otherPct;
+  if (totalShown < 0.5) {
+    return <div className="h-6 rounded-md border border-hairline-strong bg-panel" />;
+  }
+  return (
+    <div className="space-y-1.5">
+      <div className="flex h-6 overflow-hidden rounded-md border border-hairline-strong bg-panel">
+        {positionPct > 0 && (
+          <div
+            className="flex items-center justify-start bg-accent/20 px-2 text-[9px] font-bold uppercase tracking-wider text-accent"
+            style={{ width: `${positionPct}%` }}
+            title={`${symbol} ${positionPct.toFixed(1)}%`}
+          >
+            {positionPct >= 8 && `${symbol} ${positionPct.toFixed(0)}%`}
+          </div>
+        )}
+        {otherPct > 0 && (
+          <div
+            className="flex items-center justify-start bg-text/10 px-2 text-[9px] font-bold uppercase tracking-wider text-muted"
+            style={{ width: `${otherPct}%` }}
+            title={`Other ${otherPct.toFixed(1)}%`}
+          >
+            {otherPct >= 10 && `Other ${otherPct.toFixed(0)}%`}
+          </div>
+        )}
+        {cashPct > 0 && (
+          <div
+            className="flex items-center justify-start px-2 text-[9px] font-bold uppercase tracking-wider text-muted"
+            style={{ width: `${cashPct}%` }}
+            title={`Cash ${cashPct.toFixed(1)}%`}
+          >
+            {cashPct >= 10 && `Cash ${cashPct.toFixed(0)}%`}
+          </div>
+        )}
       </div>
-      {disabled && disabledHint ? (
-        <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.14em] text-muted">
-          {disabledHint}
-        </p>
-      ) : null}
+    </div>
+  );
+}
+
+function PositionCompare({
+  current,
+  after,
+}: {
+  current: PositionSnapshot;
+  after: PositionSnapshot;
+}) {
+  return (
+    <div className="grid grid-cols-[1fr_auto_1fr] items-stretch gap-3">
+      <PositionCard label="Current" snapshot={current} />
+      <div className="flex items-center justify-center text-muted">→</div>
+      <PositionCard label="After" snapshot={after} highlight />
+    </div>
+  );
+}
+
+function PositionCard({
+  label,
+  snapshot,
+  highlight = false,
+}: {
+  label: string;
+  snapshot: PositionSnapshot;
+  highlight?: boolean;
+}) {
+  return (
+    <div
+      className={cn(
+        'rounded-md border px-3 py-2.5',
+        highlight
+          ? 'border-gain/30 bg-gradient-to-b from-gain/[0.06] to-panel'
+          : 'border-hairline-strong bg-panel',
+      )}
+    >
+      <div
+        className={cn(
+          'text-[10px] uppercase tracking-[0.14em]',
+          highlight ? 'text-gain' : 'text-muted',
+        )}
+      >
+        {label}
+      </div>
+      <CompareRow label="Shares" value={String(snapshot.shares)} />
+      <CompareRow
+        label="Avg cost"
+        value={snapshot.shares > 0 ? formatUSD(snapshot.avgCost) : '—'}
+      />
+      <CompareRow label="Value" value={formatUSD(snapshot.value)} bold />
+    </div>
+  );
+}
+
+function CompareRow({
+  label,
+  value,
+  bold = false,
+}: {
+  label: string;
+  value: string;
+  bold?: boolean;
+}) {
+  return (
+    <div className="flex items-baseline justify-between py-0.5 text-xs">
+      <span className="text-muted">{label}</span>
+      <span className={cn('font-mono tabular-nums', bold && 'font-semibold')}>{value}</span>
     </div>
   );
 }
@@ -731,12 +1041,12 @@ function SummaryRow({
   return (
     <div
       className={cn(
-        'flex items-center justify-between px-4 py-2',
-        !last && 'border-b',
-        bold && 'font-semibold',
+        'flex items-center justify-between px-4 py-2.5 text-sm',
+        !last && 'border-b border-hairline-strong',
+        bold && 'text-base font-semibold',
       )}
     >
-      <span>{label}</span>
+      <span className={cn(!bold && 'text-muted')}>{label}</span>
       <span className="tabular-nums">{value}</span>
     </div>
   );

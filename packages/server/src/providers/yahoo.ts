@@ -24,6 +24,7 @@ function asMarketState(raw: unknown): MarketState | undefined {
 import type { StockProvider } from './interface.js';
 import { StockProviderError } from './interface.js';
 import { env } from '../env.js';
+import { mostRecentTradingSession } from '../services/market-calendar.js';
 
 /**
  * Maps the public range key to a (lookback, interval) pair for the Yahoo chart
@@ -164,7 +165,20 @@ export class YahooProvider implements StockProvider {
     this.throwIfRateLimited();
 
     const { lookbackDays, interval } = RANGE_PARAMS[range];
-    const period1 = new Date(Date.now() - lookbackDays * 86_400_000);
+
+    // For the intraday "1D" range, anchor the window to the most recent
+    // NYSE regular session instead of "now − 1 day". Without this, weekend
+    // and pre-market viewers get an empty chart — Yahoo returns no bars
+    // when the requested window covers no trading minutes.
+    let period1: Date;
+    let period2: Date | undefined;
+    if (range === '1d') {
+      const session = mostRecentTradingSession();
+      period1 = session.start;
+      period2 = session.end;
+    } else {
+      period1 = new Date(Date.now() - lookbackDays * 86_400_000);
+    }
 
     interface ChartBar {
       date?: Date | string | number;
@@ -177,6 +191,7 @@ export class YahooProvider implements StockProvider {
     try {
       result = (await this.client.chart(symbol, {
         period1,
+        ...(period2 ? { period2 } : {}),
         interval,
         return: 'array',
       })) as ChartResult;

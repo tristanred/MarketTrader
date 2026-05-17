@@ -2,15 +2,14 @@ import { useQuery } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router-dom';
 import { useTickerTapeSymbols } from '@/hooks/useTickerTapeSymbols';
 import { INDICES_QUERY_KEY } from '@/hooks/useIndicesSocket';
-import { useMaybeSetSelectedSymbol } from '@/contexts/SelectedSymbolContext';
+import { useSetSelectedSymbol } from '@/contexts/SelectedSymbolContext';
 import type { IndexQuote } from '@markettrader/shared';
 
 /**
  * Sticky bottom chrome row: a left-scrolling marquee of server-configured
- * symbols + their latest quotes. Outside a game, clicking a symbol
- * navigates to `/symbols/:symbol`. Inside a game with the arena mounted,
- * clicking writes the symbol into SelectedSymbolContext so the center
- * column updates in place.
+ * symbols + their latest quotes. Inside a game, clicking a chip pivots the
+ * arena's center column to that symbol. Outside a game, it navigates to
+ * `/symbols/:symbol` so the user can pick which game to trade in.
  */
 export function TickerTape() {
   const symbols = useTickerTapeSymbols();
@@ -22,8 +21,8 @@ export function TickerTape() {
     initialData: [],
   });
   const params = useParams();
-  const setSelectedSymbol = useMaybeSetSelectedSymbol();
-  const inGame = !!params.gameId && !!setSelectedSymbol;
+  const setSelectedSymbol = useSetSelectedSymbol();
+  const inGame = !!params.gameId;
 
   if (symbols.length === 0) return null;
 
@@ -64,7 +63,7 @@ export function TickerTape() {
             <button
               key={key}
               type="button"
-              onClick={() => setSelectedSymbol!(it.symbol)}
+              onClick={() => setSelectedSymbol(it.symbol)}
               className="hover:text-accent"
             >
               {content}

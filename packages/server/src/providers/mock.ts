@@ -58,8 +58,41 @@ export class MockProvider implements StockProvider {
     }));
   }
 
-  async getHistory(_symbol: string, _range: StockHistoryRange): Promise<StockHistoryBar[]> {
-    throw new Error('not implemented');
+  async getHistory(symbol: string, range: StockHistoryRange): Promise<StockHistoryBar[]> {
+    const counts: Record<StockHistoryRange, number> = {
+      '1d': 30,
+      '5d': 60,
+      '1mo': 30,
+      '3mo': 90,
+      '6mo': 180,
+      '1y': 250,
+    };
+    const n = counts[range] ?? 30;
+
+    const sym = symbol.toUpperCase();
+    const seed = [...sym].reduce((a, c) => a + c.charCodeAt(0), 0);
+    let rand = seed;
+    const next = () => {
+      rand = (rand * 9301 + 49297) % 233280;
+      return rand / 233280;
+    };
+
+    const base = this.prices[sym] ?? 100;
+    const nowSec = Math.floor(Date.now() / 1000);
+    const stepSec = range === '1d' ? 60 * 5 : 24 * 60 * 60;
+
+    const bars: StockHistoryBar[] = [];
+    let last = base;
+    for (let i = 0; i < n; i++) {
+      const delta = (next() - 0.5) * base * 0.01;
+      const close = +(last + delta).toFixed(2);
+      bars.push({
+        time: nowSec - (n - 1 - i) * stepSec,
+        close,
+      });
+      last = close;
+    }
+    return bars;
   }
 
   async getDetails(_symbol: string): Promise<StockDetails> {

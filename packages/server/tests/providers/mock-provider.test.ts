@@ -50,3 +50,24 @@ describe('MockProvider.searchSymbols', () => {
     expect(r).toEqual([]);
   });
 });
+
+describe('MockProvider.getHistory', () => {
+  it('returns ascending bars for 1d', async () => {
+    const p = new MockProvider();
+    const bars = await p.getHistory('AAPL', '1d');
+    expect(bars.length).toBeGreaterThan(0);
+    for (let i = 1; i < bars.length; i++) {
+      expect(bars[i]!.time).toBeGreaterThan(bars[i - 1]!.time);
+    }
+  });
+
+  it('produces deterministic close prices across calls', async () => {
+    const p = new MockProvider();
+    const a = await p.getHistory('AAPL', '1d');
+    const b = await p.getHistory('AAPL', '1d');
+    expect(a.length).toBe(b.length);
+    expect(a.map((x: { close: number }) => x.close)).toEqual(
+      b.map((x: { close: number }) => x.close),
+    );
+  });
+});

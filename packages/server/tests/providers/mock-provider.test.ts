@@ -71,3 +71,15 @@ describe('MockProvider.getHistory', () => {
     );
   });
 });
+
+describe('MockProvider.getDetails', () => {
+  it('returns a fixed StockDetails for a known symbol', async () => {
+    const p = new MockProvider();
+    const d = await p.getDetails('AAPL');
+    expect(d.symbol).toBe('AAPL');
+    expect(d.companyName).toBeDefined();
+    expect(d.exchange).toBeDefined();
+    expect(typeof d.fetchedAt).toBe('string');
+    expect(Number.isNaN(Date.parse(d.fetchedAt))).toBe(false);
+  });
+});

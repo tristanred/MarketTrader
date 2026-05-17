@@ -25,8 +25,7 @@ export const MOCK_PRICE_MAP: Record<string, number> = {
 /**
  * In-process {@link StockProvider} with hardcoded prices, used exclusively by
  * the e2e integration test suite. Avoids external network calls and keeps
- * portfolio math deterministic. `getDetails` is filled in by a later task in
- * the integration-test-suite plan.
+ * portfolio math deterministic.
  */
 export class MockProvider implements StockProvider {
   private readonly prices: Record<string, number>;
@@ -95,7 +94,21 @@ export class MockProvider implements StockProvider {
     return bars;
   }
 
-  async getDetails(_symbol: string): Promise<StockDetails> {
-    throw new Error('not implemented');
+  async getDetails(symbol: string): Promise<StockDetails> {
+    const sym = symbol.toUpperCase();
+    const price = this.prices[sym] ?? 100;
+    return {
+      symbol: sym,
+      price,
+      change: 0,
+      changePercent: 0,
+      previousClose: price,
+      dayVolume: 1_000_000,
+      avgVolume: 1_000_000,
+      exchange: 'MOCK',
+      companyName: `${sym} Mock Corp.`,
+      marketState: 'REGULAR',
+      fetchedAt: new Date().toISOString(),
+    };
   }
 }

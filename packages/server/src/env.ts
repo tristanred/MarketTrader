@@ -66,7 +66,7 @@ function validatedMarketHoursMode(): MarketHoursMode {
  */
 function validatedMarketStatusProvider(stockProvider: StockProvider): MarketStatusProviderName {
   const raw = process.env.MARKET_STATUS_PROVIDER;
-  if (!raw) return stockProvider;
+  if (!raw) return stockProvider === 'mock' ? 'static' : stockProvider;
   if (!(VALID_MARKET_STATUS_PROVIDERS as readonly string[]).includes(raw)) {
     throw new Error(
       `Invalid MARKET_STATUS_PROVIDER: "${raw}". Must be one of: ${VALID_MARKET_STATUS_PROVIDERS.join(', ')}`,

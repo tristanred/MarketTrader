@@ -4,8 +4,8 @@ export default defineConfig({
   testDir: './e2e',
   timeout: 30_000,
   fullyParallel: false,
-  retries: 0,
-  reporter: 'line',
+  retries: 1,
+  reporter: [['line'], ['html', { open: 'never' }]],
   use: {
     baseURL: 'http://127.0.0.1:5173',
     headless: true,
@@ -13,8 +13,6 @@ export default defineConfig({
   },
   webServer: [
     {
-      // Server uses an in-memory SQLite DB and a fixed JWT secret for the e2e run.
-      // Invoke tsx directly so we don't trip over the dev script's --env-file flag.
       command: 'pnpm --filter @markettrader/server exec tsx src/index.ts',
       url: 'http://127.0.0.1:3000/health',
       reuseExistingServer: false,
@@ -26,6 +24,9 @@ export default defineConfig({
         CORS_ORIGIN: 'http://127.0.0.1:5173',
         PORT: '3000',
         NODE_ENV: 'test',
+        STOCK_PROVIDER: 'mock',
+        MARKET_STATUS_PROVIDER: 'static',
+        MARKET_HOURS_MODE: 'instant',
       },
     },
     {

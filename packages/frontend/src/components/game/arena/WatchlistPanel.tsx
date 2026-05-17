@@ -64,33 +64,32 @@ export function WatchlistPanel({
   const deleteMutation = useDeleteWatchlist();
   const menuRef = useRef<HTMLDivElement>(null);
 
-  // Esc anywhere in the panel collapses whichever inline mode is open
-  // and closes the switcher dropdown.
+  // Combined global listeners: Esc collapses any open inline mode and closes
+  // the switcher dropdown; outside-click closes the switcher dropdown. Each
+  // listener early-returns when nothing's open, so they stay attached for the
+  // panel's lifetime without doing real work when idle.
   useEffect(() => {
-    if (mode === 'idle' && !menuOpen) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        setMode('idle');
-        setMenuOpen(false);
-        setError(null);
-        setNewName('');
-      }
+      if (e.key !== 'Escape') return;
+      if (mode === 'idle' && !menuOpen) return;
+      setMode('idle');
+      setMenuOpen(false);
+      setError(null);
+      setNewName('');
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [mode, menuOpen]);
-
-  // Outside-click closes the switcher dropdown.
-  useEffect(() => {
-    if (!menuOpen) return;
     const onDown = (e: MouseEvent) => {
+      if (!menuOpen) return;
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
         setMenuOpen(false);
       }
     };
+    window.addEventListener('keydown', onKey);
     window.addEventListener('mousedown', onDown);
-    return () => window.removeEventListener('mousedown', onDown);
-  }, [menuOpen]);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('mousedown', onDown);
+    };
+  }, [mode, menuOpen]);
 
   // Reset in-menu rename/delete UI when the menu is closed.
   useEffect(() => {

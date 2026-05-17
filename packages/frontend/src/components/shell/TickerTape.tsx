@@ -1,9 +1,14 @@
+import { memo, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router-dom';
 import { useTickerTapeSymbols } from '@/hooks/useTickerTapeSymbols';
 import { INDICES_QUERY_KEY } from '@/hooks/useIndicesSocket';
 import { useSetSelectedSymbol } from '@/contexts/SelectedSymbolContext';
 import type { IndexQuote } from '@markettrader/shared';
+
+// Hoisted: avoid building a new Intl formatter inside every chip on every
+// render. Locale + options never change at runtime.
+const PRICE_FMT = new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 });
 
 /**
  * Sticky bottom chrome row: a left-scrolling marquee of server-configured
@@ -24,12 +29,15 @@ export function TickerTape() {
   const setSelectedSymbol = useSetSelectedSymbol();
   const inGame = !!params.gameId;
 
-  if (symbols.length === 0) return null;
+  // Build the looped list once per (symbols, quotes) change. The map lookup
+  // is O(1) instead of a per-render Map allocation + getter chain.
+  const looped = useMemo(() => {
+    const bySymbol = new Map((quotes.data ?? []).map((q) => [q.symbol, q]));
+    const items = symbols.map((s) => ({ symbol: s, quote: bySymbol.get(s) }));
+    return [...items, ...items];
+  }, [symbols, quotes.data]);
 
-  const quoteBySymbol = new Map(quotes.data?.map((q) => [q.symbol, q]));
-  const items = symbols.map((s) => ({ symbol: s, quote: quoteBySymbol.get(s) }));
-  // Duplicate items for a seamless loop — the marquee animates to -50%.
-  const looped = [...items, ...items];
+  if (symbols.length === 0) return null;
 
   return (
     <div
@@ -40,41 +48,57 @@ export function TickerTape() {
         data-testid="ticker-tape-marquee"
         className="flex h-full items-center gap-6 whitespace-nowrap animate-marquee px-4 text-[11px] font-mono"
       >
-        {looped.map((it, idx) => {
-          const change = it.quote?.changePct ?? 0;
-          const last = it.quote?.last;
-          const content = (
-            <span className="flex items-baseline gap-1">
-              <span className="text-text">{it.symbol}</span>
-              {last !== undefined ? (
-                <>
-                  <span className="text-muted">
-                    {new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(last)}
-                  </span>
-                  <span className={change >= 0 ? 'text-gain' : 'text-loss'}>
-                    {change >= 0 ? '+' : '−'}{Math.abs(change).toFixed(2)}%
-                  </span>
-                </>
-              ) : null}
-            </span>
-          );
-          const key = `${it.symbol}-${idx}`;
-          return inGame ? (
-            <button
-              key={key}
-              type="button"
-              onClick={() => setSelectedSymbol(it.symbol)}
-              className="hover:text-accent"
-            >
-              {content}
-            </button>
-          ) : (
-            <Link key={key} to={`/symbols/${it.symbol}`} className="hover:text-accent">
-              {content}
-            </Link>
-          );
-        })}
+        {looped.map((it, idx) => (
+          <TickerChip
+            key={`${it.symbol}-${idx}`}
+            symbol={it.symbol}
+            quote={it.quote}
+            inGame={inGame}
+            onSelect={setSelectedSymbol}
+          />
+        ))}
       </div>
     </div>
   );
 }
+
+const TickerChip = memo(function TickerChip({
+  symbol,
+  quote,
+  inGame,
+  onSelect,
+}: {
+  symbol: string;
+  quote: IndexQuote | undefined;
+  inGame: boolean;
+  onSelect: (symbol: string) => void;
+}) {
+  const change = quote?.changePct ?? 0;
+  const last = quote?.last;
+  const content = (
+    <span className="flex items-baseline gap-1">
+      <span className="text-text">{symbol}</span>
+      {last !== undefined ? (
+        <>
+          <span className="text-muted">{PRICE_FMT.format(last)}</span>
+          <span className={change >= 0 ? 'text-gain' : 'text-loss'}>
+            {change >= 0 ? '+' : '−'}
+            {Math.abs(change).toFixed(2)}%
+          </span>
+        </>
+      ) : null}
+    </span>
+  );
+  if (inGame) {
+    return (
+      <button type="button" onClick={() => onSelect(symbol)} className="hover:text-accent">
+        {content}
+      </button>
+    );
+  }
+  return (
+    <Link to={`/symbols/${symbol}`} className="hover:text-accent">
+      {content}
+    </Link>
+  );
+});

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { memo, useEffect, useMemo, useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -105,28 +105,32 @@ export function TradeOrderDialog({
   const debouncedQuery = useDebouncedValue(searchQuery, 250);
   const search = useStockSearch(debouncedQuery);
   const details = useStockDetails(activeSymbol ?? '');
-  const quote = useStockQuote(activeSymbol ?? '');
   const livePrice = useLiveStore((s) =>
     activeSymbol ? s.pricesBySymbol[activeSymbol]?.price : undefined,
   );
+  // Skip the REST /stocks/:symbol fetch when a live WebSocket tick already
+  // gives us the current price. We still fetch when livePrice is undefined
+  // (e.g. dialog opens before the first tick lands).
+  const quote = useStockQuote(activeSymbol ?? '', { enabled: livePrice === undefined });
   const portfolio = usePortfolio(gameId);
   const place = usePlaceTrade(gameId);
 
   const displayPrice = livePrice ?? quote.data?.price ?? details.data?.price;
 
-  // Prefill price fields with the current quote when the user switches into
-  // a price type that needs one and the field is empty.
-  useEffect(() => {
+  // Helper: pick a sane default for the conditional price field that this
+  // price type needs. Invoked from the pill onClick so the field is filled
+  // synchronously rather than via a post-render effect (which would re-run
+  // every time the user typed in the field).
+  const pickPriceType = (next: PriceType) => {
+    setPriceType(next);
     if (displayPrice === undefined || displayPrice <= 0) return;
     const fmt = (n: number) => n.toFixed(2);
-    if (priceType === 'LIMIT' && limitPrice === '') {
-      setLimitPrice(fmt(displayPrice));
-    } else if (priceType === 'STOP' && stopPrice === '') {
-      setStopPrice(fmt(displayPrice));
-    } else if (priceType === 'STOP_LIMIT') {
+    if (next === 'LIMIT' && limitPrice === '') setLimitPrice(fmt(displayPrice));
+    else if (next === 'STOP' && stopPrice === '') setStopPrice(fmt(displayPrice));
+    else if (next === 'STOP_LIMIT') {
       if (limitPrice === '') setLimitPrice(fmt(displayPrice));
       if (stopPrice === '') setStopPrice(fmt(displayPrice));
-    } else if (priceType === 'BRACKET') {
+    } else if (next === 'BRACKET') {
       const isBuySide = direction === 'buy';
       const offset = displayPrice * 0.05;
       const tpDefault = isBuySide ? displayPrice + offset : displayPrice - offset;
@@ -134,7 +138,7 @@ export function TradeOrderDialog({
       if (takeProfitPrice === '') setTakeProfitPrice(fmt(tpDefault));
       if (stopLossPrice === '') setStopLossPrice(fmt(slDefault));
     }
-  }, [priceType, displayPrice, direction, limitPrice, stopPrice, takeProfitPrice, stopLossPrice]);
+  };
 
   const cashBalance = portfolio.data?.cashBalance ?? 0;
   const totalPortfolioValue = portfolio.data?.totalValue ?? 0;
@@ -217,10 +221,15 @@ export function TradeOrderDialog({
   const showBracket = priceType === 'BRACKET';
   const limitPriceRequired = priceType === 'LIMIT' || priceType === 'STOP_LIMIT';
 
-  const parsedLimit = parseFloat(limitPrice);
-  const parsedStop = parseFloat(stopPrice);
-  const parsedTP = parseFloat(takeProfitPrice);
-  const parsedSL = parseFloat(stopLossPrice);
+  const { parsedLimit, parsedStop, parsedTP, parsedSL } = useMemo(
+    () => ({
+      parsedLimit: parseFloat(limitPrice),
+      parsedStop: parseFloat(stopPrice),
+      parsedTP: parseFloat(takeProfitPrice),
+      parsedSL: parseFloat(stopLossPrice),
+    }),
+    [limitPrice, stopPrice, takeProfitPrice, stopLossPrice],
+  );
 
   const priceFieldsValid = (() => {
     if (priceType === 'MARKET') return true;
@@ -545,7 +554,7 @@ export function TradeOrderDialog({
                 {/* Type pill row */}
                 <PillRow label="Type">
                   {enabledTypes.map((t) => (
-                    <Pill key={t} active={priceType === t} onClick={() => setPriceType(t)}>
+                    <Pill key={t} active={priceType === t} onClick={() => pickPriceType(t)}>
                       {labelForType(t)}
                     </Pill>
                   ))}
@@ -713,7 +722,7 @@ function labelForType(t: PriceType): string {
   }
 }
 
-function DirectionTabs({
+const DirectionTabs = memo(function DirectionTabs({
   value,
   onChange,
   allowShortSelling,
@@ -760,9 +769,9 @@ function DirectionTabs({
       })}
     </div>
   );
-}
+});
 
-function PillRow({
+const PillRow = memo(function PillRow({
   label,
   children,
   disabled = false,
@@ -796,9 +805,9 @@ function PillRow({
       )}
     </div>
   );
-}
+});
 
-function Pill({
+const Pill = memo(function Pill({
   active,
   disabled = false,
   onClick,
@@ -827,9 +836,9 @@ function Pill({
       {children}
     </button>
   );
-}
+});
 
-function PriceField({
+const PriceField = memo(function PriceField({
   id,
   label,
   value,
@@ -865,7 +874,7 @@ function PriceField({
       )}
     </div>
   );
-}
+});
 
 function DeltaVsLast({ last, value }: { last: number; value: number }) {
   const diff = value - last;
@@ -887,7 +896,7 @@ function DeltaVsLast({ last, value }: { last: number; value: number }) {
   );
 }
 
-function QuickFill({
+const QuickFill = memo(function QuickFill({
   label,
   onClick,
   disabled,
@@ -906,9 +915,9 @@ function QuickFill({
       {label}
     </button>
   );
-}
+});
 
-function AllocationBar({
+const AllocationBar = memo(function AllocationBar({
   positionPct,
   cashPct,
   otherPct,
@@ -956,9 +965,9 @@ function AllocationBar({
       </div>
     </div>
   );
-}
+});
 
-function PositionCompare({
+const PositionCompare = memo(function PositionCompare({
   current,
   after,
 }: {
@@ -972,9 +981,9 @@ function PositionCompare({
       <PositionCard label="After" snapshot={after} highlight />
     </div>
   );
-}
+});
 
-function PositionCard({
+const PositionCard = memo(function PositionCard({
   label,
   snapshot,
   highlight = false,
@@ -1008,9 +1017,9 @@ function PositionCard({
       <CompareRow label="Value" value={formatUSD(snapshot.value)} bold />
     </div>
   );
-}
+});
 
-function CompareRow({
+const CompareRow = memo(function CompareRow({
   label,
   value,
   bold = false,
@@ -1025,9 +1034,9 @@ function CompareRow({
       <span className={cn('font-mono tabular-nums', bold && 'font-semibold')}>{value}</span>
     </div>
   );
-}
+});
 
-function SummaryRow({
+const SummaryRow = memo(function SummaryRow({
   label,
   value,
   bold,
@@ -1050,7 +1059,7 @@ function SummaryRow({
       <span className="tabular-nums">{value}</span>
     </div>
   );
-}
+});
 
 function extractApiMessage(err: unknown): string {
   if (err instanceof ApiError) {

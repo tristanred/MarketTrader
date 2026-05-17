@@ -65,4 +65,37 @@ describe('SymbolSearch', () => {
     await user.click(row);
     expect(onSelect).toHaveBeenCalledWith('AAPL');
   });
+
+  it('selects the first result when Enter is pressed without arrow keys', async () => {
+    const user = userEvent.setup();
+    const onSelect = vi.fn();
+    render(wrap(<SymbolSearch onSelect={onSelect} />));
+    const input = screen.getByRole('searchbox');
+    await user.type(input, 'msft');
+    await screen.findByText('AAPL');
+    await user.keyboard('{Enter}');
+    expect(onSelect).toHaveBeenCalledWith('AAPL');
+  });
+
+  it('moves the active row with ArrowDown and selects with Enter', async () => {
+    const user = userEvent.setup();
+    const onSelect = vi.fn();
+    render(wrap(<SymbolSearch onSelect={onSelect} />));
+    const input = screen.getByRole('searchbox');
+    await user.type(input, 'a');
+    await screen.findByText('AAPL');
+    await user.keyboard('{ArrowDown}{Enter}');
+    expect(onSelect).toHaveBeenCalledWith('NVDA');
+  });
+
+  it('wraps the active row with ArrowUp from the first row', async () => {
+    const user = userEvent.setup();
+    const onSelect = vi.fn();
+    render(wrap(<SymbolSearch onSelect={onSelect} />));
+    const input = screen.getByRole('searchbox');
+    await user.type(input, 'a');
+    await screen.findByText('AAPL');
+    await user.keyboard('{ArrowUp}{Enter}');
+    expect(onSelect).toHaveBeenCalledWith('NVDA');
+  });
 });

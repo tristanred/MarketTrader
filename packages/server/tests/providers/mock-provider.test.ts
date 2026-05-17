@@ -77,6 +77,7 @@ describe('MockProvider.getDetails', () => {
     const p = new MockProvider();
     const d = await p.getDetails('AAPL');
     expect(d.symbol).toBe('AAPL');
+    expect(d.price).toBe(MOCK_PRICE_MAP.AAPL);
     expect(d.companyName).toBeDefined();
     expect(d.exchange).toBeDefined();
     expect(typeof d.fetchedAt).toBe('string');

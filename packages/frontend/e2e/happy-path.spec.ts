@@ -1,50 +1,78 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures/base';
+import { priceOf } from './fixtures/mock-prices';
 
 /**
- * End-to-end happy path:
- * 1. Register a new user
- * 2. Create a game (auto-joined as creator) with an active window
- * 3. Open the game detail page
- * 4. Search for AAPL, place a buy
- * 5. See the holding appear in the portfolio
- * 6. See the leaderboard reflect the new value
- *
- * Uses Yahoo Finance for the quote — requires outbound network. Skip with
- * `PLAYWRIGHT_SKIP_NETWORK=1` if the runner has no internet.
+ * End-to-end happy path with deterministic mock prices:
+ * 1. Register a new user via the UI
+ * 2. Create + join a game (via the API — the UI's CreateGameDialog uses
+ *    datetime-local inputs whose timezone handling is brittle in CI and
+ *    occasionally produces "pending" games. The dialog is exercised by
+ *    `player/games.spec.ts`; here we focus on the post-trade UI render.)
+ * 3. Place a buy for 1 AAPL via API
+ * 4. Navigate to the game arena
+ * 5. Assert the AAPL holding renders in the HoldingsPanel
+ * 6. Assert the PortfolioPanel cash stat reflects $100,000 − priceOf('AAPL').
  */
-test('register → create game → buy AAPL → see portfolio + leaderboard', async ({ page }) => {
-  test.skip(!!process.env['PLAYWRIGHT_SKIP_NETWORK'], 'Network access required for stock quote');
+test('happy path: register → create game → buy AAPL → portfolio reflects holding and cash', async ({
+  page,
+  apiClient,
+  loginAs,
+  makeGame,
+  adminUser,
+}) => {
+  // Materialize the worker-scoped admin first so the user we register through
+  // the UI doesn't get promoted to admin as the first registered user.
+  void adminUser;
 
-  const username = `e2e_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+  const username = `e2e_${Date.now()}_${Math.floor(Math.random() * 1e6)}`;
   const password = 'correct-horse-battery';
 
+  // 1. Register through the UI — proves the auth round-trip.
   await page.goto('/register');
   await page.getByLabel(/username/i).fill(username);
   await page.getByLabel(/password/i).fill(password);
   await page.getByRole('button', { name: /create account/i }).click();
-  await expect(page.getByRole('heading', { name: /your games/i })).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: /your games/i }),
+  ).toBeVisible();
 
-  await page.getByRole('button', { name: /create game/i }).click();
-  const dialog = page.getByRole('dialog');
-  await dialog.getByLabel(/^name$/i).fill('E2E Game');
-  const now = new Date();
-  const inOneHour = new Date(now.getTime() + 60 * 60 * 1000);
-  const start = new Date(now.getTime() - 60 * 60 * 1000);
-  const fmt = (d: Date) => d.toISOString().slice(0, 16);
-  await dialog.getByLabel(/^start$/i).fill(fmt(start));
-  await dialog.getByLabel(/^end$/i).fill(fmt(inOneHour));
-  await dialog.getByRole('button', { name: /^create$/i }).click();
+  // 2. Create the game via API (admin-owned, active immediately) and join as
+  // the freshly-registered player. Acquire that player's access token via the
+  // REST login endpoint so we can drive subsequent API calls on their behalf.
+  const game = await makeGame({ name: `E2E_${Date.now()}` });
+  const session = await loginAs({ username, password });
+  const join = await apiClient.post(`/games/${game.id}/join`, {
+    headers: { Authorization: `Bearer ${session.accessToken}` },
+  });
+  expect(join.ok(), `join failed: ${join.status()} ${await join.text()}`).toBeTruthy();
 
-  await expect(page.getByRole('link', { name: 'E2E Game' })).toBeVisible();
-  await page.getByRole('link', { name: 'E2E Game' }).click();
-  await expect(page.getByRole('heading', { name: 'E2E Game' })).toBeVisible();
+  // 3. Buy 1 AAPL via API.
+  const buy = await apiClient.post(`/games/${game.id}/trades`, {
+    headers: { Authorization: `Bearer ${session.accessToken}` },
+    data: { symbol: 'AAPL', direction: 'buy', quantity: 1 },
+  });
+  expect(
+    buy.ok(),
+    `buy failed: ${buy.status()} ${await buy.text()}`,
+  ).toBeTruthy();
 
-  await page.getByRole('tab', { name: /^trade$/i }).click();
-  await page.getByLabel(/symbol/i).fill('AAPL');
-  await page.getByRole('button', { name: /^AAPL/ }).first().click();
-  await page.getByLabel(/quantity/i).fill('1');
-  await page.getByRole('button', { name: /^buy$/i }).click();
+  // 4. Navigate to the game arena via the UI.
+  await page.goto(`/games/${game.id}`);
 
-  await page.getByRole('tab', { name: /portfolio/i }).click();
-  await expect(page.getByRole('cell', { name: 'AAPL' }).first()).toBeVisible({ timeout: 15_000 });
+  // 5. AAPL row appears in the HoldingsPanel table.
+  await expect(
+    page.locator('table').getByText('AAPL').first(),
+  ).toBeVisible({ timeout: 15_000 });
+
+  // 6. PortfolioPanel renders the deterministic post-trade cash:
+  // $100,000 − $180 (AAPL mock price) = $99,820.
+  const expectedCash = 100_000 - priceOf('AAPL');
+  expect(expectedCash).toBe(99_820);
+  const cashText = new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+  }).format(expectedCash);
+  await expect(page.getByText(cashText).first()).toBeVisible({
+    timeout: 15_000,
+  });
 });

@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { validateProductionEnv, type ProductionEnvCheck } from '../src/env.js';
 
 const valid: ProductionEnvCheck = {
@@ -58,5 +58,20 @@ describe('validateProductionEnv', () => {
         SENTRY_DSN: '',
       }),
     ).toThrow(/JWT_SECRET[\s\S]*CORS_ORIGIN[\s\S]*DATABASE_URL[\s\S]*ALPACA_API_KEY/);
+  });
+});
+
+describe('env', () => {
+  beforeEach(() => {
+    delete process.env.STOCK_PROVIDER;
+    vi.resetModules();
+  });
+
+  it('accepts STOCK_PROVIDER=mock', async () => {
+    process.env.STOCK_PROVIDER = 'mock';
+    process.env.DATABASE_URL = ':memory:';
+    process.env.JWT_SECRET = 'x'.repeat(32);
+    const mod = await import('../src/env.js');
+    expect(mod.env.STOCK_PROVIDER).toBe('mock');
   });
 });

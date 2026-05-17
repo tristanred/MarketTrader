@@ -35,7 +35,7 @@ describe('MockProvider.searchSymbols', () => {
   it('returns matches by case-insensitive prefix', async () => {
     const p = new MockProvider();
     const r = await p.searchSymbols('aa');
-    expect(r.map((x) => x.symbol)).toContain('AAPL');
+    expect(r.map((x: { symbol: string }) => x.symbol)).toContain('AAPL');
   });
 
   it('returns at most 10 results', async () => {

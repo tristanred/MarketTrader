@@ -23,21 +23,39 @@ function buildWsUrl(gameId: string, token: string): string {
  */
 export function useGameSocket(gameId: string, symbols: string[]): void {
   const token = useAuthStore((s) => s.token);
-  const applyPriceUpdate = useLiveStore((s) => s.applyPriceUpdate);
-  const applyLeaderboard = useLiveStore((s) => s.applyLeaderboard);
-  const applyTradeExecuted = useLiveStore((s) => s.applyTradeExecuted);
-  const reset = useLiveStore((s) => s.reset);
   const qc = useQueryClient();
+  // Stash qc + store setters in refs so the primary effect can depend only on
+  // [gameId, token]. The setters happen to be stable today (Zustand v5), but
+  // a stable dep list keeps the WS from ever tearing down on incidental
+  // provider remounts.
+  const qcRef = useRef(qc);
+  qcRef.current = qc;
 
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectRef = useRef<{ attempt: number; timer: number | null }>({ attempt: 0, timer: null });
   const symbolsRef = useRef<string[]>(symbols);
   symbolsRef.current = symbols;
+  // Tracks the last sorted-joined symbol set actually sent on this socket.
+  // Reset on socket open so the first subscribe after a reconnect always fires.
+  const lastSentKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!gameId || !token) return;
     let cancelled = false;
-    reset();
+    useLiveStore.getState().reset();
+
+    const sendSubscribe = (ws: WebSocket, syms: string[]) => {
+      if (syms.length === 0) return;
+      const key = [...syms].sort().join(',');
+      if (lastSentKeyRef.current === key) return;
+      const msg: WsClientEvent = { event: 'subscribe', data: { symbols: syms } };
+      try {
+        ws.send(JSON.stringify(msg));
+        lastSentKeyRef.current = key;
+      } catch {
+        // socket may have just closed
+      }
+    };
 
     const connect = () => {
       if (cancelled) return;
@@ -46,37 +64,29 @@ export function useGameSocket(gameId: string, symbols: string[]): void {
 
       ws.onopen = () => {
         reconnectRef.current.attempt = 0;
-        if (symbolsRef.current.length > 0) {
-          const msg: WsClientEvent = {
-            event: 'subscribe',
-            data: { symbols: symbolsRef.current },
-          };
-          try {
-            ws.send(JSON.stringify(msg));
-          } catch {
-            // ignore — socket may have just closed
-          }
-        }
+        lastSentKeyRef.current = null;
+        sendSubscribe(ws, symbolsRef.current);
       };
 
       ws.onmessage = (evt) => {
         try {
           const parsed = JSON.parse(evt.data) as WsServerEvent;
-          if (parsed.event === 'price_update') applyPriceUpdate(parsed.data);
-          else if (parsed.event === 'leaderboard_update') applyLeaderboard(parsed.data);
+          const store = useLiveStore.getState();
+          if (parsed.event === 'price_update') store.applyPriceUpdate(parsed.data);
+          else if (parsed.event === 'leaderboard_update') store.applyLeaderboard(parsed.data);
           else if (parsed.event === 'trade_executed') {
-            applyTradeExecuted(parsed.data);
+            store.applyTradeExecuted(parsed.data);
             // A working order may have just flipped to executed — refresh.
-            void qc.invalidateQueries({ queryKey: tradeKeys.working(gameId) });
-            void qc.invalidateQueries({ queryKey: tradeKeys.pending(gameId) });
+            void qcRef.current.invalidateQueries({ queryKey: tradeKeys.working(gameId) });
+            void qcRef.current.invalidateQueries({ queryKey: tradeKeys.pending(gameId) });
           } else if (parsed.event === 'order_placed') {
-            void qc.invalidateQueries({ queryKey: tradeKeys.working(gameId) });
+            void qcRef.current.invalidateQueries({ queryKey: tradeKeys.working(gameId) });
           } else if (parsed.event === 'order_cancelled') {
-            void qc.invalidateQueries({ queryKey: tradeKeys.working(gameId) });
-            void qc.invalidateQueries({ queryKey: tradeKeys.pending(gameId) });
-            void qc.invalidateQueries({ queryKey: tradeKeys.portfolio(gameId) });
+            void qcRef.current.invalidateQueries({ queryKey: tradeKeys.working(gameId) });
+            void qcRef.current.invalidateQueries({ queryKey: tradeKeys.pending(gameId) });
+            void qcRef.current.invalidateQueries({ queryKey: tradeKeys.portfolio(gameId) });
           } else if (parsed.event === 'order_triggered') {
-            void qc.invalidateQueries({ queryKey: tradeKeys.working(gameId) });
+            void qcRef.current.invalidateQueries({ queryKey: tradeKeys.working(gameId) });
             toast({
               title: 'Stop triggered',
               description: `Order ${parsed.data.tradeId.slice(0, 8)} now resting as a limit at ${parsed.data.triggerPrice.toFixed(2)}.`,
@@ -121,16 +131,22 @@ export function useGameSocket(gameId: string, symbols: string[]): void {
         }
         wsRef.current = null;
       }
+      lastSentKeyRef.current = null;
     };
-  }, [gameId, token, applyPriceUpdate, applyLeaderboard, applyTradeExecuted, reset, qc]);
+  }, [gameId, token]);
 
+  // When the parent's symbol list changes, push a fresh subscribe — but only
+  // when the sorted set actually differs from what was last sent.
   useEffect(() => {
     const ws = wsRef.current;
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
     if (symbols.length === 0) return;
+    const key = [...symbols].sort().join(',');
+    if (lastSentKeyRef.current === key) return;
     const msg: WsClientEvent = { event: 'subscribe', data: { symbols } };
     try {
       ws.send(JSON.stringify(msg));
+      lastSentKeyRef.current = key;
     } catch {
       // ignore
     }

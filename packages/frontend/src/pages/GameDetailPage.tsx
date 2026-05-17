@@ -59,9 +59,17 @@ export function GameDetailPage() {
   const watchlistSymbols = activeWatchlist?.symbols ?? [];
   const activeWatchlistId = activeWatchlist?.id ?? null;
 
-  const subscribedSymbols = useMemo(
-    () => [...new Set([...heldSymbols, ...watchlistSymbols])],
+  // Derive a stable key from the sorted symbol set, then materialize the
+  // array from that key. Same key → same array identity → the WS effect
+  // doesn't re-fire subscribe just because portfolio.data was refetched
+  // into an equal-but-new object.
+  const subscribedKey = useMemo(
+    () => [...new Set([...heldSymbols, ...watchlistSymbols])].sort().join(','),
     [heldSymbols, watchlistSymbols],
+  );
+  const subscribedSymbols = useMemo(
+    () => (subscribedKey ? subscribedKey.split(',') : []),
+    [subscribedKey],
   );
   useGameSocket(gameId, subscribedSymbols);
 
@@ -151,7 +159,6 @@ function ArenaBody({
       s.closeQuote();
     };
   }, []);
-  const livePrices = useLiveStore((s) => s.pricesBySymbol);
   const user = useAuthStore((s) => s.user);
   const quoteDialog = useQuoteDialogStore();
   const openTradeOrder = useQuoteDialogStore((s) => s.openTradeOrder);
@@ -160,39 +167,33 @@ function ArenaBody({
   const tradeOrderSymbol = useQuoteDialogStore((s) => s.tradeOrderSymbol);
   const tradeOrderDirection = useQuoteDialogStore((s) => s.tradeOrderDirection);
 
-  // Watchlist quote rows: read from the live store. Omit price fields when
-  // no live tick has arrived yet — exactOptionalPropertyTypes forbids
-  // assigning `undefined` to an optional numeric field.
-  const watchlistRows = watchlistSymbols.map((symbol) => {
-    const tick = livePrices[symbol];
-    return tick
-      ? { symbol, last: tick.price, changePct: tick.changePercent }
-      : { symbol };
-  });
+  // Watchlist rows: only the symbol; each row subscribes to its own live
+  // price inside <WatchlistPanel> so a tick on one symbol doesn't
+  // re-render its siblings.
+  const watchlistRows = watchlistSymbols.map((symbol) => ({ symbol }));
 
-  // Holdings rows: enrich with the live price when available.
-  // Company names are not yet returned by the holdings endpoint; the name
-  // column is left empty until the server provides them.
+  // Holdings rows: ship the server-side last-known price + P&L as a baseline.
+  // <HoldingsPanel> rows subscribe to their own symbol's live tick to override
+  // marketValue/pnlPct on the fly without re-rendering siblings.
   const holdingRows =
-    portfolioData?.holdings.map((h) => {
-      const tick = livePrices[h.symbol];
-      const price = tick?.price ?? h.currentPrice;
-      return {
-        symbol: h.symbol,
-        // Server doesn't return company names with holdings yet; fall back to
-        // the symbol so the Name column isn't a row of empty cells.
-        name: h.symbol,
-        quantity: h.quantity,
-        avgCost: h.avgCostBasis,
-        marketValue: price * h.quantity,
-        pnlPct: h.avgCostBasis > 0 ? ((price - h.avgCostBasis) / h.avgCostBasis) * 100 : 0,
-      };
-    }) ?? [];
+    portfolioData?.holdings.map((h) => ({
+      symbol: h.symbol,
+      // Server doesn't return company names with holdings yet; fall back to
+      // the symbol so the Name column isn't a row of empty cells.
+      name: h.symbol,
+      quantity: h.quantity,
+      avgCost: h.avgCostBasis,
+      marketValue: h.currentPrice * h.quantity,
+      pnlPct:
+        h.avgCostBasis > 0 ? ((h.currentPrice - h.avgCostBasis) / h.avgCostBasis) * 100 : 0,
+    })) ?? [];
 
-  // Selected-symbol quote: pull from live store first, else fetch fresh.
-  // Fields are kept in a typed struct so the spread into QuoteHeader is
-  // explicit — exactOptionalPropertyTypes rejects `prop: undefined`.
-  const liveTick = selectedSymbol ? livePrices[selectedSymbol] : undefined;
+  // Selected-symbol quote: subscribe only to the selected symbol's live tick
+  // (not the whole prices map) so ticks on other symbols don't re-render
+  // the parent. Fall back to a fresh REST quote when no live tick exists.
+  const liveTick = useLiveStore((s) =>
+    selectedSymbol ? s.pricesBySymbol[selectedSymbol] : undefined,
+  );
   const freshQuote = useStockQuote(selectedSymbol ?? '');
   const quoteData:
     | { last: number; changeAbs: number; changePct: number }

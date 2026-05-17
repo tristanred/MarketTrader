@@ -1,4 +1,6 @@
+import { memo } from 'react';
 import { Panel, PanelHeader, PanelBody } from '@/components/panel';
+import { useLiveStore } from '@/stores/liveStore';
 import { cn } from '@/lib/utils';
 
 export interface HoldingRow {
@@ -6,7 +8,9 @@ export interface HoldingRow {
   name: string;
   quantity: number;
   avgCost: number;
+  /** Last-known market value (qty × price). Live ticks override this per-row. */
   marketValue: number;
+  /** Last-known P&L percent. Live ticks override this per-row. */
   pnlPct: number;
 }
 
@@ -16,10 +20,15 @@ export interface HoldingsPanelProps {
   className?: string;
 }
 
+const PRICE_FMT = new Intl.NumberFormat('en-US', {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+
 /**
- * Center-column holdings table. Click a row → onSelect(symbol). The arena
- * (phase 3c) wires onSelect to SelectedSymbolContext so the chart and quote
- * header update in place.
+ * Center-column holdings table. Each row is a memoized sub-component that
+ * subscribes to its own symbol's live tick — so a price update for one
+ * holding doesn't re-render the others.
  */
 export function HoldingsPanel({ rows, onSelect, className }: HoldingsPanelProps) {
   return (
@@ -42,23 +51,11 @@ export function HoldingsPanel({ rows, onSelect, className }: HoldingsPanelProps)
             </thead>
             <tbody>
               {rows.map((r) => (
-                <tr
+                <HoldingRowItem
                   key={r.symbol}
-                  onClick={onSelect ? () => onSelect(r.symbol) : undefined}
-                  className={cn(
-                    'border-b border-hairline last:border-0',
-                    onSelect && 'cursor-pointer hover:bg-hairline',
-                  )}
-                >
-                  <td className="py-1 font-mono text-accent">{r.symbol}</td>
-                  <td className="truncate pr-2 text-muted">{r.name}</td>
-                  <td className="text-right font-mono">{r.quantity}</td>
-                  <td className="text-right font-mono text-muted">{fmt(r.avgCost)}</td>
-                  <td className="text-right font-mono">{fmt(r.marketValue)}</td>
-                  <td className={cn('text-right font-mono', r.pnlPct >= 0 ? 'text-gain' : 'text-loss')}>
-                    {fmtPct(r.pnlPct)}
-                  </td>
-                </tr>
+                  row={r}
+                  {...(onSelect ? { onSelect } : {})}
+                />
               ))}
             </tbody>
           </table>
@@ -68,9 +65,42 @@ export function HoldingsPanel({ rows, onSelect, className }: HoldingsPanelProps)
   );
 }
 
-function fmt(n: number): string {
-  return new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
-}
+const HoldingRowItem = memo(function HoldingRowItem({
+  row,
+  onSelect,
+}: {
+  row: HoldingRow;
+  onSelect?: (symbol: string) => void;
+}) {
+  // Subscribe to the live price *for this symbol only*. Returns a primitive
+  // so Object.is equality means the row re-renders only when its own price
+  // changes — ticks on other symbols don't re-render this row.
+  const livePrice = useLiveStore((s) => s.pricesBySymbol[row.symbol]?.price);
+  const marketValue = livePrice !== undefined ? livePrice * row.quantity : row.marketValue;
+  const pnlPct =
+    livePrice !== undefined && row.avgCost > 0
+      ? ((livePrice - row.avgCost) / row.avgCost) * 100
+      : row.pnlPct;
+
+  return (
+    <tr
+      onClick={onSelect ? () => onSelect(row.symbol) : undefined}
+      className={cn(
+        'border-b border-hairline last:border-0',
+        onSelect && 'cursor-pointer hover:bg-hairline',
+      )}
+    >
+      <td className="py-1 font-mono text-accent">{row.symbol}</td>
+      <td className="truncate pr-2 text-muted">{row.name}</td>
+      <td className="text-right font-mono">{row.quantity}</td>
+      <td className="text-right font-mono text-muted">{PRICE_FMT.format(row.avgCost)}</td>
+      <td className="text-right font-mono">{PRICE_FMT.format(marketValue)}</td>
+      <td className={cn('text-right font-mono', pnlPct >= 0 ? 'text-gain' : 'text-loss')}>
+        {fmtPct(pnlPct)}
+      </td>
+    </tr>
+  );
+});
 
 function fmtPct(n: number): string {
   const sign = n > 0 ? '+' : n < 0 ? '−' : '';

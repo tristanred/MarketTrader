@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 import { Panel, PanelHeader, PanelBody } from '@/components/panel';
 import { SymbolSearch } from '@/components/search';
 import {
@@ -7,12 +7,15 @@ import {
   useDeleteWatchlist,
   useRenameWatchlist,
 } from '@/api/watchlists';
+import { useLiveStore } from '@/stores/liveStore';
 import { cn } from '@/lib/utils';
 import type { Watchlist } from '@markettrader/shared';
 
 export interface WatchlistRow {
   symbol: string;
+  /** Optional last-known price; live ticks override per-row. */
   last?: number;
+  /** Optional last-known change percent; live ticks override per-row. */
   changePct?: number;
 }
 
@@ -380,31 +383,11 @@ export function WatchlistPanel({
         ) : (
           <ul className="space-y-0.5">
             {rows.map((r) => (
-              <li key={r.symbol}>
-                <button
-                  type="button"
-                  onClick={onSelect ? () => onSelect(r.symbol) : undefined}
-                  disabled={!onSelect}
-                  className={cn(
-                    'grid w-full grid-cols-[1fr_auto_auto] items-baseline gap-2 py-1 text-xs',
-                    onSelect && 'cursor-pointer hover:bg-hairline',
-                    !onSelect && 'cursor-default',
-                  )}
-                >
-                  <span className="font-mono text-accent text-left">{r.symbol}</span>
-                  <span className="font-mono text-text">{r.last !== undefined ? fmt(r.last) : '—'}</span>
-                  <span
-                    className={cn(
-                      'font-mono',
-                      r.changePct === undefined && 'text-muted',
-                      r.changePct !== undefined && r.changePct >= 0 && 'text-gain',
-                      r.changePct !== undefined && r.changePct < 0 && 'text-loss',
-                    )}
-                  >
-                    {r.changePct === undefined ? '—' : fmtPct(r.changePct)}
-                  </span>
-                </button>
-              </li>
+              <WatchRowItem
+                key={r.symbol}
+                row={r}
+                {...(onSelect ? { onSelect } : {})}
+              />
             ))}
           </ul>
         )}
@@ -412,6 +395,48 @@ export function WatchlistPanel({
     </Panel>
   );
 }
+
+const WatchRowItem = memo(function WatchRowItem({
+  row,
+  onSelect,
+}: {
+  row: WatchlistRow;
+  onSelect?: (symbol: string) => void;
+}) {
+  // Live ticks for this specific symbol — primitives so Object.is equality
+  // means siblings don't re-render when another row's price moves.
+  const livePrice = useLiveStore((s) => s.pricesBySymbol[row.symbol]?.price);
+  const liveChangePct = useLiveStore((s) => s.pricesBySymbol[row.symbol]?.changePercent);
+  const last = livePrice ?? row.last;
+  const changePct = liveChangePct ?? row.changePct;
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={onSelect ? () => onSelect(row.symbol) : undefined}
+        disabled={!onSelect}
+        className={cn(
+          'grid w-full grid-cols-[1fr_auto_auto] items-baseline gap-2 py-1 text-xs',
+          onSelect && 'cursor-pointer hover:bg-hairline',
+          !onSelect && 'cursor-default',
+        )}
+      >
+        <span className="font-mono text-accent text-left">{row.symbol}</span>
+        <span className="font-mono text-text">{last !== undefined ? fmt(last) : '—'}</span>
+        <span
+          className={cn(
+            'font-mono',
+            changePct === undefined && 'text-muted',
+            changePct !== undefined && changePct >= 0 && 'text-gain',
+            changePct !== undefined && changePct < 0 && 'text-loss',
+          )}
+        >
+          {changePct === undefined ? '—' : fmtPct(changePct)}
+        </span>
+      </button>
+    </li>
+  );
+});
 
 function PencilIcon() {
   return (

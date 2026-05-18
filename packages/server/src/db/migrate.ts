@@ -13,13 +13,8 @@ const migrationsRoot = path.resolve(__dir, '..', '..', 'drizzle');
  * the migrator records applied migrations in its own `__drizzle_migrations`
  * table and skips already-applied entries. Picks the migration folder
  * matching the configured dialect.
- *
- * Skipped when `DATABASE_URL` is `:memory:` (tests provide their own DB and
- * run `migrate` directly).
  */
 export async function runMigrations(): Promise<void> {
-  if (env.DATABASE_URL === ':memory:') return;
-
   if (env.DATABASE_URL.startsWith('postgres')) {
     const { migrate } = await import('drizzle-orm/postgres-js/migrator');
     await migrate(db as never, {

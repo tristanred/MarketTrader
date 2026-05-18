@@ -13,7 +13,11 @@ import * as sqliteSchema from './schema.sqlite.js';
 type AppDb = LibSQLDatabase<typeof sqliteSchema>;
 
 function normalizeLibsqlUrl(url: string): string {
-  if (url === ':memory:') return url;
+  // Plain `:memory:` opens a fresh in-memory DB per libsql connection, so a
+  // process that opens more than one (e.g. the migrator on boot and request
+  // handlers later) sees an empty schema on subsequent connects. Rewrite to
+  // the shared-cache form so all connections in this process see the same DB.
+  if (url === ':memory:') return 'file::memory:?cache=shared';
   if (url.startsWith('file:') || url.startsWith('libsql:') || url.startsWith('http:') || url.startsWith('https:') || url.startsWith('ws:') || url.startsWith('wss:')) {
     return url;
   }

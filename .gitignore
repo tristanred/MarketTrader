@@ -8,3 +8,5 @@ coverage/
 .turbo/
 .playwright-mcp/
 .superpowers/
+playwright-report/
+test-results/

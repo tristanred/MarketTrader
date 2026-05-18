@@ -11,7 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from '@/components/ui/toast';
 import { ConfirmDialog } from '@/components/admin/ConfirmDialog';
-import { toastApiError } from '@/components/admin/adminErrors';
+import { toastApiError } from '@/lib/toastApiError';
 import { TickerTapeEditor } from '@/components/admin/TickerTapeEditor';
 
 export function AdminSystemPage() {

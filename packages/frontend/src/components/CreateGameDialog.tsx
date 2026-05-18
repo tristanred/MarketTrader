@@ -16,6 +16,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useCreateGame } from '@/api/games';
 import { toast } from '@/components/ui/toast';
+import { toastApiError } from '@/lib/toastApiError';
 
 const schema = z
   .object({
@@ -81,8 +82,8 @@ export function CreateGameDialog() {
       toast({ title: 'Game created', variant: 'success' });
       setOpen(false);
       form.reset(defaults);
-    } catch {
-      toast({ title: 'Failed to create game', variant: 'destructive' });
+    } catch (err) {
+      toastApiError(err, 'Failed to create game');
     }
   });
 

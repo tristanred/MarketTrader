@@ -34,4 +34,12 @@ describe('SymbolSearchPanel', () => {
     await user.click(screen.getByRole('searchbox'));
     expect(useCommandKStore.getState().open).toBe(true);
   });
+
+  it('opens the cmd+k overlay when the input is focused via keyboard tab', async () => {
+    const user = userEvent.setup();
+    render(wrap(<SymbolSearchPanel onSelect={() => {}} />));
+    await user.tab();
+    expect(screen.getByRole('searchbox')).toHaveFocus();
+    expect(useCommandKStore.getState().open).toBe(true);
+  });
 });

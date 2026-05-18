@@ -9,6 +9,7 @@ import { toast } from '@/components/ui/toast';
 import { ApiError } from '@/lib/api';
 import { cn, formatUSD, SYMBOL_RE } from '@/lib/utils';
 import { projectAllocation, projectPositionAfter, type PositionSnapshot } from '@/lib/positionMath';
+import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import type { OrderType, PlaceTradeRequest, TradeDirection } from '@markettrader/shared';
 
 type Term = 'DAY' | 'GTC';
@@ -41,15 +42,6 @@ interface TradeOrderDialogProps {
   allowGTC: boolean;
   onOpenChange: (open: boolean) => void;
   onSeeQuote: (symbol: string) => void;
-}
-
-function useDebouncedValue<T>(value: T, delayMs: number): T {
-  const [v, setV] = useState(value);
-  useEffect(() => {
-    const t = window.setTimeout(() => setV(value), delayMs);
-    return () => window.clearTimeout(t);
-  }, [value, delayMs]);
-  return v;
 }
 
 const COMMISSION_USD = 0;
@@ -157,7 +149,11 @@ export function TradeOrderDialog({
   const maxQuantity = useMemo(() => {
     if (isBuy) {
       if (!displayPrice || displayPrice <= 0) return 0;
-      return Math.max(0, Math.floor(cashBalance / displayPrice));
+      // Reserve the commission from the available cash so the suggested
+      // max never overspends once a non-zero commission lands.
+      const spendable = cashBalance - COMMISSION_USD;
+      if (spendable <= 0) return 0;
+      return Math.max(0, Math.floor(spendable / displayPrice));
     }
     return heldQuantity;
   }, [isBuy, displayPrice, cashBalance, heldQuantity]);

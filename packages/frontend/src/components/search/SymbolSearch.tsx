@@ -1,16 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Search } from 'lucide-react';
 import { useStockSearch } from '@/api/stocks';
+import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { cn } from '@/lib/utils';
-
-function useDebouncedValue<T>(value: T, delayMs: number): T {
-  const [v, setV] = useState(value);
-  useEffect(() => {
-    const t = window.setTimeout(() => setV(value), delayMs);
-    return () => window.clearTimeout(t);
-  }, [value, delayMs]);
-  return v;
-}
 
 export interface SymbolSearchProps {
   /** Called with the canonical (uppercase) symbol when a result is chosen. */
@@ -21,6 +13,10 @@ export interface SymbolSearchProps {
   hintKbd?: boolean;
   /** Auto-focus the input on mount (used by the overlay). */
   autoFocus?: boolean;
+  /** Optional handler fired on input focus — used by panels that want to open an overlay. */
+  onInputFocus?: () => void;
+  /** Optional handler fired on input click. */
+  onInputClick?: () => void;
   className?: string;
 }
 
@@ -40,6 +36,8 @@ export function SymbolSearch({
   placeholder = 'Search symbol...',
   hintKbd = false,
   autoFocus = false,
+  onInputFocus,
+  onInputClick,
   className,
 }: SymbolSearchProps) {
   const [query, setQuery] = useState('');
@@ -110,6 +108,8 @@ export function SymbolSearch({
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={handleKeyDown}
+          onFocus={onInputFocus}
+          onClick={onInputClick}
           className="h-8 w-full rounded-chip border border-hairline-strong bg-panel pl-7 pr-12 font-mono text-xs text-text placeholder:text-muted focus:outline-none focus:ring-1 focus:ring-accent"
           autoComplete="off"
         />

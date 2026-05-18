@@ -19,7 +19,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from '@/components/ui/toast';
 import { ConfirmDialog } from '@/components/admin/ConfirmDialog';
-import { toastApiError } from '@/components/admin/adminErrors';
+import { toastApiError } from '@/lib/toastApiError';
 
 const editSchema = z.object({
   username: z.string().min(3).max(30),
@@ -55,7 +55,9 @@ export function AdminUserDetailPage() {
   });
   useEffect(() => {
     if (user) editForm.reset({ username: user.username, disabled: user.disabled });
-  }, [user?.id]);
+    // Re-sync on every refetch (not just when the id changes) so an
+    // out-of-band update to the same user lands in the form.
+  }, [user, editForm]);
   const passwordForm = useForm<PasswordValues>({
     resolver: zodResolver(passwordSchema),
     defaultValues: { newPassword: '' },

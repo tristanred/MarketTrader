@@ -31,7 +31,7 @@ import {
 } from '@/components/ui/dialog';
 import { toast } from '@/components/ui/toast';
 import { ConfirmDialog } from '@/components/admin/ConfirmDialog';
-import { toastApiError } from '@/components/admin/adminErrors';
+import { toastApiError } from '@/lib/toastApiError';
 import type { AdminTradeRow } from '@markettrader/shared';
 
 const PAGE_SIZE = 50;

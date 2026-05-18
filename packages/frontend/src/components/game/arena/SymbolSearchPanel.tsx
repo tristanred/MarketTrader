@@ -19,13 +19,13 @@ export function SymbolSearchPanel({ onSelect, className }: SymbolSearchPanelProp
   return (
     <Panel className={className}>
       <PanelBody>
-        <div onClick={openOverlay} onFocus={openOverlay}>
-          <SymbolSearch
-            placeholder="▸ Search symbol..."
-            hintKbd
-            onSelect={onSelect}
-          />
-        </div>
+        <SymbolSearch
+          placeholder="▸ Search symbol..."
+          hintKbd
+          onSelect={onSelect}
+          onInputFocus={openOverlay}
+          onInputClick={openOverlay}
+        />
       </PanelBody>
     </Panel>
   );

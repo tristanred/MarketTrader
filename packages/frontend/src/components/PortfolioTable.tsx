@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { useLiveStore } from '@/stores/liveStore';
 import { usePortfolio } from '@/api/trades';
 import {
@@ -46,15 +47,21 @@ export function PortfolioTable({ gameId }: { gameId: string }) {
 
   const { cashBalance, holdings, totalValue: snapshotTotal } = portfolio.data;
 
-  // Recompute totalValue with live prices when available.
-  const enriched = holdings.map((h) => {
-    const live = livePrices[h.symbol];
-    const currentPrice = live ? live.price : h.currentPrice;
-    const marketValue = currentPrice * h.quantity;
-    const pnl = (currentPrice - h.avgCostBasis) * h.quantity;
-    const pnlPct = h.avgCostBasis !== 0 ? ((currentPrice - h.avgCostBasis) / h.avgCostBasis) * 100 : 0;
-    return { ...h, currentPrice, marketValue, unrealizedPnL: pnl, unrealizedPnLPercent: pnlPct };
-  });
+  // Recompute totalValue with live prices when available. Memoized so the
+  // hot WS-tick path doesn't rebuild every row on each render of the parent.
+  const enriched = useMemo(
+    () =>
+      holdings.map((h) => {
+        const live = livePrices[h.symbol];
+        const currentPrice = live ? live.price : h.currentPrice;
+        const marketValue = currentPrice * h.quantity;
+        const pnl = (currentPrice - h.avgCostBasis) * h.quantity;
+        const pnlPct =
+          h.avgCostBasis !== 0 ? ((currentPrice - h.avgCostBasis) / h.avgCostBasis) * 100 : 0;
+        return { ...h, currentPrice, marketValue, unrealizedPnL: pnl, unrealizedPnLPercent: pnlPct };
+      }),
+    [holdings, livePrices],
+  );
 
   const liveTotal = enriched.length
     ? cashBalance + enriched.reduce((s, h) => s + h.marketValue, 0)
@@ -102,8 +109,8 @@ export function PortfolioTable({ gameId }: { gameId: string }) {
                   <TableCell
                     className={cn(
                       'text-right tabular-nums',
-                      h.unrealizedPnL >= 0.005 && 'text-green-600 dark:text-green-400',
-                      h.unrealizedPnL <= -0.005 && 'text-destructive',
+                      h.unrealizedPnL >= 0.005 && 'text-gain',
+                      h.unrealizedPnL <= -0.005 && 'text-loss',
                     )}
                   >
                     {formatUSD(h.unrealizedPnL)} ({formatPct(h.unrealizedPnLPercent)})

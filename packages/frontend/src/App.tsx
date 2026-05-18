@@ -1,4 +1,4 @@
-import { lazy, Suspense } from 'react';
+import { Component, lazy, Suspense, type ReactNode } from 'react';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { queryClient } from '@/lib/queryClient';
@@ -8,7 +8,32 @@ import { AdminRoute } from '@/components/admin/AdminRoute';
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { Toaster } from '@/components/ui/toast';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Button } from '@/components/ui/button';
 import { useAuthStore } from '@/stores/authStore';
+
+// Catches errors from lazy-loaded route chunks (e.g. failed network during
+// a deploy) so the user sees a recoverable reload prompt instead of a blank
+// page. Suspense alone handles loading, not errors.
+class RouteErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean }> {
+  override state = { hasError: false };
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+  override render() {
+    if (this.state.hasError) {
+      return (
+        <main className="mx-auto max-w-md p-6 text-center space-y-3">
+          <h1 className="text-lg font-semibold">Couldn't load this page.</h1>
+          <p className="text-sm text-muted-foreground">
+            The page failed to load — this usually means we just deployed a new version.
+          </p>
+          <Button onClick={() => window.location.reload()}>Reload</Button>
+        </main>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 const LoginPage = lazy(() => import('@/pages/LoginPage').then((m) => ({ default: m.LoginPage })));
 const RegisterPage = lazy(() =>
@@ -64,8 +89,9 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
-        <Suspense fallback={<RouteLoader />}>
-          <Routes>
+        <RouteErrorBoundary>
+          <Suspense fallback={<RouteLoader />}>
+            <Routes>
             <Route
               path="/login"
               element={
@@ -111,9 +137,10 @@ function App() {
                 <Route path="audit" element={<AdminAuditPage />} />
               </Route>
             </Route>
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        </Suspense>
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </Suspense>
+        </RouteErrorBoundary>
       </BrowserRouter>
       <Toaster />
     </QueryClientProvider>

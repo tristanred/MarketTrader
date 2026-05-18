@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useStockDetails, useStockSearch } from '@/api/stocks';
@@ -6,6 +6,7 @@ import { useMarketStatus } from '@/api/market-status';
 import { useLiveStore } from '@/stores/liveStore';
 import { usePortfolio } from '@/api/trades';
 import { ChartCanvas, RANGES } from '@/components/StockChart';
+import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { cn, formatCompactNumber, formatPct, formatUSD } from '@/lib/utils';
 import type { StockHistoryRange } from '@markettrader/shared';
 
@@ -18,15 +19,6 @@ export interface QuoteInfoProps {
   onTradeClick?: (symbol: string) => void;
   showSearch?: boolean;
   showTradeButton?: boolean;
-}
-
-function useDebouncedValue<T>(value: T, delayMs: number): T {
-  const [v, setV] = useState(value);
-  useEffect(() => {
-    const t = window.setTimeout(() => setV(value), delayMs);
-    return () => window.clearTimeout(t);
-  }, [value, delayMs]);
-  return v;
 }
 
 /**

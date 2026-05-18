@@ -1,5 +1,16 @@
+import { z } from 'zod';
 import { useAuthStore } from '@/stores/authStore';
 import type { AuthResponse } from '@markettrader/shared';
+
+const authUserSchema = z.object({
+  id: z.string().min(1),
+  username: z.string().min(1),
+  groups: z.array(z.string()),
+});
+const authResponseSchema = z.object({
+  token: z.string().min(1),
+  user: authUserSchema,
+});
 
 /** Base URL prefix for backend requests; Vite proxies /api → http://localhost:3000. */
 export const API_BASE = '/api';
@@ -68,6 +79,12 @@ export async function apiFetch<T = unknown>(path: string, options: ApiOptions = 
   return (await res.json()) as T;
 }
 
+// Singleflight: collapse concurrent refresh attempts (e.g. several requests
+// firing 401 in parallel) into one network call. Without this, only the first
+// /auth/refresh rotates the cookie successfully; the rest get 401 back and
+// clear the auth store, signing the user out mid-session.
+let inflightRefresh: Promise<boolean> | null = null;
+
 /**
  * Attempt to refresh the access token using the HttpOnly refresh cookie.
  * On success, writes the new token into the auth store and returns true.
@@ -78,9 +95,18 @@ export async function apiFetch<T = unknown>(path: string, options: ApiOptions = 
  * and clears the store. Force re-auth is safer than silently impersonating
  * someone else.
  *
- * On failure, clears the auth store and returns false.
+ * On failure, clears the auth store and returns false. Concurrent callers
+ * share a single in-flight refresh.
  */
 export async function tryRefresh(): Promise<boolean> {
+  if (inflightRefresh) return inflightRefresh;
+  inflightRefresh = doRefresh().finally(() => {
+    inflightRefresh = null;
+  });
+  return inflightRefresh;
+}
+
+async function doRefresh(): Promise<boolean> {
   try {
     const res = await fetch(`${API_BASE}/auth/refresh`, {
       method: 'POST',
@@ -90,7 +116,12 @@ export async function tryRefresh(): Promise<boolean> {
       useAuthStore.getState().clear();
       return false;
     }
-    const data = (await res.json()) as AuthResponse;
+    const parsed = authResponseSchema.safeParse(await res.json());
+    if (!parsed.success) {
+      useAuthStore.getState().clear();
+      return false;
+    }
+    const data: AuthResponse = parsed.data;
     const previousUser = useAuthStore.getState().user;
     if (previousUser && previousUser.id !== data.user.id) {
       useAuthStore.getState().clear();

@@ -23,7 +23,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from '@/components/ui/toast';
 import { ConfirmDialog } from '@/components/admin/ConfirmDialog';
-import { toastApiError } from '@/components/admin/adminErrors';
+import { toastApiError } from '@/lib/toastApiError';
 import { formatUSD, formatPct, cn } from '@/lib/utils';
 
 export function AdminPortfoliosPage() {
@@ -305,11 +305,16 @@ function PlayerEditor({
       toast({ title: 'Quantity delta must be a non-zero integer', variant: 'destructive' });
       return;
     }
+    const cb = costBasis ? Number(costBasis) : undefined;
+    if (cb !== undefined && (!Number.isFinite(cb) || cb <= 0)) {
+      toast({ title: 'Cost basis must be a positive number', variant: 'destructive' });
+      return;
+    }
     try {
       await adjustHoldings.mutateAsync({
         symbol: symbol.toUpperCase(),
         quantityDelta: delta,
-        ...(costBasis ? { costBasis: Number(costBasis) } : {}),
+        ...(cb !== undefined && { costBasis: cb }),
         ...(holdingsReason ? { reason: holdingsReason } : {}),
       });
       toast({ title: 'Holdings adjusted', variant: 'success' });

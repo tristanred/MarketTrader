@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { useTradeHistory } from '@/api/trades';
 import { SymbolButton } from '@/components/SymbolButton';
+import { DirectionLabel } from '@/components/DirectionLabel';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Table,
@@ -11,7 +12,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
-import { formatUSD, cn } from '@/lib/utils';
+import { formatUSD } from '@/lib/utils';
 import type { Trade, TradeDirection } from '@markettrader/shared';
 
 interface TradeGroup {
@@ -92,13 +93,8 @@ export function TradeHistoryTable({ gameId }: { gameId: string }) {
                 <TableRow key={g.key}>
                   <TableCell>{formatWhen(g)}</TableCell>
                   <TableCell><SymbolButton symbol={g.symbol} /></TableCell>
-                  <TableCell
-                    className={cn(
-                      'uppercase text-xs font-semibold',
-                      g.direction === 'buy' ? 'text-green-600 dark:text-green-400' : 'text-destructive',
-                    )}
-                  >
-                    {g.direction}
+                  <TableCell>
+                    <DirectionLabel direction={g.direction} />
                   </TableCell>
                   <TableCell className="text-right">
                     {g.totalQuantity}

@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { SymbolButton } from '@/components/SymbolButton';
+import { DirectionLabel } from '@/components/DirectionLabel';
 import {
   usePendingTrades,
   useCancelPendingTrade,
@@ -254,13 +255,8 @@ function OrderRow({
       <td className="px-2 py-2 font-medium">
         <SymbolButton symbol={group.symbol} />
       </td>
-      <td
-        className={cn(
-          'px-2 py-2 uppercase text-xs font-semibold',
-          group.direction === 'buy' ? 'text-green-600' : 'text-red-600',
-        )}
-      >
-        {group.direction}
+      <td className="px-2 py-2">
+        <DirectionLabel direction={group.direction} />
       </td>
       <td className="px-2 py-2 tabular-nums">
         {group.totalQuantity}

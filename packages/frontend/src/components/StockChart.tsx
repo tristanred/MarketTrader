@@ -17,6 +17,11 @@ export const RANGES: { key: StockHistoryRange; label: string }[] = [
   { key: '1y', label: '1Y' },
 ];
 
+// Reused empty array so consumers don't allocate per-render. `useLiveStore(...)`
+// returns `undefined` when no ticks exist for the selected symbol; falling
+// back to a stable reference keeps render output Object.is-equal.
+const EMPTY_TICKS: PriceTick[] = [];
+
 
 /**
  * Renders a price line chart for one held symbol. Historical bars are fetched
@@ -91,9 +96,21 @@ export function ChartCanvas({ symbol, range }: { symbol: string; range: StockHis
   const seriesRef = useRef<ISeriesApi<'Line'> | null>(null);
   const history = useStockHistory(symbol, range);
   const liveHistory = useLiveStore((s) => s.historyBySymbol[symbol]);
-  const ticks: PriceTick[] = useMemo(() => liveHistory ?? [], [liveHistory]);
+  const ticks: PriceTick[] = liveHistory ?? EMPTY_TICKS;
   const marketStatus = useMarketStatus();
   const marketOpen = marketStatus.data?.state === 'REGULAR';
+
+  // Map historical bars once per `history.data` change, not on every tick.
+  // Ticks change every ~5s while market open; the historical portion doesn't.
+  const historicalSeries = useMemo(() => {
+    const bars = history.data?.bars ?? [];
+    return bars.map((b) => ({ time: b.time, value: b.close }));
+  }, [history.data]);
+  const lastHistTime =
+    historicalSeries.length > 0 ? historicalSeries[historicalSeries.length - 1]!.time : 0;
+  // Track the last tick time we appended via `series.update()` so we know
+  // when to extend vs. when to redraw the whole series.
+  const lastAppendedTimeRef = useRef<number>(0);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -123,35 +140,34 @@ export function ChartCanvas({ symbol, range }: { symbol: string; range: StockHis
     };
   }, []);
 
+  // Full redraw whenever the historical bars change (symbol/range change or
+  // initial load). After this runs, lastAppendedTimeRef is reset and the
+  // per-tick effect takes over.
   useEffect(() => {
     const series = seriesRef.current;
     if (!series) return;
-    const historicalBars = history.data?.bars ?? [];
-    const lastBar = historicalBars[historicalBars.length - 1];
-    const lastHistTime = lastBar ? lastBar.time : 0;
+    // Outside REGULAR hours we freeze at the last historical bar — see the
+    // per-tick effect for the rationale.
+    series.setData(
+      historicalSeries.map((p) => ({ time: p.time as never, value: p.value })),
+    );
+    lastAppendedTimeRef.current = lastHistTime;
+  }, [historicalSeries, lastHistTime]);
 
-    // After the market closes the upstream just echoes the last regular close
-    // every poll; appending those ticks produces a meaningless horizontal line
-    // that keeps growing. Outside REGULAR hours the chart freezes at the last
-    // historical bar — the latest price still updates elsewhere via the quote.
-    const liveTicks = marketOpen
-      ? ticks.filter((t) => t.time > lastHistTime).map((t) => ({ time: t.time, value: t.price }))
-      : [];
-
-    const merged = [...historicalBars.map((b) => ({ time: b.time, value: b.close })), ...liveTicks];
-
-    const seen = new Set<number>();
-    const deduped = merged
-      .filter((p) => {
-        if (seen.has(p.time)) return false;
-        seen.add(p.time);
-        return true;
-      })
-      .sort((a, b) => a.time - b.time)
-      .map((p) => ({ time: p.time as never, value: p.value }));
-
-    series.setData(deduped);
-  }, [history.data, ticks, marketOpen]);
+  // Incremental append on each new tick. lightweight-charts' `update()` only
+  // touches the tail of the series, avoiding a full reflow.
+  // After the market closes the upstream just echoes the last regular close
+  // every poll; appending those ticks produces a meaningless horizontal line
+  // that keeps growing. Outside REGULAR hours we ignore live ticks entirely.
+  useEffect(() => {
+    const series = seriesRef.current;
+    if (!series || !marketOpen) return;
+    for (const t of ticks) {
+      if (t.time <= lastAppendedTimeRef.current) continue;
+      series.update({ time: t.time as never, value: t.price });
+      lastAppendedTimeRef.current = t.time;
+    }
+  }, [ticks, marketOpen]);
 
   // Fit the time axis once per (symbol, range) load — not on every tick, which
   // would reflow the whole chart and look jumpy.

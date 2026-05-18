@@ -74,10 +74,11 @@ describe('tryRefresh identity check', () => {
   });
 
   function stubRefresh(user: { id: string; username: string; groups?: string[] }) {
+    const body = { token: 'fresh-token', user: { groups: [], ...user } };
     vi.stubGlobal(
       'fetch',
       vi.fn(async () =>
-        new Response(JSON.stringify({ token: 'fresh-token', user }), {
+        new Response(JSON.stringify(body), {
           status: 200,
           headers: { 'content-type': 'application/json' },
         }),
@@ -110,5 +111,35 @@ describe('tryRefresh identity check', () => {
     expect(ok).toBe(false);
     expect(useAuthStore.getState().token).toBeNull();
     expect(useAuthStore.getState().user).toBeNull();
+  });
+
+  it('rejects and clears the store when the refresh response shape is invalid', async () => {
+    useAuthStore.setState({ token: 'old', user: { id: 'u1', username: 'alice', groups: [] }, ready: true });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(JSON.stringify({ token: 'fresh', user: { id: 42 } }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+      ),
+    );
+    const ok = await tryRefresh();
+    expect(ok).toBe(false);
+    expect(useAuthStore.getState().token).toBeNull();
+  });
+
+  it('singleflights concurrent refreshes', async () => {
+    useAuthStore.setState({ token: 'old', user: { id: 'u1', username: 'alice', groups: [] }, ready: true });
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify({ token: 'fresh-token', user: { id: 'u1', username: 'alice', groups: [] } }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const [a, b, c] = await Promise.all([tryRefresh(), tryRefresh(), tryRefresh()]);
+    expect(a && b && c).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

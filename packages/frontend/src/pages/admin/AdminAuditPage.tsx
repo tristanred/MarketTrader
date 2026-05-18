@@ -14,6 +14,15 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 
 const PAGE_SIZE = 50;
+
+// Parse a datetime-local input value. Returns the ISO string when the value
+// is a valid date, or undefined when blank/invalid — so an in-progress or
+// garbage entry doesn't throw RangeError out of .toISOString().
+function toIsoOrUndefined(local: string): string | undefined {
+  if (!local) return undefined;
+  const d = new Date(local);
+  return Number.isNaN(d.getTime()) ? undefined : d.toISOString();
+}
 const TARGET_TYPES: ('all' | AdminAuditTargetType)[] = [
   'all',
   'user',
@@ -33,6 +42,8 @@ export function AdminAuditPage() {
   const [offset, setOffset] = useState(0);
   const [expanded, setExpanded] = useState<string | null>(null);
 
+  const sinceIso = toIsoOrUndefined(since);
+  const untilIso = toIsoOrUndefined(until);
   const query: AdminAuditQuery = {
     limit: PAGE_SIZE,
     offset,
@@ -40,8 +51,8 @@ export function AdminAuditPage() {
     ...(targetType !== 'all' ? { targetType } : {}),
     ...(targetId ? { targetId } : {}),
     ...(adminUserId ? { adminUserId } : {}),
-    ...(since ? { since: new Date(since).toISOString() } : {}),
-    ...(until ? { until: new Date(until).toISOString() } : {}),
+    ...(sinceIso ? { since: sinceIso } : {}),
+    ...(untilIso ? { until: untilIso } : {}),
   };
   const { data, isLoading, isError } = useAdminAudit(query);
 

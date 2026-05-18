@@ -1,164 +1,305 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
-import { useGame, useJoinGame } from '@/api/games';
-import { usePortfolio } from '@/api/trades';
+import { useGame } from '@/api/games';
+import { usePortfolio, useTradeHistory } from '@/api/trades';
 import { useGameSocket } from '@/hooks/useGameSocket';
-import { SymbolSearchCard } from '@/components/SymbolSearchCard';
-import { TradeActivityCard } from '@/components/TradeActivityCard';
-import { YourProfileCard } from '@/components/game/YourProfileCard';
-import { AboutThisGameCard } from '@/components/game/AboutThisGameCard';
-import { GameLeaderboardCard } from '@/components/game/GameLeaderboardCard';
-import { HoldingsSidebar } from '@/components/game/HoldingsSidebar';
-import { QuoteInfoDialog } from '@/components/QuoteInfoDialog';
-import { TradeOrderDialog } from '@/components/TradeOrderDialog';
-import { useQuoteDialogStore } from '@/stores/quoteDialogStore';
+import { useLiveStore } from '@/stores/liveStore';
 import { useWatchlists } from '@/api/watchlists';
 import { useWatchlistUiStore } from '@/stores/watchlistUiStore';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
+import { useStockQuote } from '@/api/stocks';
+import { useAuthStore } from '@/stores/authStore';
+import { useCommandKStore } from '@/stores/commandKStore';
+import {
+  useSelectedSymbol,
+  useSetSelectedSymbol,
+} from '@/contexts/SelectedSymbolContext';
+import {
+  LeaderboardPanel,
+  PortfolioPanel,
+  QuoteHeader,
+  ChartPanel,
+  OhlcStrip,
+  HoldingsPanel,
+  WatchlistPanel,
+  ActivityPanel,
+  SymbolSearchPanel,
+} from '@/components/game/arena';
+import { JoinGameCard } from '@/components/game/arena/JoinGameCard';
+import { TradeOrderDialog } from '@/components/TradeOrderDialog';
+import { QuoteInfoDialog } from '@/components/QuoteInfoDialog';
+import { useQuoteDialogStore } from '@/stores/quoteDialogStore';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ApiError } from '@/lib/api';
-import { toast } from '@/components/ui/toast';
+import type { ActivityEvent } from '@/components/game/arena';
+import type { TradeDirection } from '@markettrader/shared';
 
 /**
- * Returns a human-readable phrase describing how long until `endIso`, e.g.
- * "Game ends in 16 days", "Game ends in 4 hours", "Game has ended".
+ * Game-detail "arena" page: three-pane grid composed of nine panels with a
+ * single SelectedSymbolContext driving the center column. Holdings, watchlist,
+ * search, and the ticker tape all write to the context; QuoteHeader and
+ * ChartPanel read from it.
  */
-function timeUntilEnd(status: string | undefined, endIso: string | undefined): string {
-  if (!endIso) return '';
-  if (status === 'ended') return 'Game has ended';
-  const now = Date.now();
-  const end = new Date(endIso).getTime();
-  const ms = end - now;
-  if (ms <= 0) return 'Game has ended';
-  const days = Math.floor(ms / 86_400_000);
-  if (days >= 1) return `Game ends in ${days} day${days === 1 ? '' : 's'}`;
-  const hours = Math.floor(ms / 3_600_000);
-  if (hours >= 1) return `Game ends in ${hours} hour${hours === 1 ? '' : 's'}`;
-  const minutes = Math.max(1, Math.floor(ms / 60_000));
-  return `Game ends in ${minutes} minute${minutes === 1 ? '' : 's'}`;
-}
-
 export function GameDetailPage() {
   const { gameId = '' } = useParams<{ gameId: string }>();
   const game = useGame(gameId);
   const portfolio = usePortfolio(gameId);
-  const join = useJoinGame();
-  const quoteDialog = useQuoteDialogStore();
+  const watchlists = useWatchlists();
+  const selectedWatchlistId = useWatchlistUiStore((s) => s.selectedWatchlistId);
+  const tradeHistory = useTradeHistory(gameId);
 
   const heldSymbols = useMemo(
     () => portfolio.data?.holdings.map((h) => h.symbol) ?? [],
     [portfolio.data],
   );
 
-  // Include the currently-selected watchlist's symbols in the WS subscription
-  // so watchlist rows tick live alongside Holdings.
-  const watchlists = useWatchlists();
-  const selectedWatchlistId = useWatchlistUiStore((s) => s.selectedWatchlistId);
-  const watchlistSymbols = useMemo(() => {
+  const activeWatchlist = useMemo(() => {
     const lists = watchlists.data ?? [];
-    const active = lists.find((l) => l.id === selectedWatchlistId) ?? lists[0];
-    return active?.symbols ?? [];
+    return lists.find((l) => l.id === selectedWatchlistId) ?? lists[0] ?? null;
   }, [watchlists.data, selectedWatchlistId]);
+  const watchlistSymbols = activeWatchlist?.symbols ?? [];
+  const activeWatchlistId = activeWatchlist?.id ?? null;
 
-  const subscribedSymbols = useMemo(
-    () => [...new Set([...heldSymbols, ...watchlistSymbols])],
+  // Derive a stable key from the sorted symbol set, then materialize the
+  // array from that key. Same key → same array identity → the WS effect
+  // doesn't re-fire subscribe just because portfolio.data was refetched
+  // into an equal-but-new object.
+  const subscribedKey = useMemo(
+    () => [...new Set([...heldSymbols, ...watchlistSymbols])].sort().join(','),
     [heldSymbols, watchlistSymbols],
+  );
+  const subscribedSymbols = useMemo(
+    () => (subscribedKey ? subscribedKey.split(',') : []),
+    [subscribedKey],
   );
   useGameSocket(gameId, subscribedSymbols);
 
-  // 404 => either game doesn't exist or caller isn't a member.
+  const initialSymbol = heldSymbols[0] ?? null;
+
+  // 404 → join prompt
   if (game.isError && game.error instanceof ApiError && game.error.status === 404) {
+    return <JoinGameCard gameId={gameId} onJoined={() => game.refetch()} />;
+  }
+
+  if (game.isLoading || !game.data) {
     return (
-      <main className="mx-auto max-w-3xl p-6">
-        <Card>
-            <CardHeader>
-              <CardTitle>Join this game?</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <p className="text-sm text-muted-foreground">
-                You're not a member yet, or this game doesn't exist. Try joining — if the ID is invalid
-                you'll get an error.
-              </p>
-              <Button
-                onClick={async () => {
-                  try {
-                    await join.mutateAsync(gameId);
-                    toast({ title: 'Joined', variant: 'success' });
-                    game.refetch();
-                  } catch (err) {
-                    const msg =
-                      err instanceof ApiError
-                        ? typeof err.body === 'object' && err.body && 'error' in err.body
-                          ? String((err.body as { error: unknown }).error)
-                          : `Error ${err.status}`
-                        : 'Failed to join';
-                    toast({ title: 'Could not join', description: msg, variant: 'destructive' });
-                  }
-                }}
-                disabled={join.isPending}
-              >
-                {join.isPending ? 'Joining…' : 'Join game'}
-              </Button>
-            </CardContent>
-          </Card>
+      <main className="mx-auto max-w-6xl p-6">
+        <Skeleton className="h-7 w-48" />
       </main>
     );
   }
 
   return (
-    <>
-      <main className="mx-auto max-w-6xl p-4 sm:p-6 space-y-4">
-        <div className="flex flex-wrap items-baseline justify-between gap-2 border-b pb-3">
-          {game.isLoading ? (
-            <Skeleton className="h-7 w-48" />
-          ) : (
-            <h1 className="text-2xl font-semibold tracking-tight">{game.data?.name}</h1>
-          )}
-          <p className="text-sm text-muted-foreground">
-            {timeUntilEnd(game.data?.status, game.data?.endDate)}
-          </p>
-        </div>
+    <ArenaBody
+      gameId={gameId}
+      gameData={game.data}
+      portfolioData={portfolio.data}
+      watchlistSymbols={watchlistSymbols}
+      watchlists={watchlists.data ?? []}
+      activeWatchlistId={activeWatchlistId}
+      tradeHistory={tradeHistory.data ?? []}
+      initialSymbol={initialSymbol}
+    />
+  );
+}
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          <div className="lg:col-span-2 space-y-4">
-            <SymbolSearchCard />
-            <YourProfileCard gameId={gameId} />
-            <AboutThisGameCard gameId={gameId} />
-            <GameLeaderboardCard gameId={gameId} />
-            <TradeActivityCard gameId={gameId} />
-          </div>
+interface ArenaBodyProps {
+  gameId: string;
+  gameData: NonNullable<ReturnType<typeof useGame>['data']>;
+  portfolioData: ReturnType<typeof usePortfolio>['data'];
+  watchlistSymbols: string[];
+  watchlists: NonNullable<ReturnType<typeof useWatchlists>['data']>;
+  activeWatchlistId: string | null;
+  tradeHistory: NonNullable<ReturnType<typeof useTradeHistory>['data']>;
+  /** Symbol to seed the arena's center column when nothing is selected yet. */
+  initialSymbol: string | null;
+}
 
-          <aside className="space-y-4">
-            <HoldingsSidebar gameId={gameId} />
-          </aside>
-        </div>
-      </main>
+function ArenaBody({
+  gameId,
+  gameData,
+  portfolioData,
+  watchlistSymbols,
+  watchlists,
+  activeWatchlistId,
+  tradeHistory,
+  initialSymbol,
+}: ArenaBodyProps) {
+  const setSelectedSymbol = useSetSelectedSymbol();
+  const selectedSymbol = useSelectedSymbol();
+
+  // The SelectedSymbolProvider lives at shell level so global chrome can
+  // pivot the arena. Seed the context from the user's first holding (or
+  // whatever the caller passed) once data is available. Reacting to
+  // `initialSymbol` matters because portfolio.data resolves after the
+  // first paint — a mount-only effect would fire before holdings load.
+  // Once the user picks anything explicitly, `selectedSymbol` is set
+  // and the guard stops this effect from clobbering their choice.
+  useEffect(() => {
+    if (selectedSymbol === null && initialSymbol) {
+      setSelectedSymbol(initialSymbol);
+    }
+  }, [selectedSymbol, initialSymbol, setSelectedSymbol]);
+
+  // Register the arena's selected-symbol setter with the cmd+k store so the
+  // AppShell-level overlay can write back into our context instead of
+  // navigating to /symbols/:symbol. Clean up on unmount.
+  useEffect(() => {
+    const { setArenaSelect } = useCommandKStore.getState();
+    setArenaSelect(setSelectedSymbol);
+    return () => setArenaSelect(null);
+  }, [setSelectedSymbol]);
+
+  // The trade/quote dialogs live in a global store so chrome (ticker tape,
+  // status strip) can open them. Reset on unmount so a leftover open state
+  // doesn't follow the user to another game or out of arena.
+  useEffect(() => {
+    return () => {
+      const s = useQuoteDialogStore.getState();
+      s.closeTradeOrder();
+      s.closeQuote();
+    };
+  }, []);
+  const user = useAuthStore((s) => s.user);
+  const quoteDialog = useQuoteDialogStore();
+  const openTradeOrder = useQuoteDialogStore((s) => s.openTradeOrder);
+  const closeTradeOrder = useQuoteDialogStore((s) => s.closeTradeOrder);
+  const tradeOrderOpen = useQuoteDialogStore((s) => s.tradeOrderOpen);
+  const tradeOrderSymbol = useQuoteDialogStore((s) => s.tradeOrderSymbol);
+  const tradeOrderDirection = useQuoteDialogStore((s) => s.tradeOrderDirection);
+
+  // Watchlist rows: only the symbol; each row subscribes to its own live
+  // price inside <WatchlistPanel> so a tick on one symbol doesn't
+  // re-render its siblings.
+  const watchlistRows = watchlistSymbols.map((symbol) => ({ symbol }));
+
+  // Holdings rows: ship the server-side last-known price + P&L as a baseline.
+  // <HoldingsPanel> rows subscribe to their own symbol's live tick to override
+  // marketValue/pnlPct on the fly without re-rendering siblings.
+  const holdingRows =
+    portfolioData?.holdings.map((h) => ({
+      symbol: h.symbol,
+      // Server doesn't return company names with holdings yet; fall back to
+      // the symbol so the Name column isn't a row of empty cells.
+      name: h.symbol,
+      quantity: h.quantity,
+      avgCost: h.avgCostBasis,
+      marketValue: h.currentPrice * h.quantity,
+      pnlPct:
+        h.avgCostBasis > 0 ? ((h.currentPrice - h.avgCostBasis) / h.avgCostBasis) * 100 : 0,
+    })) ?? [];
+
+  // Selected-symbol quote: subscribe only to the selected symbol's live tick
+  // (not the whole prices map) so ticks on other symbols don't re-render
+  // the parent. Fall back to a fresh REST quote when no live tick exists.
+  const liveTick = useLiveStore((s) =>
+    selectedSymbol ? s.pricesBySymbol[selectedSymbol] : undefined,
+  );
+  const freshQuote = useStockQuote(selectedSymbol ?? '');
+  const quoteData:
+    | { last: number; changeAbs: number; changePct: number }
+    | undefined = liveTick
+    ? {
+        last: liveTick.price,
+        changeAbs: liveTick.change ?? 0,
+        changePct: liveTick.changePercent ?? 0,
+      }
+    : freshQuote.data
+      ? {
+          last: freshQuote.data.price,
+          changeAbs: freshQuote.data.change,
+          changePct: freshQuote.data.changePercent,
+        }
+      : undefined;
+
+  // Trade history → activity feed events. The GET /games/:id/trades endpoint
+  // returns only executed Trade rows, so no status filtering is needed.
+  const activityEvents: ActivityEvent[] = tradeHistory
+    .slice(0, 25)
+    .map((t) => ({
+      at: t.executedAt,
+      // History endpoint returns this user's trades only for now.
+      player: user?.username ?? '—',
+      direction: t.direction,
+      quantity: t.quantity,
+      symbol: t.symbol,
+      price: t.price,
+    }));
+
+  const myPortfolioValue = portfolioData?.totalValue ?? gameData.startingBalance;
+  const myCash = portfolioData?.cashBalance ?? 0;
+  const myPnlPct =
+    gameData.startingBalance > 0
+      ? ((myPortfolioValue - gameData.startingBalance) / gameData.startingBalance) * 100
+      : 0;
+  // Day P&L not available from server yet.
+  const myDayPnl = 0;
+
+  return (
+    <main className="mx-auto grid w-full max-w-[1600px] grid-cols-1 gap-2 p-3 lg:grid-cols-[280px_1fr_300px]">
+      <aside className="flex flex-col gap-2">
+        <LeaderboardPanel entries={gameData.leaderboard ?? []} startingBalance={gameData.startingBalance} />
+        <PortfolioPanel value={myPortfolioValue} pnlPct={myPnlPct} cash={myCash} dayPnl={myDayPnl} />
+      </aside>
+
+      <section className="flex flex-col gap-2">
+        <QuoteHeader
+          symbol={selectedSymbol}
+          {...quoteData}
+          {...(selectedSymbol
+            ? { onTrade: (direction: TradeDirection) => openTradeOrder(selectedSymbol, direction) }
+            : {})}
+        />
+        <ChartPanel symbol={selectedSymbol} />
+        <OhlcStrip />
+        <HoldingsPanel rows={holdingRows} onSelect={setSelectedSymbol} />
+      </section>
+
+      <aside className="flex flex-col gap-2">
+        <SymbolSearchPanel onSelect={setSelectedSymbol} />
+        <WatchlistPanel
+          rows={watchlistRows}
+          onSelect={setSelectedSymbol}
+          watchlistId={activeWatchlistId}
+          lists={watchlists}
+          onSelectList={(id) => useWatchlistUiStore.getState().setSelected(id)}
+        />
+        <ActivityPanel events={activityEvents} />
+      </aside>
+
       <QuoteInfoDialog
         open={quoteDialog.open}
         symbol={quoteDialog.symbol}
+        gameId={gameId}
         onOpenChange={(open) => {
           if (!open) quoteDialog.closeQuote();
         }}
-        onTradeClick={(s) => quoteDialog.openTradeOrder(s)}
+        onTradeClick={(s) => {
+          // QuoteInfoDialog auto-closes after this handler; pivot the
+          // arena's selected symbol to whichever ticker the user clicked
+          // Trade on (the modal lets them jump symbols mid-quote) so
+          // TradeOrderDialog opens for the right one.
+          setSelectedSymbol(s);
+          openTradeOrder(s, 'buy');
+        }}
       />
       <TradeOrderDialog
-        open={quoteDialog.tradeOrderOpen}
-        initialSymbol={quoteDialog.tradeOrderSymbol}
+        open={tradeOrderOpen}
+        initialSymbol={tradeOrderSymbol ?? selectedSymbol}
+        initialDirection={tradeOrderDirection}
         gameId={gameId}
-        allowShortSelling={game.data?.allowShortSelling ?? false}
-        allowLimitOrders={game.data?.allowLimitOrders ?? false}
-        allowStopOrders={game.data?.allowStopOrders ?? false}
-        allowBracketOrders={game.data?.allowBracketOrders ?? false}
-        allowGTC={game.data?.allowGTC ?? false}
+        allowShortSelling={gameData.allowShortSelling ?? false}
+        allowLimitOrders={gameData.allowLimitOrders ?? false}
+        allowStopOrders={gameData.allowStopOrders ?? false}
+        allowBracketOrders={gameData.allowBracketOrders ?? false}
+        allowGTC={gameData.allowGTC ?? false}
         onOpenChange={(open) => {
-          if (!open) quoteDialog.closeTradeOrder();
+          if (!open) closeTradeOrder();
         }}
         onSeeQuote={(s) => {
-          quoteDialog.closeTradeOrder();
+          closeTradeOrder();
           quoteDialog.openQuote(s);
         }}
       />
-    </>
+    </main>
   );
 }

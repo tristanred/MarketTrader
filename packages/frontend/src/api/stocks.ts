@@ -17,13 +17,20 @@ export function useStockSearch(q: string) {
   });
 }
 
-export function useStockQuote(symbol: string) {
+/**
+ * Fetches a fresh quote for one symbol. Callers can disable the query
+ * (e.g. when a live WebSocket tick is already on hand) via `opts.enabled`.
+ * Polled every 5 min as a stale-tab safety net — live in-game prices come
+ * over the per-game WebSocket, not via this poll.
+ */
+export function useStockQuote(symbol: string, opts: { enabled?: boolean } = {}) {
+  const enabled = (opts.enabled ?? true) && !!symbol;
   return useQuery({
     queryKey: ['stocks', 'quote', symbol],
     queryFn: () => apiFetch<StockQuote>(`/stocks/${symbol}`),
-    enabled: !!symbol,
+    enabled,
     staleTime: 15_000,
-    refetchInterval: 30_000,
+    refetchInterval: 300_000,
   });
 }
 

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useIsAdmin, useAuthStore } from '@/stores/authStore';
 import { toast } from '@/components/ui/toast';
@@ -11,11 +11,9 @@ import { toast } from '@/components/ui/toast';
 export function AdminRoute({ children }: { children: React.ReactNode }) {
   const isAdmin = useIsAdmin();
   const user = useAuthStore((s) => s.user);
-  const toasted = useRef(false);
 
   useEffect(() => {
-    if (user && !isAdmin && !toasted.current) {
-      toasted.current = true;
+    if (user && !isAdmin) {
       toast({ title: 'Admin access required', variant: 'destructive' });
     }
   }, [user, isAdmin]);

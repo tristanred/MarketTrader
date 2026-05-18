@@ -23,7 +23,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from '@/components/ui/toast';
 import { ConfirmDialog } from '@/components/admin/ConfirmDialog';
-import { toastApiError } from '@/components/admin/adminErrors';
+import { toastApiError } from '@/lib/toastApiError';
 
 const editSchema = z.object({
   name: z.string().min(1).max(80),
@@ -100,7 +100,9 @@ export function AdminGameDetailPage() {
         allowGTC: game.allowGTC,
       });
     }
-  }, [game?.id]);
+    // Re-sync on every refetch so out-of-band updates to the same game
+    // land in the form.
+  }, [game, form]);
 
   if (isLoading) {
     return (

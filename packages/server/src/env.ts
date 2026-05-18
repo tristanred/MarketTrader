@@ -1,5 +1,5 @@
 // TODO(polygon-provider): add 'polygon' once PolygonProvider is implemented
-const VALID_PROVIDERS = ['yahoo', 'alpaca'] as const;
+const VALID_PROVIDERS = ['yahoo', 'alpaca', 'mock'] as const;
 type StockProvider = (typeof VALID_PROVIDERS)[number];
 
 function optional(name: string, fallback: string): string {
@@ -61,12 +61,13 @@ function validatedMarketHoursMode(): MarketHoursMode {
 /**
  * Pick the market-status provider. Defaults to matching `STOCK_PROVIDER` when
  * unset, so swapping the price provider doesn't silently break the chart's
- * market-hours gating. Operators can override to `static` for an offline,
- * key-less fallback at any time.
+ * market-hours gating. When `STOCK_PROVIDER=mock`, defaults to `'static'`
+ * (the market-status union has no `'mock'`). Operators can override to
+ * `'static'` for an offline, key-less fallback at any time.
  */
 function validatedMarketStatusProvider(stockProvider: StockProvider): MarketStatusProviderName {
   const raw = process.env.MARKET_STATUS_PROVIDER;
-  if (!raw) return stockProvider;
+  if (!raw) return stockProvider === 'mock' ? 'static' : stockProvider;
   if (!(VALID_MARKET_STATUS_PROVIDERS as readonly string[]).includes(raw)) {
     throw new Error(
       `Invalid MARKET_STATUS_PROVIDER: "${raw}". Must be one of: ${VALID_MARKET_STATUS_PROVIDERS.join(', ')}`,

@@ -11,12 +11,15 @@ import { registerSwagger } from './plugins/swagger.js';
 import { healthRoutes } from './routes/health.js';
 import { authRoutes } from './routes/auth.js';
 import { gameRoutes } from './routes/games.js';
+import { publicGamesRoutes } from './routes/public-games.js';
 import { stockRoutes } from './routes/stocks.js';
 import { tradingRoutes } from './routes/trading.js';
 import { marketStatusRoutes } from './routes/market-status.js';
 import { watchlistRoutes } from './routes/watchlists.js';
 import { adminRoutes } from './routes/admin/index.js';
 import { registerAdminGuard } from './plugins/admin-guard.js';
+import { SystemSettingsService } from './services/system-settings.js';
+import { systemSettingsRoutes } from './routes/system-settings.js';
 import type { StockProvider } from './providers/index.js';
 import { CachedProvider, createProvider } from './providers/index.js';
 import type { MarketStatusProvider } from './providers/market-status/index.js';
@@ -26,7 +29,10 @@ import {
 } from './providers/market-status/index.js';
 import { env } from './env.js';
 import { GameClientRegistry } from './ws/registry.js';
+import { GlobalClientRegistry } from './ws/global-registry.js';
 import { liveRoute } from './ws/live-route.js';
+import { globalLiveRoute } from './ws/global-live-route.js';
+import { IndicesBroadcaster } from './ws/indices-broadcaster.js';
 import { startPricePoller } from './ws/price-poller.js';
 import { startPendingOrdersWorker } from './workers/pending-orders.js';
 import { attachSentry } from './observability/sentry.js';
@@ -73,19 +79,43 @@ export async function buildApp(
   await registerSwagger(app);
 
   const registry = new GameClientRegistry();
+  const globalRegistry = new GlobalClientRegistry();
+
+  const systemSettings = new SystemSettingsService(db);
+  await systemSettings.ensureSeeded();
+
+  const indicesBroadcaster = new IndicesBroadcaster(provider, systemSettings, globalRegistry);
+  if (!disablePoller) {
+    await indicesBroadcaster.start();
+  }
+  app.addHook('onClose', async () => {
+    indicesBroadcaster.stop();
+  });
+
+  // Fan ticker-tape config changes out to every connected /ws/live client so
+  // the frontend can invalidate its cached symbol list without polling.
+  systemSettings.on('change', (symbols: string[]) => {
+    globalRegistry.broadcast({
+      event: 'ticker_tape_config_changed',
+      data: { symbols, at: new Date().toISOString() },
+    });
+  });
 
   await app.register(healthRoutes);
   await app.register(authRoutes(db));
   await app.register(gameRoutes(db));
+  await app.register(publicGamesRoutes(db));
   await app.register(stockRoutes(db, provider));
   await app.register(
     tradingRoutes(db, provider, marketStatusProvider, registry, leaderboardThrottleMs),
   );
   await app.register(marketStatusRoutes(marketStatusProvider));
   await app.register(watchlistRoutes(db));
+  await app.register(systemSettingsRoutes(systemSettings));
   await registerAdminGuard(app, db);
-  await app.register(adminRoutes(db, provider));
+  await app.register(adminRoutes(db, provider, systemSettings));
   await app.register(liveRoute(db, registry));
+  await app.register(globalLiveRoute(globalRegistry));
 
   if (!disablePoller) {
     const handle = startPricePoller(db, provider, registry);

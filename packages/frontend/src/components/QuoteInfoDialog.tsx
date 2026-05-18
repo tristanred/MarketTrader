@@ -10,6 +10,8 @@ import { QuoteInfo } from '@/components/QuoteInfo';
 interface QuoteInfoDialogProps {
   open: boolean;
   symbol: string | null;
+  /** Optional game context — when present, QuoteInfo shows a "Your position" card. */
+  gameId?: string;
   onOpenChange: (open: boolean) => void;
   onTradeClick?: (symbol: string) => void;
 }
@@ -22,6 +24,7 @@ interface QuoteInfoDialogProps {
 export function QuoteInfoDialog({
   open,
   symbol,
+  gameId,
   onOpenChange,
   onTradeClick,
 }: QuoteInfoDialogProps) {
@@ -33,7 +36,7 @@ export function QuoteInfoDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="sm:max-w-[680px]">
         <DialogHeader>
           <DialogTitle className="uppercase tracking-wide">Quote Information</DialogTitle>
         </DialogHeader>
@@ -42,6 +45,7 @@ export function QuoteInfoDialog({
             symbol={activeSymbol}
             variant="compact"
             onSymbolChange={setActiveSymbol}
+            {...(gameId && { gameId })}
             {...(onTradeClick && {
               onTradeClick: (s: string) => {
                 onTradeClick(s);

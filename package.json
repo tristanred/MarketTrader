@@ -9,7 +9,8 @@
     "build": "pnpm -r build",
     "test": "pnpm -r test",
     "typecheck": "pnpm -r typecheck",
-    "lint": "pnpm -r lint"
+    "lint": "pnpm -r lint",
+    "e2e": "pnpm --filter frontend e2e"
   },
   "pnpm": {
     "overrides": {

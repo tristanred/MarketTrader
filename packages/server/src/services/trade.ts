@@ -86,6 +86,16 @@ export interface ExecuteTradeParams {
   existingTradeId?: string;
   /** Cash reservation to release on fill — pass the row's `reservedCash`. */
   reservedCash?: number;
+  /**
+   * Optional ISO 8601 override for the trade's `executedAt` column. Used only
+   * by the `tools/seed-game-history` utility to backdate synthetic trades.
+   *
+   * MUST NOT be forwarded from any HTTP request body. All route handlers
+   * (`routes/trading.ts`, `routes/admin/trades.ts`) and worker call sites
+   * (`services/working-order.ts`) construct `ExecuteTradeParams` explicitly
+   * field-by-field — never spread untrusted input into it.
+   */
+  executedAt?: string;
 }
 
 /**
@@ -181,7 +191,7 @@ export async function executeTrade(db: Db, params: ExecuteTradeParams): Promise<
       }
     }
 
-    const executedAt = new Date().toISOString();
+    const executedAt = params.executedAt ?? new Date().toISOString();
     let trade: typeof trades.$inferSelect | undefined;
     if (isResting) {
       // Guard: only flip if still in working/pending — protects against a

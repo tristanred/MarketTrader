@@ -6,7 +6,13 @@ export default [
     ignores: ['**/dist/**', '**/node_modules/**', '**/*.config.*'],
   },
   {
-    files: ['packages/*/src/**/*.ts', 'packages/*/src/**/*.tsx', 'packages/*/tests/**/*.ts', 'packages/*/tests/**/*.tsx'],
+    files: [
+      'packages/*/src/**/*.ts',
+      'packages/*/src/**/*.tsx',
+      'packages/*/tests/**/*.ts',
+      'packages/*/tests/**/*.tsx',
+      'tools/*/src/**/*.ts',
+    ],
     languageOptions: {
       parser: tsparser,
       parserOptions: {

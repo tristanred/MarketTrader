@@ -237,7 +237,6 @@ function ArenaBody({
   return (
     <main className="mx-auto grid w-full max-w-[1600px] grid-cols-1 gap-2 p-3 lg:grid-cols-[280px_1fr_300px]">
       <aside className="flex flex-col gap-2">
-        <LeaderboardPanel entries={gameData.leaderboard ?? []} startingBalance={gameData.startingBalance} />
         <PortfolioPanel value={myPortfolioValue} pnlPct={myPnlPct} cash={myCash} dayPnl={myDayPnl} />
       </aside>
 
@@ -252,6 +251,13 @@ function ArenaBody({
         <ChartPanel symbol={selectedSymbol} />
         <OhlcStrip />
         <HoldingsPanel rows={holdingRows} onSelect={setSelectedSymbol} />
+        {/* Leaderboard moved here from the left rail to gain horizontal room
+            for per-row sparklines and full-length usernames. */}
+        <LeaderboardPanel
+          gameId={gameId}
+          entries={gameData.leaderboard ?? []}
+          startingBalance={gameData.startingBalance}
+        />
       </section>
 
       <aside className="flex flex-col gap-2">

@@ -1,0 +1,1452 @@
+<!doctype html>
+<html lang="en" class="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>MarketTrader · Leaderboard Graph Explorations (v2)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+/* ─── Tokens verbatim from packages/frontend/src/index.css ──────────── */
+:root {
+  --bg: #0a0b0d;
+  --panel: #0c0d10;
+  --hairline: #161719;
+  --hairline-strong: #1d1f23;
+  --text: #e8e9ea;
+  --text-strong: #f4f4f5;
+  --muted: #6b7280;
+  --accent: #67e8f9;
+  --accent-bg: rgba(103, 232, 249, 0.10);
+  --gain: #10b981;
+  --loss: #ef4444;
+  --radius: 0.5rem;
+
+  --p1: var(--accent);
+  --p2: #a78bfa;
+  --p3: #f59e0b;
+  --p4: #f472b6;
+  --p5: #34d399;
+  --p6: #60a5fa;
+  --p7: #fb7185;
+  --p8: #facc15;
+}
+
+* { box-sizing: border-box; border-color: var(--hairline-strong); }
+
+html, body { margin: 0; padding: 0; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Geist', system-ui, sans-serif;
+  font-feature-settings: 'ss01' 1, 'cv11' 1;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+.font-mono, code, kbd, pre, samp {
+  font-family: 'Geist Mono', ui-monospace, SFMono-Regular, monospace;
+  font-feature-settings: 'tnum' 1, 'zero' 1;
+}
+
+.panel {
+  border: 1px solid var(--hairline-strong);
+  background: var(--panel);
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+}
+.panel-header {
+  height: 28px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--hairline);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-family: 'Geist Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.panel-body { padding: 8px 10px; flex: 1; }
+
+.live-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 4px;
+  background: var(--accent-bg);
+  color: var(--accent);
+  padding: 2px 6px;
+  font-size: 9px;
+  letter-spacing: 0.14em;
+}
+.live-pill::before {
+  content: '';
+  width: 5px; height: 5px;
+  border-radius: 999px;
+  background: var(--accent);
+  box-shadow: 0 0 6px var(--accent);
+  animation: pulse-dot 1.6s ease-in-out infinite;
+}
+@keyframes pulse-dot { 0%,100% { opacity:1; } 50% { opacity:.45; } }
+
+.chip {
+  font-family: 'Geist Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 3px 7px;
+  border: 1px solid var(--hairline-strong);
+  background: transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: color .15s, border-color .15s, background .15s;
+}
+.chip:hover { color: var(--text); border-color: var(--text); }
+.chip[aria-pressed="true"] {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-bg);
+}
+.chip.accent {
+  color: var(--accent);
+  border-color: var(--accent);
+  text-decoration: none;
+}
+.chip.accent:hover { background: var(--accent-bg); }
+
+.tag {
+  font-family: 'Geist Mono', monospace;
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* ─── Page scaffold ─────────────────────────────────────────────────── */
+.page {
+  max-width: 1640px;
+  margin: 0 auto;
+  padding: 32px 24px 96px;
+}
+.page-hero {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 28px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--hairline);
+}
+.page-hero h1 {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text-strong);
+}
+.page-hero .lede {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  max-width: 64ch;
+  line-height: 1.55;
+}
+.section { margin-top: 56px; }
+.section-eyebrow {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.section-eyebrow .num {
+  font-family: 'Geist Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  color: var(--accent);
+}
+.section-eyebrow h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-strong);
+  letter-spacing: -0.005em;
+}
+.section-eyebrow .note {
+  margin-left: auto;
+  font-family: 'Geist Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.frame-caption {
+  margin-top: 10px;
+  padding: 12px 14px;
+  border: 1px dashed var(--hairline-strong);
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.frame-caption strong { color: var(--text); font-weight: 600; }
+.frame-caption code {
+  font-family: 'Geist Mono', monospace;
+  font-size: 11px;
+  background: var(--bg);
+  border: 1px solid var(--hairline-strong);
+  border-radius: 3px;
+  padding: 1px 4px;
+  color: var(--text);
+}
+
+/* ─── Arena mock (the new layout) ───────────────────────────────────── */
+.arena-mock {
+  display: grid;
+  grid-template-columns: 280px 1fr 300px;
+  gap: 8px;
+}
+.arena-col { display: flex; flex-direction: column; gap: 8px; }
+
+.placeholder {
+  border: 1px solid var(--hairline-strong);
+  background: var(--panel);
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  font-family: 'Geist Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.placeholder.chart    { height: 320px; }
+.placeholder.ohlc     { height: 28px;  }
+.placeholder.holdings { height: 180px; }
+.placeholder.quote    { height: 64px;  }
+.placeholder.search   { height: 56px;  }
+.placeholder.watch    { height: 280px; }
+.placeholder.activity { height: 260px; }
+.placeholder.portfolio{ height: 96px;  }
+.placeholder.you      { height: 132px; }
+.placeholder.movers   { height: 200px; }
+
+/* ─── New center-column Leaderboard panel ───────────────────────────── */
+.lb {
+  display: flex;
+  flex-direction: column;
+}
+.lb-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Sticky "you" pin */
+.lb-pin {
+  position: relative;
+  display: grid;
+  grid-template-columns: 28px minmax(160px, 1.4fr) 1fr 100px 80px 80px 24px;
+  gap: 12px;
+  align-items: center;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--hairline-strong);
+  background:
+    linear-gradient(90deg, var(--accent-bg) 0%, rgba(103,232,249,0.04) 100%);
+}
+.lb-pin::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 4px; bottom: 4px; width: 2px;
+  background: var(--accent);
+}
+.lb-pin .pin-tag {
+  font-family: 'Geist Mono', monospace;
+  font-size: 9px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--accent);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-right: 6px;
+}
+.lb-pin .rank { font-family: 'Geist Mono', monospace; font-size: 11px; color: var(--text-strong); }
+.lb-pin .name {
+  font-weight: 600;
+  color: var(--text-strong);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lb-pin .spark { width: 100%; }
+.lb-pin .val   { font-family: 'Geist Mono', monospace; font-size: 12px; text-align: right; color: var(--text-strong); }
+.lb-pin .pnl   { font-family: 'Geist Mono', monospace; font-size: 12px; text-align: right; }
+.lb-pin .d24   { font-family: 'Geist Mono', monospace; font-size: 11px; text-align: right; }
+.lb-pin .more  { color: var(--muted); text-align: right; }
+
+/* Column header row */
+.lb-cols {
+  display: grid;
+  grid-template-columns: 28px minmax(160px, 1.4fr) 1fr 100px 80px 80px 24px;
+  gap: 12px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--hairline);
+  font-family: 'Geist Mono', monospace;
+  font-size: 9px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.lb-cols .right { text-align: right; }
+
+/* Standings rows */
+.lb-row {
+  display: grid;
+  grid-template-columns: 28px minmax(160px, 1.4fr) 1fr 100px 80px 80px 24px;
+  gap: 12px;
+  align-items: center;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--hairline);
+  font-size: 12px;
+  transition: background .15s;
+  cursor: pointer;
+}
+.lb-row:hover { background: rgba(255,255,255,0.015); }
+.lb-row:last-child { border-bottom: none; }
+.lb-row .rank {
+  font-family: 'Geist Mono', monospace;
+  font-size: 10px;
+  color: var(--muted);
+}
+.lb-row .name {
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lb-row .swatch {
+  display: inline-block;
+  width: 8px; height: 2px; border-radius: 1px;
+  flex-shrink: 0;
+}
+.lb-row .spark { width: 100%; }
+.lb-row .val { font-family: 'Geist Mono', monospace; font-size: 11px; text-align: right; }
+.lb-row .pnl { font-family: 'Geist Mono', monospace; font-size: 11px; text-align: right; }
+.lb-row .d24 { font-family: 'Geist Mono', monospace; font-size: 11px; text-align: right; color: var(--muted); }
+.lb-row .arrow { color: var(--muted); text-align: right; }
+
+.lb-row.me {
+  /* still rendered in-place so the user sees their natural rank context */
+  background: rgba(103,232,249,0.05);
+}
+
+.gain { color: var(--gain); }
+.loss { color: var(--loss); }
+
+.lb-svg { display: block; }
+.lb-svg .grid-mid { stroke: var(--hairline); stroke-dasharray: 1 3; }
+
+/* Expand widget — collapses the leaderboard to top 10 by default */
+.lb-expand-row {
+  display: flex;
+  justify-content: center;
+  padding: 10px 0 12px;
+  border-top: 1px solid var(--hairline);
+}
+.lb-expand-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  font-family: 'Geist Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: color .15s, border-color .15s, background .15s;
+}
+.lb-expand-btn:hover {
+  color: var(--text-strong);
+  border-color: var(--accent);
+  background: var(--accent-bg);
+}
+.lb-expand-btn .chev {
+  color: var(--accent);
+  font-size: 9px;
+}
+.lb-expand-btn .lbl { color: var(--text); }
+.lb-expand-btn .hint {
+  padding-left: 10px;
+  border-left: 1px solid var(--hairline-strong);
+  color: var(--muted);
+  text-transform: none;
+  letter-spacing: 0.04em;
+  font-size: 10px;
+}
+
+/* Preview block showing what "expanded" looks like (mockup only) */
+.lb-expand-preview {
+  border-top: 2px dashed var(--accent);
+  background:
+    linear-gradient(180deg, var(--accent-bg) 0%, transparent 6%),
+    var(--panel);
+}
+.preview-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--hairline);
+  font-size: 11px;
+}
+
+/* "jump to me" floater tucked in the bottom-right of the panel */
+.jump-me {
+  position: sticky;
+  bottom: 8px;
+  margin: 8px 10px 10px auto;
+  width: max-content;
+  font-family: 'Geist Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  background: rgba(12,13,16,0.92);
+  backdrop-filter: blur(6px);
+  padding: 5px 9px;
+  border-radius: 4px;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.4);
+}
+
+/* ─── Dedicated page styles ─────────────────────────────────────────── */
+.lb-page {
+  display: grid;
+  grid-template-columns: 1fr 340px;
+  gap: 12px;
+}
+.lb-page .stack { display: flex; flex-direction: column; gap: 12px; }
+.lb-page .crumb {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+  font-family: 'Geist Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.lb-page .crumb a { color: var(--muted); text-decoration: none; }
+.lb-page .crumb .sep { color: var(--hairline-strong); }
+.lb-page .crumb .now { color: var(--text); }
+.lb-page h2.title {
+  margin: 0 0 4px;
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--text-strong);
+  letter-spacing: -0.005em;
+}
+.lb-page .sub { margin: 0 0 18px; color: var(--muted); font-size: 12px; }
+
+/* Race chart */
+.race-chart .ranges {
+  display: flex; gap: 4px;
+  padding: 8px 10px 0;
+}
+.race-svg { width: 100%; height: 380px; display: block; }
+.race-svg .grid line { stroke: var(--hairline); stroke-width: 1; }
+.race-svg .axis text {
+  fill: var(--muted);
+  font-family: 'Geist Mono', monospace;
+  font-size: 9px;
+  letter-spacing: 0.1em;
+}
+.race-svg .baseline { stroke: var(--hairline-strong); stroke-dasharray: 2 3; }
+.race-svg .series { fill: none; stroke-width: 1.25; opacity: 0.85; }
+.race-svg .series.me { stroke-width: 2.25; opacity: 1; }
+.race-svg .series.muted { stroke: var(--muted); opacity: 0.18; stroke-width: 1; }
+.race-svg .dot { stroke: var(--panel); stroke-width: 1.5; }
+.race-svg .label { font-family: 'Geist Mono', monospace; font-size: 10px; letter-spacing: 0.04em; }
+.race-svg .field-band { fill: rgba(107,114,128,0.06); }
+
+/* Series toggle row */
+.series-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 10px 10px;
+  border-top: 1px solid var(--hairline);
+}
+.series-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  font-size: 11px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.series-toggle .sw { width: 10px; height: 2px; border-radius: 1px; flex-shrink: 0; }
+.series-toggle .pct { font-family: 'Geist Mono', monospace; font-size: 10px; color: var(--muted); margin-left: 4px; }
+.series-toggle.off { opacity: 0.35; }
+.series-toggle.me { border-color: var(--accent); color: var(--text-strong); }
+
+/* Standings table */
+.standings { width: 100%; border-collapse: collapse; }
+.standings thead th {
+  font-family: 'Geist Mono', monospace;
+  font-size: 9px; letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--muted);
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--hairline-strong);
+  font-weight: 500;
+}
+.standings thead th.num { text-align: right; }
+.standings tbody td {
+  padding: 9px 10px;
+  border-bottom: 1px solid var(--hairline);
+  font-size: 12px;
+}
+.standings tbody td.num {
+  text-align: right;
+  font-family: 'Geist Mono', monospace;
+  font-size: 12px;
+}
+.standings tbody tr:last-child td { border-bottom: none; }
+.standings tbody tr.me td { background: var(--accent-bg); }
+.standings tbody tr.me td:first-child { box-shadow: inset 2px 0 0 0 var(--accent); }
+.swatch-dot { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 8px; vertical-align: -1px; }
+.delta-arrow { display: inline-block; width: 0; height: 0; margin-right: 4px; vertical-align: 1px; }
+.delta-arrow.up   { border-left: 3px solid transparent; border-right: 3px solid transparent; border-bottom: 5px solid var(--gain); }
+.delta-arrow.down { border-left: 3px solid transparent; border-right: 3px solid transparent; border-top:    5px solid var(--loss); }
+.delta-arrow.flat { width: 6px; height: 1px; background: var(--muted); border: 0; vertical-align: 3px; }
+
+/* Podium */
+.podium {
+  display: grid;
+  grid-template-columns: 1fr 1.15fr 1fr;
+  gap: 8px;
+  align-items: end;
+}
+.podium .step {
+  border: 1px solid var(--hairline-strong);
+  border-radius: 6px;
+  padding: 12px;
+  background: var(--panel);
+  position: relative;
+  overflow: hidden;
+}
+.podium .step::before {
+  content: '';
+  position: absolute; inset: 0;
+  background: radial-gradient(120% 60% at 50% -10%, var(--glow, transparent) 0%, transparent 60%);
+  pointer-events: none;
+}
+.podium .step .place {
+  font-family: 'Geist Mono', monospace;
+  font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase;
+  color: var(--muted); margin-bottom: 4px;
+}
+.podium .step .who { font-size: 14px; font-weight: 600; color: var(--text-strong); }
+.podium .step .val { margin-top: 8px; font-family: 'Geist Mono', monospace; font-size: 13px; }
+.podium .step .pnl { font-family: 'Geist Mono', monospace; font-size: 11px; color: var(--gain); }
+.podium .step.first  { --glow: rgba(245, 158, 11, 0.22); }
+.podium .step.second { --glow: rgba(167, 139, 250, 0.18); }
+.podium .step.third  { --glow: rgba(244, 114, 182, 0.16); }
+.podium .step.first  .place { color: #f59e0b; }
+.podium .step.second .place { color: #a78bfa; }
+.podium .step.third  .place { color: #f472b6; }
+
+/* You-card on dedicated page */
+.you-card {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 14px;
+  align-items: center;
+  padding: 12px;
+  border-top: 1px solid var(--hairline);
+}
+.you-card .rank-big {
+  font-family: 'Geist Mono', monospace;
+  font-size: 28px;
+  color: var(--accent);
+  letter-spacing: 0.02em;
+  line-height: 1;
+}
+.you-card .rank-big sub { font-size: 11px; color: var(--muted); }
+.you-card .col .lbl {
+  font-family: 'Geist Mono', monospace;
+  font-size: 9px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted);
+}
+.you-card .col .val {
+  font-family: 'Geist Mono', monospace;
+  font-size: 14px;
+  color: var(--text-strong);
+  margin-top: 2px;
+}
+
+/* Stat grid */
+.statgrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 14px;
+  padding: 10px;
+}
+.statgrid .cell .lbl {
+  font-family: 'Geist Mono', monospace;
+  font-size: 9px; letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--muted); margin-bottom: 3px;
+}
+.statgrid .cell .val {
+  font-family: 'Geist Mono', monospace;
+  font-size: 14px; font-weight: 600; color: var(--text-strong);
+}
+
+/* Movers */
+.movers { padding: 6px 0; }
+.mover {
+  display: grid;
+  grid-template-columns: 8px 1fr auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+  border-bottom: 1px solid var(--hairline);
+}
+.mover:last-child { border-bottom: none; }
+.mover .delta { font-family: 'Geist Mono', monospace; font-size: 11px; }
+
+/* Choose / summary */
+.choose {
+  margin-top: 64px;
+  padding: 18px 20px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 6px;
+  background:
+    linear-gradient(180deg, rgba(103,232,249,0.04), transparent 70%),
+    var(--panel);
+}
+.choose h3 { margin: 0 0 6px; font-size: 14px; color: var(--text-strong); }
+.choose p  { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.55; }
+.choose ul { margin: 10px 0 0; padding-left: 18px; color: var(--text); font-size: 12px; line-height: 1.7; }
+.choose ul code {
+  font-family: 'Geist Mono', monospace;
+  font-size: 11px;
+  background: var(--bg);
+  border: 1px solid var(--hairline-strong);
+  border-radius: 3px;
+  padding: 1px 4px;
+}
+</style>
+</head>
+<body>
+
+<div class="page">
+
+  <header class="page-hero">
+    <div>
+      <div class="tag" style="margin-bottom:8px;">Design Exploration · v2 · 2026-05-20</div>
+      <h1>Leaderboard, relocated &mdash; centre-column, with sparklines &amp; a full page</h1>
+      <p class="lede">
+        Pulled the leaderboard out of the cramped 280px left rail and into the wider centre column under Holdings, where
+        usernames don't truncate and there's real estate for a sparkline per row. A dedicated <code style="background:var(--bg);border:1px solid var(--hairline-strong);padding:1px 5px;border-radius:3px;font-family:'Geist Mono',monospace;font-size:11px;color:var(--accent);">/games/:id/leaderboard</code> page handles the deeper analytics.
+      </p>
+    </div>
+    <div style="font-family:'Geist Mono',monospace; font-size:10px; letter-spacing:0.14em; color:var(--muted); white-space:nowrap;">
+      <span class="live-pill">LIVE</span>
+      &nbsp; v2 · proposal
+    </div>
+  </header>
+
+  <!-- ─── OPTION 01: CENTRE-COLUMN LEADERBOARD ──────────────── -->
+  <section class="section">
+    <div class="section-eyebrow">
+      <span class="num">01</span>
+      <h2>Leaderboard relocated to centre column, under Holdings</h2>
+      <span class="note">Top-10 default · expand widget for full field · pinned "you" header</span>
+    </div>
+
+    <div class="arena-mock">
+
+      <!-- LEFT COLUMN -- frees up for portfolio + future panels -->
+      <div class="arena-col">
+        <div class="placeholder portfolio">Your Portfolio</div>
+        <div class="placeholder watch" style="height:340px;">Watchlist (moved from right)</div>
+        <div class="placeholder activity" style="height:240px;">Activity feed (moved from right)</div>
+      </div>
+
+      <!-- CENTRE COLUMN -- the star of the show -->
+      <div class="arena-col">
+        <div class="placeholder quote">Quote Header &nbsp;·&nbsp; AAPL · $302.25 · +1.10%</div>
+        <div class="placeholder chart">Chart Panel</div>
+        <div class="placeholder ohlc">OHLC strip</div>
+        <div class="placeholder holdings">Holdings &nbsp;·&nbsp; 0 positions</div>
+
+        <!-- NEW: Leaderboard panel, finally with breathing room -->
+        <div class="panel lb">
+          <div class="panel-header">
+            <span style="display:flex; align-items:center; gap:8px;">
+              Leaderboard
+              <span style="color:var(--muted); font-weight:400;">· top 10 of 31</span>
+            </span>
+            <span class="lb-head-actions">
+              <button class="chip">1D</button>
+              <button class="chip" aria-pressed="true">5D</button>
+              <button class="chip">10D</button>
+              <button class="chip">ALL</button>
+              <span style="width:1px; height:14px; background:var(--hairline-strong); margin:0 4px;"></span>
+              <a href="#" class="chip accent">Full view ↗</a>
+              <span class="live-pill">LIVE</span>
+            </span>
+          </div>
+
+          <!-- Pinned "you" row -->
+          <div class="lb-pin" role="row" aria-label="Your row, pinned to top">
+            <span class="pin-tag">▸ YOU</span>
+            <span class="rank">#25</span>
+            <span class="name">
+              <span style="display:inline-block; width:8px; height:2px; border-radius:1px; background:var(--accent);"></span>
+              tristan
+            </span>
+            <svg class="spark" viewBox="0 0 240 24" height="24" preserveAspectRatio="none" aria-hidden="true">
+              <line class="grid-mid" x1="0" x2="240" y1="12" y2="12"/>
+              <polyline fill="none" stroke="var(--accent)" stroke-width="1.5"
+                points="0,12 20,11 40,12 60,12 80,12 100,12 120,12 140,12 160,12 180,12 200,12 220,12 240,12"/>
+              <circle cx="240" cy="12" r="2.2" fill="var(--accent)" stroke="var(--panel)" stroke-width="1.5"/>
+            </svg>
+            <span class="val">$100,000</span>
+            <span class="pnl" style="color:var(--muted);">0.00%</span>
+            <span class="d24 gain">+0.00%</span>
+            <span class="more">↗</span>
+          </div>
+
+          <!-- Column headers -->
+          <div class="lb-cols">
+            <span>#</span>
+            <span>Player</span>
+            <span style="text-align:center;">5-Day trend</span>
+            <span class="right">Value</span>
+            <span class="right">P&amp;L</span>
+            <span class="right">Δ24h</span>
+            <span></span>
+          </div>
+
+          <!-- Row 01 -->
+          <div class="lb-row">
+            <span class="rank">01</span>
+            <span class="name"><span class="swatch" style="background:var(--p3);"></span>jennie_wiza_9a2e</span>
+            <svg class="spark" viewBox="0 0 240 24" height="24" preserveAspectRatio="none" aria-hidden="true">
+              <line class="grid-mid" x1="0" x2="240" y1="12" y2="12"/>
+              <polyline fill="none" stroke="var(--p3)" stroke-width="1.5"
+                points="0,18 20,17 40,16 60,15 80,13 100,14 120,11 140,9 160,10 180,7 200,5 220,4 240,3"/>
+              <circle cx="240" cy="3" r="2.2" fill="var(--p3)" stroke="var(--panel)" stroke-width="1.5"/>
+            </svg>
+            <span class="val">$104,785</span>
+            <span class="pnl gain">+4.79%</span>
+            <span class="d24 gain">+1.42%</span>
+            <span class="arrow">›</span>
+          </div>
+
+          <!-- Row 02 -->
+          <div class="lb-row">
+            <span class="rank">02</span>
+            <span class="name"><span class="swatch" style="background:var(--p2);"></span>lucienne_torp_8545</span>
+            <svg class="spark" viewBox="0 0 240 24" height="24" preserveAspectRatio="none" aria-hidden="true">
+              <line class="grid-mid" x1="0" x2="240" y1="12" y2="12"/>
+              <polyline fill="none" stroke="var(--p2)" stroke-width="1.5"
+                points="0,17 20,16 40,15 60,14 80,12 100,13 120,11 140,10 160,9 180,8 200,6 220,5 240,4"/>
+              <circle cx="240" cy="4" r="2.2" fill="var(--p2)" stroke="var(--panel)" stroke-width="1.5"/>
+            </svg>
+            <span class="val">$103,804</span>
+            <span class="pnl gain">+3.80%</span>
+            <span class="d24 gain">+0.98%</span>
+            <span class="arrow">›</span>
+          </div>
+
+          <!-- Row 03 -->
+          <div class="lb-row">
+            <span class="rank">03</span>
+            <span class="name"><span class="swatch" style="background:var(--p4);"></span>antonio_jenkins_e86e</span>
+            <svg class="spark" viewBox="0 0 240 24" height="24" preserveAspectRatio="none" aria-hidden="true">
+              <line class="grid-mid" x1="0" x2="240" y1="12" y2="12"/>
+              <polyline fill="none" stroke="var(--p4)" stroke-width="1.5"
+                points="0,16 20,15 40,13 60,14 80,11 100,12 120,10 140,11 160,9 180,8 200,7 220,6 240,5"/>
+              <circle cx="240" cy="5" r="2.2" fill="var(--p4)" stroke="var(--panel)" stroke-width="1.5"/>
+            </svg>
+            <span class="val">$103,436</span>
+            <span class="pnl gain">+3.44%</span>
+            <span class="d24 gain">+0.72%</span>
+            <span class="arrow">›</span>
+          </div>
+
+          <!-- Row 04 -->
+          <div class="lb-row">
+            <span class="rank">04</span>
+            <span class="name"><span class="swatch" style="background:var(--p6);"></span>adan_considine_6d77</span>
+            <svg class="spark" viewBox="0 0 240 24" height="24" preserveAspectRatio="none" aria-hidden="true">
+              <line class="grid-mid" x1="0" x2="240" y1="12" y2="12"/>
+              <polyline fill="none" stroke="var(--p6)" stroke-width="1.5"
+                points="0,15 20,14 40,12 60,13 80,10 100,11 120,9 140,11 160,8 180,9 200,7 220,6 240,5"/>
+              <circle cx="240" cy="5" r="2.2" fill="var(--p6)" stroke="var(--panel)" stroke-width="1.5"/>
+            </svg>
+            <span class="val">$103,414</span>
+            <span class="pnl gain">+3.41%</span>
+            <span class="d24 gain">+0.61%</span>
+            <span class="arrow">›</span>
+          </div>
+
+          <!-- Row 05 -->
+          <div class="lb-row">
+            <span class="rank">05</span>
+            <span class="name"><span class="swatch" style="background:var(--p5);"></span>jamaal_jast_6a37</span>
+            <svg class="spark" viewBox="0 0 240 24" height="24" preserveAspectRatio="none" aria-hidden="true">
+              <line class="grid-mid" x1="0" x2="240" y1="12" y2="12"/>
+              <polyline fill="none" stroke="var(--p5)" stroke-width="1.5"
+                points="0,14 20,13 40,13 60,11 80,12 100,9 120,10 140,8 160,9 180,7 200,8 220,6 240,5"/>
+              <circle cx="240" cy="5" r="2.2" fill="var(--p5)" stroke="var(--panel)" stroke-width="1.5"/>
+            </svg>
+            <span class="val">$103,412</span>
+            <span class="pnl gain">+3.41%</span>
+            <span class="d24 gain">+0.55%</span>
+            <span class="arrow">›</span>
+          </div>
+
+          <!-- Row 06 -->
+          <div class="lb-row">
+            <span class="rank">06</span>
+            <span class="name"><span class="swatch" style="background:var(--p7);"></span>albert_runolfsdottir_dd60</span>
+            <svg class="spark" viewBox="0 0 240 24" height="24" preserveAspectRatio="none" aria-hidden="true">
+              <line class="grid-mid" x1="0" x2="240" y1="12" y2="12"/>
+              <polyline fill="none" stroke="var(--p7)" stroke-width="1.5"
+                points="0,14 20,14 40,13 60,11 80,12 100,9 120,10 140,8 160,11 180,7 200,8 220,7 240,6"/>
+              <circle cx="240" cy="6" r="2.2" fill="var(--p7)" stroke="var(--panel)" stroke-width="1.5"/>
+            </svg>
+            <span class="val">$103,309</span>
+            <span class="pnl gain">+3.31%</span>
+            <span class="d24 gain">+0.32%</span>
+            <span class="arrow">›</span>
+          </div>
+
+          <!-- Row 07 -->
+          <div class="lb-row">
+            <span class="rank">07</span>
+            <span class="name"><span class="swatch" style="background:var(--p8);"></span>richard_marquardt_a12b</span>
+            <svg class="spark" viewBox="0 0 240 24" height="24" preserveAspectRatio="none" aria-hidden="true">
+              <line class="grid-mid" x1="0" x2="240" y1="12" y2="12"/>
+              <polyline fill="none" stroke="var(--p8)" stroke-width="1.5"
+                points="0,13 20,12 40,13 60,11 80,12 100,10 120,11 140,9 160,8 180,9 200,7 220,8 240,6"/>
+              <circle cx="240" cy="6" r="2.2" fill="var(--p8)" stroke="var(--panel)" stroke-width="1.5"/>
+            </svg>
+            <span class="val">$103,073</span>
+            <span class="pnl gain">+3.07%</span>
+            <span class="d24 gain">+0.18%</span>
+            <span class="arrow">›</span>
+          </div>
+
+          <!-- Row 08 -->
+          <div class="lb-row">
+            <span class="rank">08</span>
+            <span class="name"><span class="swatch" style="background:#c084fc;"></span>kristina_dicki_kohler_212f</span>
+            <svg class="spark" viewBox="0 0 240 24" height="24" preserveAspectRatio="none" aria-hidden="true">
+              <line class="grid-mid" x1="0" x2="240" y1="12" y2="12"/>
+              <polyline fill="none" stroke="#c084fc" stroke-width="1.5"
+                points="0,13 20,13 40,12 60,11 80,12 100,11 120,10 140,11 160,9 180,8 200,9 220,7 240,7"/>
+              <circle cx="240" cy="7" r="2.2" fill="#c084fc" stroke="var(--panel)" stroke-width="1.5"/>
+            </svg>
+            <span class="val">$102,693</span>
+            <span class="pnl gain">+2.69%</span>
+            <span class="d24 gain">+0.14%</span>
+            <span class="arrow">›</span>
+          </div>
+
+          <!-- Row 09 -->
+          <div class="lb-row">
+            <span class="rank">09</span>
+            <span class="name"><span class="swatch" style="background:#22d3ee;"></span>magnus_okuneva_torp_df3c</span>
+            <svg class="spark" viewBox="0 0 240 24" height="24" preserveAspectRatio="none" aria-hidden="true">
+              <line class="grid-mid" x1="0" x2="240" y1="12" y2="12"/>
+              <polyline fill="none" stroke="#22d3ee" stroke-width="1.5"
+                points="0,12 20,13 40,12 60,13 80,10 100,11 120,10 140,9 160,10 180,8 200,9 220,8 240,8"/>
+              <circle cx="240" cy="8" r="2.2" fill="#22d3ee" stroke="var(--panel)" stroke-width="1.5"/>
+            </svg>
+            <span class="val">$102,162</span>
+            <span class="pnl gain">+2.16%</span>
+            <span class="d24 gain">+0.09%</span>
+            <span class="arrow">›</span>
+          </div>
+
+          <!-- Row 10 -->
+          <div class="lb-row">
+            <span class="rank">10</span>
+            <span class="name"><span class="swatch" style="background:#fcd34d;"></span>cara_jaskolski_e2fe</span>
+            <svg class="spark" viewBox="0 0 240 24" height="24" preserveAspectRatio="none" aria-hidden="true">
+              <line class="grid-mid" x1="0" x2="240" y1="12" y2="12"/>
+              <polyline fill="none" stroke="#fcd34d" stroke-width="1.5"
+                points="0,13 20,12 40,13 60,12 80,11 100,12 120,11 140,10 160,11 180,10 200,9 220,10 240,9"/>
+              <circle cx="240" cy="9" r="2.2" fill="#fcd34d" stroke="var(--panel)" stroke-width="1.5"/>
+            </svg>
+            <span class="val">$101,982</span>
+            <span class="pnl gain">+1.98%</span>
+            <span class="d24 gain">+0.06%</span>
+            <span class="arrow">›</span>
+          </div>
+
+          <!-- Expand widget — the new design -->
+          <div class="lb-expand-row">
+            <button class="lb-expand-btn" aria-expanded="false">
+              <span class="chev">▾</span>
+              <span class="lbl">Show all 31 players</span>
+              <span class="hint">21 hidden &nbsp;·&nbsp; including <span style="color:var(--accent);">you @ #25</span></span>
+            </button>
+          </div>
+
+          <!-- Mock of "expanded" state, dimmed to show what it looks like once opened -->
+          <div class="lb-expand-preview" aria-hidden="true">
+            <div class="preview-banner">
+              <span class="tag">EXPANDED STATE PREVIEW</span>
+              <span style="color:var(--muted);">↓ rows 11–31 appear in the same row format, with the "you" row highlighted in-place</span>
+            </div>
+
+            <div class="lb-row" style="opacity:.55;">
+              <span class="rank">11</span>
+              <span class="name"><span class="swatch" style="background:var(--p3);"></span>willa_kemmer_003b</span>
+              <svg class="spark" viewBox="0 0 240 24" height="24" preserveAspectRatio="none" aria-hidden="true">
+                <line class="grid-mid" x1="0" x2="240" y1="12" y2="12"/>
+                <polyline fill="none" stroke="var(--p3)" stroke-width="1.5"
+                  points="0,13 20,12 40,13 60,12 80,11 100,12 120,11 140,10 160,11 180,10 200,11 220,10 240,10"/>
+                <circle cx="240" cy="10" r="2.2" fill="var(--p3)" stroke="var(--panel)" stroke-width="1.5"/>
+              </svg>
+              <span class="val">$101,668</span>
+              <span class="pnl gain">+1.67%</span>
+              <span class="d24 gain">+0.05%</span>
+              <span class="arrow">›</span>
+            </div>
+
+            <div class="lb-row" style="opacity:.55;">
+              <span class="rank">12</span>
+              <span class="name"><span class="swatch" style="background:var(--p2);"></span>golda_dach_09e4</span>
+              <svg class="spark" viewBox="0 0 240 24" height="24" preserveAspectRatio="none" aria-hidden="true">
+                <line class="grid-mid" x1="0" x2="240" y1="12" y2="12"/>
+                <polyline fill="none" stroke="var(--p2)" stroke-width="1.5"
+                  points="0,13 20,13 40,12 60,12 80,11 100,12 120,11 140,11 160,10 180,11 200,10 220,11 240,10"/>
+                <circle cx="240" cy="10" r="2.2" fill="var(--p2)" stroke="var(--panel)" stroke-width="1.5"/>
+              </svg>
+              <span class="val">$101,442</span>
+              <span class="pnl gain">+1.44%</span>
+              <span class="d24 gain">+0.03%</span>
+              <span class="arrow">›</span>
+            </div>
+
+            <div class="lb-row" style="opacity:.4; padding:6px 10px;">
+              <span class="rank">…</span>
+              <span class="name" style="color:var(--muted);">12 more rows · 13 → 24</span>
+              <span></span><span></span><span></span><span></span><span></span>
+            </div>
+
+            <!-- Your row in its natural rank position -->
+            <div class="lb-row me" style="opacity:1;">
+              <span class="rank" style="color:var(--accent);">25</span>
+              <span class="name" style="color:var(--text-strong);"><span class="swatch" style="background:var(--accent);"></span>tristan</span>
+              <svg class="spark" viewBox="0 0 240 24" height="24" preserveAspectRatio="none" aria-hidden="true">
+                <line class="grid-mid" x1="0" x2="240" y1="12" y2="12"/>
+                <polyline fill="none" stroke="var(--accent)" stroke-width="1.75"
+                  points="0,12 20,12 40,12 60,12 80,12 100,12 120,12 140,12 160,12 180,12 200,12 220,12 240,12"/>
+                <circle cx="240" cy="12" r="2.5" fill="var(--accent)" stroke="var(--panel)" stroke-width="1.5"/>
+              </svg>
+              <span class="val">$100,000</span>
+              <span class="pnl" style="color:var(--muted);">0.00%</span>
+              <span class="d24 gain">+0.00%</span>
+              <span class="arrow">›</span>
+            </div>
+
+            <div class="lb-row" style="opacity:.55;">
+              <span class="rank">26</span>
+              <span class="name"><span class="swatch" style="background:var(--p7);"></span>brannon_stiedemann_3c43</span>
+              <svg class="spark" viewBox="0 0 240 24" height="24" preserveAspectRatio="none" aria-hidden="true">
+                <line class="grid-mid" x1="0" x2="240" y1="12" y2="12"/>
+                <polyline fill="none" stroke="var(--p7)" stroke-width="1.5"
+                  points="0,11 20,12 40,13 60,12 80,13 100,14 120,13 140,14 160,13 180,14 200,13 220,14 240,13"/>
+                <circle cx="240" cy="13" r="2.2" fill="var(--p7)" stroke="var(--panel)" stroke-width="1.5"/>
+              </svg>
+              <span class="val">$99,954</span>
+              <span class="pnl loss">−0.05%</span>
+              <span class="d24 loss">−0.02%</span>
+              <span class="arrow">›</span>
+            </div>
+
+            <div class="lb-row" style="opacity:.4; padding:6px 10px;">
+              <span class="rank">…</span>
+              <span class="name" style="color:var(--muted);">5 more rows · 27 → 31</span>
+              <span></span><span></span><span></span><span></span><span></span>
+            </div>
+
+            <div class="lb-expand-row">
+              <button class="lb-expand-btn" aria-expanded="true">
+                <span class="chev">▴</span>
+                <span class="lbl">Collapse to top 10</span>
+                <span class="hint">Showing 31 of 31</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- RIGHT COLUMN (lightened — watchlist moved left) -->
+      <div class="arena-col">
+        <div class="placeholder search">Symbol search</div>
+        <div class="placeholder you" style="height:160px;">Your Portfolio summary</div>
+        <div class="placeholder movers">Today's Movers (new)</div>
+      </div>
+    </div>
+
+    <div class="frame-caption">
+      <strong>Top-10 default + expand widget.</strong>
+      Showing 31 rows inline would dominate the page; showing only the leader would hide context. The compromise: <strong>top 10
+      visible by default</strong>, with a chip-styled <code>▾ Show all 31 players</code> button at the bottom of the panel. The
+      hint text inside the button (<em>"21 hidden · including you @ #25"</em>) tells you both <em>what</em> you're missing and
+      <em>where you are</em> &mdash; the second part is what makes the collapsed state usable for players outside the top 10. The
+      cyan tint preview below shows the expanded state: rows 11–31 rendered in the same row format, with your row highlighted
+      in its natural position.
+      <br><br>
+      <strong>Why the centre column.</strong>
+      The current left rail is ~280px and usernames already truncate (<code>+3.8…</code> in the screenshot). Moving the leaderboard
+      into the centre column under Holdings unlocks ~860px of width, which is enough for: full username (24+ chars), a 240×24
+      sparkline that reads as a trend, value, %P&amp;L, <em>and</em> a Δ24h column.
+      <br><br>
+      <strong>Two-tier find-me.</strong>
+      <strong>Tier 1:</strong> the pinned "▸ YOU" row directly under the header is always visible regardless of collapse state &mdash;
+      so even when only top-10 is shown, your row is still on screen. <strong>Tier 2:</strong> when expanded, your row also renders
+      in its natural rank position, giving you the "who's right above/below me" context. Both use <code>--accent</code> and a
+      heavier sparkline stroke.
+      <br><br>
+      <strong>Header chip group.</strong>
+      Range chips (<code>1D · 5D · 10D · ALL</code>) — fewer than before; dropped 20D since the typical game length is ≤30 days
+      and 10D/ALL covers it. <code>Full view ↗</code> deep-links to Option 02. <code>● LIVE</code> pulses as today.
+    </div>
+  </section>
+
+  <!-- ─── OPTION 02: DEDICATED PAGE ─────────────────────────── -->
+  <section class="section">
+    <div class="section-eyebrow">
+      <span class="num">02</span>
+      <h2>Dedicated <code style="font-family:'Geist Mono',monospace; font-size:14px; color:var(--accent); background:transparent;">/games/:id/leaderboard</code> page</h2>
+      <span class="note">Full race chart with 25+ player handling · podium · standings · movers</span>
+    </div>
+
+    <div class="lb-page">
+      <div class="stack">
+
+        <div class="crumb">
+          <a href="#">Games</a>
+          <span class="sep">/</span>
+          <a href="#">the-game</a>
+          <span class="sep">/</span>
+          <span class="now">Leaderboard</span>
+        </div>
+
+        <h2 class="title">the-game &mdash; Leaderboard</h2>
+        <p class="sub">
+          Day 20 of 31 &nbsp;·&nbsp; 31 players &nbsp;·&nbsp; starting balance <span class="font-mono">$100,000</span>
+          &nbsp;·&nbsp; next settlement <span class="font-mono">market close</span>
+        </p>
+
+        <!-- Podium -->
+        <div class="podium">
+          <div class="step second">
+            <div class="place">2ND · SILVER</div>
+            <div class="who">lucienne_torp</div>
+            <div class="val">$103,804</div>
+            <div class="pnl">+3.80%</div>
+          </div>
+          <div class="step first" style="padding-bottom: 18px;">
+            <div class="place">1ST · GOLD</div>
+            <div class="who" style="font-size:16px;">jennie_wiza</div>
+            <div class="val" style="font-size:15px;">$104,785</div>
+            <div class="pnl">+4.79%</div>
+          </div>
+          <div class="step third">
+            <div class="place">3RD · BRONZE</div>
+            <div class="who">antonio_jenkins</div>
+            <div class="val">$103,436</div>
+            <div class="pnl">+3.44%</div>
+          </div>
+        </div>
+
+        <!-- Big race chart, designed for 25+ players -->
+        <div class="panel race-chart">
+          <div class="panel-header">
+            <span style="display:flex; align-items:center; gap:10px;">
+              Portfolio race
+              <span class="tag">31 series</span>
+            </span>
+            <span class="lb-head-actions">
+              <span class="tag">VIEW</span>
+              <button class="chip" aria-pressed="true">Top 10 + you</button>
+              <button class="chip">All players</button>
+              <button class="chip">Custom</button>
+            </span>
+          </div>
+
+          <div class="ranges">
+            <button class="chip">1D</button>
+            <button class="chip">5D</button>
+            <button class="chip">10D</button>
+            <button class="chip">20D</button>
+            <button class="chip" aria-pressed="true">ALL · D1→D20</button>
+            <span style="flex:1;"></span>
+            <button class="chip">% P&amp;L</button>
+            <button class="chip" aria-pressed="true">Value</button>
+            <button class="chip">Rank</button>
+          </div>
+
+          <svg class="race-svg" viewBox="0 0 1100 380" preserveAspectRatio="none" role="img" aria-label="Player portfolio values across the full game">
+            <!-- gridlines -->
+            <g class="grid">
+              <line x1="0" x2="1100" y1="40"  y2="40"/>
+              <line x1="0" x2="1100" y1="120" y2="120"/>
+              <line x1="0" x2="1100" y1="200" y2="200"/>
+              <line x1="0" x2="1100" y1="280" y2="280"/>
+            </g>
+
+            <!-- "field" band: 5th-to-95th percentile of muted players -->
+            <path class="field-band"
+              d="M 0,190 L 90,182 L 180,176 L 270,180 L 360,172 L 450,168 L 540,170 L 630,166 L 720,160 L 810,162 L 900,158 L 990,154 L 1080,150
+                 L 1080,224 L 990,228 L 900,232 L 810,234 L 720,236 L 630,240 L 540,238 L 450,236 L 360,234 L 270,230 L 180,228 L 90,226 L 0,220 Z"/>
+
+            <!-- starting baseline -->
+            <line class="baseline" x1="0" x2="1100" y1="200" y2="200"/>
+            <text class="label" x="6" y="196" fill="var(--muted)" style="font-size:10px;">$100,000 STARTING BALANCE</text>
+
+            <!-- Muted "field" series (the 22 not-top-10, not-you) — drawn as thin grey lines -->
+            <polyline class="series muted" points="0,210 90,212 180,208 270,214 360,210 450,206 540,210 630,206 720,202 810,208 900,206 990,202 1080,204"/>
+            <polyline class="series muted" points="0,196 90,200 180,198 270,200 360,196 450,200 540,198 630,196 720,194 810,196 900,192 990,194 1080,196"/>
+            <polyline class="series muted" points="0,202 90,204 180,206 270,208 360,206 450,204 540,206 630,204 720,206 810,208 900,206 990,208 1080,210"/>
+            <polyline class="series muted" points="0,198 90,196 180,200 270,196 360,200 450,198 540,202 630,200 720,198 810,196 900,200 990,202 1080,200"/>
+            <polyline class="series muted" points="0,206 90,202 180,204 270,202 360,200 450,202 540,200 630,198 720,200 810,198 900,196 990,200 1080,198"/>
+            <polyline class="series muted" points="0,194 90,198 180,200 270,196 360,202 450,200 540,198 630,202 720,200 810,198 900,200 990,196 1080,198"/>
+            <polyline class="series muted" points="0,210 90,214 180,212 270,216 360,214 450,218 540,216 630,220 720,222 810,224 900,222 990,224 1080,226"/>
+            <polyline class="series muted" points="0,184 90,186 180,182 270,184 360,180 450,182 540,178 630,180 720,178 810,180 900,176 990,178 1080,180"/>
+
+            <!-- Top-10 series (each a distinct hue) -->
+            <polyline class="series" stroke="var(--p3)" points="0,202 90,196 180,188 270,178 360,170 450,160 540,154 630,144 720,134 810,120 900,108 990,96  1080,82"/>
+            <polyline class="series" stroke="var(--p2)" points="0,200 90,194 180,186 270,180 360,170 450,164 540,156 630,148 720,138 810,128 900,116 990,108 1080,98"/>
+            <polyline class="series" stroke="var(--p4)" points="0,202 90,198 180,190 270,184 360,176 450,168 540,160 630,154 720,146 810,138 900,128 990,118 1080,110"/>
+            <polyline class="series" stroke="var(--p6)" points="0,202 90,200 180,194 270,188 360,178 450,172 540,166 630,160 720,150 810,142 900,134 990,124 1080,114"/>
+            <polyline class="series" stroke="var(--p5)" points="0,200 90,196 180,192 270,186 360,180 450,172 540,166 630,158 720,150 810,142 900,134 990,124 1080,116"/>
+            <polyline class="series" stroke="var(--p7)" points="0,198 90,196 180,192 270,188 360,180 450,176 540,170 630,162 720,156 810,148 900,140 990,132 1080,124"/>
+            <polyline class="series" stroke="var(--p8)" points="0,200 90,198 180,194 270,190 360,184 450,178 540,172 630,166 720,160 810,154 900,148 990,140 1080,130"/>
+            <polyline class="series" stroke="#c084fc" points="0,202 90,200 180,196 270,192 360,186 450,180 540,174 630,168 720,162 810,156 900,150 990,144 1080,134"/>
+            <polyline class="series" stroke="#22d3ee" points="0,200 90,198 180,196 270,194 360,188 450,184 540,180 630,174 720,168 810,162 900,156 990,150 1080,142"/>
+            <polyline class="series" stroke="#fcd34d" points="0,202 90,200 180,196 270,192 360,188 450,184 540,178 630,174 720,168 810,162 900,158 990,150 1080,144"/>
+
+            <!-- YOU - rank 25, plotted near the baseline (flat) -->
+            <polyline class="series me" stroke="var(--accent)" points="0,200 90,200 180,201 270,200 360,200 450,200 540,200 630,200 720,200 810,200 900,200 990,200 1080,200"/>
+            <circle class="dot" cx="1080" cy="200" r="4" fill="var(--accent)"/>
+
+            <!-- End-of-line dots for top 10 -->
+            <circle class="dot" cx="1080" cy="82"  r="3.5" fill="var(--p3)"/>
+            <circle class="dot" cx="1080" cy="98"  r="3"   fill="var(--p2)"/>
+            <circle class="dot" cx="1080" cy="110" r="3"   fill="var(--p4)"/>
+            <circle class="dot" cx="1080" cy="114" r="3"   fill="var(--p6)"/>
+            <circle class="dot" cx="1080" cy="116" r="3"   fill="var(--p5)"/>
+            <circle class="dot" cx="1080" cy="124" r="3"   fill="var(--p7)"/>
+            <circle class="dot" cx="1080" cy="130" r="3"   fill="var(--p8)"/>
+            <circle class="dot" cx="1080" cy="134" r="3"   fill="#c084fc"/>
+            <circle class="dot" cx="1080" cy="142" r="3"   fill="#22d3ee"/>
+            <circle class="dot" cx="1080" cy="144" r="3"   fill="#fcd34d"/>
+
+            <!-- End labels -->
+            <text class="label" x="1086" y="86"  fill="var(--p3)">jennie_wiza</text>
+            <text class="label" x="1086" y="102" fill="var(--p2)">lucienne</text>
+            <text class="label" x="1086" y="114" fill="var(--p4)">antonio</text>
+            <text class="label" x="1086" y="128" fill="var(--p6)" opacity="0.8">adan</text>
+            <text class="label" x="1086" y="148" fill="var(--p7)" opacity="0.7">albert</text>
+            <text class="label" x="1086" y="204" fill="var(--accent)" style="font-size:11px; font-weight:600;">▸ you · #25</text>
+
+            <!-- left-axis ticks -->
+            <g class="axis">
+              <text x="6" y="36">$105K</text>
+              <text x="6" y="116">$102K</text>
+              <text x="6" y="196">$100K</text>
+              <text x="6" y="276">$97K</text>
+            </g>
+            <!-- bottom-axis day ticks -->
+            <g class="axis">
+              <text x="2"   y="362">D-1</text>
+              <text x="220" y="362">D-5</text>
+              <text x="440" y="362">D-10</text>
+              <text x="660" y="362">D-15</text>
+              <text x="1020" y="362">NOW · D-20</text>
+            </g>
+
+            <!-- Field band caption -->
+            <text class="label" x="540" y="240" fill="var(--muted)" text-anchor="middle" style="font-size:9px; letter-spacing:0.16em;">
+              · · ·  21 players hidden in the "field" band  · · ·
+            </text>
+          </svg>
+
+          <!-- Series toggle row: top-10 + you -->
+          <div class="series-toggles">
+            <button class="series-toggle me"><span class="sw" style="background:var(--accent)"></span>tristan (you) <span class="pct">0.00%</span></button>
+            <button class="series-toggle"><span class="sw" style="background:var(--p3)"></span>jennie_wiza_9a2e <span class="pct gain">+4.79%</span></button>
+            <button class="series-toggle"><span class="sw" style="background:var(--p2)"></span>lucienne_torp_8545 <span class="pct gain">+3.80%</span></button>
+            <button class="series-toggle"><span class="sw" style="background:var(--p4)"></span>antonio_jenkins <span class="pct gain">+3.44%</span></button>
+            <button class="series-toggle"><span class="sw" style="background:var(--p6)"></span>adan_considine <span class="pct gain">+3.41%</span></button>
+            <button class="series-toggle"><span class="sw" style="background:var(--p5)"></span>jamaal_jast <span class="pct gain">+3.41%</span></button>
+            <button class="series-toggle"><span class="sw" style="background:var(--p7)"></span>albert_runolfsdottir <span class="pct gain">+3.31%</span></button>
+            <button class="series-toggle"><span class="sw" style="background:var(--p8)"></span>richard_marquardt <span class="pct gain">+3.07%</span></button>
+            <button class="series-toggle off"><span class="sw" style="background:#c084fc"></span>kristina_dicki <span class="pct gain">+2.69%</span></button>
+            <button class="series-toggle off"><span class="sw" style="background:#22d3ee"></span>magnus_okuneva <span class="pct gain">+2.16%</span></button>
+            <button class="series-toggle off"><span class="sw" style="background:#fcd34d"></span>cara_jaskolski <span class="pct gain">+1.98%</span></button>
+            <button class="series-toggle off" style="border-style:dashed;">+ show 21 more</button>
+          </div>
+        </div>
+
+        <!-- "You" card -->
+        <div class="panel">
+          <div class="panel-header"><span>Your row, expanded</span><span class="tag">Δ since join</span></div>
+          <div class="you-card">
+            <div class="rank-big">#25<sub> / 31</sub></div>
+            <div class="col">
+              <div class="lbl">Value</div>
+              <div class="val">$100,000</div>
+            </div>
+            <div class="col">
+              <div class="lbl">P&amp;L</div>
+              <div class="val" style="color:var(--muted);">0.00%</div>
+            </div>
+            <div class="col">
+              <div class="lbl">Δ to #1</div>
+              <div class="val loss">−$4,785</div>
+            </div>
+            <div class="col">
+              <div class="lbl">Δ to #24</div>
+              <div class="val loss">−$35</div>
+            </div>
+            <div class="col">
+              <div class="lbl">Peak rank</div>
+              <div class="val">#19</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Standings table -->
+        <div class="panel">
+          <div class="panel-header">
+            <span>Full standings</span>
+            <span class="lb-head-actions">
+              <button class="chip" aria-pressed="true">Rank</button>
+              <button class="chip">Δ24h</button>
+              <button class="chip">Volatility</button>
+            </span>
+          </div>
+          <div style="overflow-x:auto;">
+            <table class="standings">
+              <thead>
+                <tr>
+                  <th style="width:36px;">#</th>
+                  <th>Player</th>
+                  <th class="num">Value</th>
+                  <th class="num">P&amp;L</th>
+                  <th class="num">Δ24h</th>
+                  <th class="num">Cash</th>
+                  <th class="num">Positions</th>
+                  <th class="num">Peak rank</th>
+                  <th class="num">Best day</th>
+                  <th class="num">Worst day</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td class="num">01</td>
+                  <td><span class="swatch-dot" style="background:var(--p3)"></span>jennie_wiza_9a2e</td>
+                  <td class="num">$104,785</td>
+                  <td class="num gain">+4.79%</td>
+                  <td class="num gain"><span class="delta-arrow up"></span>+1.42%</td>
+                  <td class="num">$28,210</td>
+                  <td class="num">9</td>
+                  <td class="num">#1</td>
+                  <td class="num gain">+2.10%</td>
+                  <td class="num loss">−0.40%</td>
+                </tr>
+                <tr>
+                  <td class="num">02</td>
+                  <td><span class="swatch-dot" style="background:var(--p2)"></span>lucienne_torp_8545</td>
+                  <td class="num">$103,804</td>
+                  <td class="num gain">+3.80%</td>
+                  <td class="num gain"><span class="delta-arrow up"></span>+0.98%</td>
+                  <td class="num">$22,140</td>
+                  <td class="num">7</td>
+                  <td class="num">#1</td>
+                  <td class="num gain">+1.92%</td>
+                  <td class="num loss">−0.62%</td>
+                </tr>
+                <tr>
+                  <td class="num">03</td>
+                  <td><span class="swatch-dot" style="background:var(--p4)"></span>antonio_jenkins_e86e</td>
+                  <td class="num">$103,436</td>
+                  <td class="num gain">+3.44%</td>
+                  <td class="num gain"><span class="delta-arrow up"></span>+0.72%</td>
+                  <td class="num">$18,910</td>
+                  <td class="num">11</td>
+                  <td class="num">#2</td>
+                  <td class="num gain">+1.84%</td>
+                  <td class="num loss">−0.81%</td>
+                </tr>
+                <tr><td colspan="10" style="text-align:center; color:var(--muted); font-family:'Geist Mono',monospace; font-size:10px; letter-spacing:0.16em; padding:14px;">· · ·  21 more rows  · · ·</td></tr>
+                <tr class="me">
+                  <td class="num">25</td>
+                  <td><span class="swatch-dot" style="background:var(--accent)"></span>tristan</td>
+                  <td class="num">$100,000</td>
+                  <td class="num" style="color:var(--muted);">0.00%</td>
+                  <td class="num" style="color:var(--muted);"><span class="delta-arrow flat"></span>+0.00%</td>
+                  <td class="num">$100,000</td>
+                  <td class="num">0</td>
+                  <td class="num">#19</td>
+                  <td class="num gain">+0.10%</td>
+                  <td class="num loss">−0.08%</td>
+                </tr>
+                <tr>
+                  <td class="num">26</td>
+                  <td><span class="swatch-dot" style="background:var(--p7)"></span>brannon_stiedemann_3c43</td>
+                  <td class="num">$99,954</td>
+                  <td class="num loss">−0.05%</td>
+                  <td class="num loss"><span class="delta-arrow down"></span>−0.02%</td>
+                  <td class="num">$12,640</td>
+                  <td class="num">8</td>
+                  <td class="num">#16</td>
+                  <td class="num gain">+0.42%</td>
+                  <td class="num loss">−0.94%</td>
+                </tr>
+                <tr><td colspan="10" style="text-align:center; color:var(--muted); font-family:'Geist Mono',monospace; font-size:10px; letter-spacing:0.16em; padding:14px;">· · ·  4 more rows  · · ·</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Right rail on dedicated page -->
+      <div class="stack">
+        <div class="panel">
+          <div class="panel-header"><span>Tournament stats</span><span class="tag">D 20/31</span></div>
+          <div class="statgrid">
+            <div class="cell"><div class="lbl">Pool size</div><div class="val">$3,100,000</div></div>
+            <div class="cell"><div class="lbl">Total traded</div><div class="val">$8.42M</div></div>
+            <div class="cell"><div class="lbl">Spread (1↔last)</div><div class="val">$4,849</div></div>
+            <div class="cell"><div class="lbl">Avg P&amp;L</div><div class="val gain" style="color:var(--gain);">+1.27%</div></div>
+            <div class="cell"><div class="lbl">Median P&amp;L</div><div class="val gain" style="color:var(--gain);">+0.62%</div></div>
+            <div class="cell"><div class="lbl">Volatility</div><div class="val">2.18σ</div></div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header"><span>Today's movers</span><span class="live-pill">LIVE</span></div>
+          <div class="movers">
+            <div class="mover"><span class="swatch-dot" style="background:var(--p3); margin:0;"></span><span>jennie_wiza</span><span class="delta gain">+1.42%</span><span class="tag">▲ 2</span></div>
+            <div class="mover"><span class="swatch-dot" style="background:var(--p2); margin:0;"></span><span>lucienne_torp</span><span class="delta gain">+0.98%</span><span class="tag">▲ 1</span></div>
+            <div class="mover"><span class="swatch-dot" style="background:var(--p7); margin:0;"></span><span>kristina_dicki</span><span class="delta loss">−1.20%</span><span class="tag">▼ 3</span></div>
+            <div class="mover"><span class="swatch-dot" style="background:var(--p5); margin:0;"></span><span>noor_gleichner</span><span class="delta loss">−0.80%</span><span class="tag">▼ 2</span></div>
+            <div class="mover"><span class="swatch-dot" style="background:var(--accent); margin:0;"></span><span style="color:var(--text-strong);">tristan (you)</span><span class="delta" style="color:var(--muted);">+0.00%</span><span class="tag">— flat</span></div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header"><span>Race highlights</span></div>
+          <div class="panel-body" style="font-size:12px; line-height:1.65; color:var(--text);">
+            <div style="display:flex; gap:8px; padding:6px 0; border-bottom:1px solid var(--hairline);">
+              <span class="tag" style="min-width:48px;">D-3</span>
+              <span><span style="color:var(--p3);">jennie_wiza</span> took #1 from <span style="color:var(--p2);">lucienne</span>.</span>
+            </div>
+            <div style="display:flex; gap:8px; padding:6px 0; border-bottom:1px solid var(--hairline);">
+              <span class="tag" style="min-width:48px;">D-8</span>
+              <span><span style="color:var(--p5);">noor_gleichner</span> dropped from #5 to #21 in 3 days.</span>
+            </div>
+            <div style="display:flex; gap:8px; padding:6px 0; border-bottom:1px solid var(--hairline);">
+              <span class="tag" style="min-width:48px;">D-12</span>
+              <span>Tightest field of the tournament: <span class="font-mono">$480</span> across #5–#20.</span>
+            </div>
+            <div style="display:flex; gap:8px; padding:6px 0;">
+              <span class="tag" style="min-width:48px;">D-18</span>
+              <span><span style="color:var(--p3);">jennie_wiza</span> peaked at <span class="font-mono">$105,210</span>.</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header"><span>Export</span></div>
+          <div class="panel-body" style="font-size:12px; color:var(--muted); line-height:1.6;">
+            <button class="chip" style="width:100%; text-align:left; margin-bottom:6px;">CSV · standings</button>
+            <button class="chip" style="width:100%; text-align:left; margin-bottom:6px;">PNG · race chart</button>
+            <button class="chip" style="width:100%; text-align:left;">Share link 🔗</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="frame-caption">
+      <strong>Designed for 25+ players.</strong>
+      A naïve 31-line spaghetti chart is unreadable. Three rules tame it: <strong>(1)</strong> Default view = "Top 10 + you" — only
+      11 colored lines, plus your <code>--accent</code> series always pinned. <strong>(2)</strong> The other 21 players collapse
+      into a faded grey "field band" (5th-95th percentile envelope, see the soft grey shape) so you can still see how the pack
+      moved without naming every line. <strong>(3)</strong> The series-toggle row lets you mute/unmute individual players;
+      "+ show 21 more" un-collapses the field band. <strong>"View" modes</strong> add <em>%P&amp;L</em> (normalises every player
+      to 0% at start) and <em>Rank</em> (Y axis = rank position, so overtakes become explicit X-crossings).
+      <br><br>
+      <strong>Your row stays findable.</strong>
+      The "▸ you · #25" label at the right edge of the chart, a dedicated "Your row, expanded" card with Δ-to-#1 and Δ-to-#24
+      metrics, and the standings-table highlight all keep you anchored even in a 31-player field.
+    </div>
+  </section>
+
+  <!-- ─── Summary ────────────────────────────────────────────── -->
+  <div class="choose">
+    <h3>Plan summary</h3>
+    <p>
+      <strong>01</strong> reclaims real estate by moving the Leaderboard from the cramped 280px left rail into the centre column
+      under Holdings &mdash; 860px of width unlocks per-row sparklines and full usernames. A pinned "▸ YOU" row keeps the user
+      anchored even when their natural rank is #25 of 31. <strong>02</strong> takes everything that doesn't fit in the centre-column
+      panel and gives it a home: full-size race chart with smart series-management for 25+ players, podium, full standings table,
+      tournament stats, movers, highlights, exports.
+    </p>
+    <ul>
+      <li><strong>Layout change in arena:</strong> drop Leaderboard from left rail; add it to centre column under <code>HoldingsPanel</code>. Watchlist/Activity migrate to free left-rail space.</li>
+      <li><strong>Default: top 10 + you (pinned).</strong> Collapse widget at panel footer expands to the full field. Hint inside the button names your rank so the collapsed state is still useful for non-top-10 players.</li>
+      <li><strong>Shared API addition:</strong> <code>GET /games/:id/leaderboard/history?range=1d|5d|10d|all</code> &rarr; <code>{ playerId, points: [{ t, value }] }[]</code>. One endpoint feeds sparklines and the full chart.</li>
+      <li><strong>Snapshot cadence:</strong> 5-min portfolio-value snapshots server-side, aligned with the WS price-batch interval already in <code>CLAUDE.md</code>.</li>
+      <li><strong>Reusable components:</strong> <code>&lt;PortfolioSparkline&gt;</code> for in-row 240×24, <code>&lt;PortfolioRaceChart&gt;</code> for the dedicated page. Both consume the same history payload.</li>
+      <li><strong>Colour slots:</strong> deterministic <code>hash(playerId) → --p2..--p8</code>; current user is always <code>--accent</code> so "your line" is constant.</li>
+      <li><strong>Find-me affordances:</strong> pinned top row in centre-column panel; right-edge label + standings highlight + you-card on dedicated page.</li>
+      <li><strong>Crowd handling on the chart:</strong> default Top-10+you view; muted "field band" envelope for the rest; togglable per series.</li>
+    </ul>
+  </div>
+
+</div>
+
+</body>
+</html>

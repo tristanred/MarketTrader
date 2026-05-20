@@ -10,7 +10,8 @@
     "test": "pnpm -r test",
     "typecheck": "pnpm -r typecheck",
     "lint": "pnpm -r lint",
-    "e2e": "pnpm --filter frontend e2e"
+    "e2e": "pnpm --filter frontend e2e",
+    "seed:history": "pnpm --filter @markettrader/tools-seed-game-history start"
   },
   "pnpm": {
     "overrides": {

@@ -1,4 +1,4 @@
-import { sqliteTable, text, real, integer, unique, primaryKey } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, real, integer, unique, primaryKey, index } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
 
 /** Registered platform accounts. One user can participate in many games. */
@@ -112,6 +112,14 @@ export const games = sqliteTable('games', {
   createdAt: text('created_at')
     .default(sql`(datetime('now'))`)
     .notNull(),
+  /**
+   * ISO 8601 timestamp set when the portfolio-snapshot worker has compacted
+   * this game's `portfolio_snapshots` rows to one-per-player-per-day.
+   * Null while the game is active, or for ended games that haven't been
+   * processed yet. Compaction is idempotent but skipping already-compacted
+   * games keeps the per-tick scan bounded.
+   */
+  snapshotsCompactedAt: text('snapshots_compacted_at'),
 });
 
 /**
@@ -290,3 +298,38 @@ export const systemSettings = sqliteTable('system_settings', {
   /** User id of the most recent writer; null when seeded by the server. */
   updatedBy: text('updated_by'),
 });
+
+/**
+ * Periodic capture of every player's total portfolio value, written by the
+ * portfolio-snapshot worker every {@link env.PORTFOLIO_SNAPSHOT_INTERVAL_MS}
+ * and on-demand after each trade execution. Powers the leaderboard race chart
+ * and per-row sparklines. `rank` is denormalised — recomputing rank from
+ * `totalValue` at read time would require every player's value at every
+ * timestamp, so we capture it once at write time.
+ *
+ * Ended games are compacted to one row per player per day (last-of-day);
+ * active games keep full 5-minute resolution.
+ */
+export const portfolioSnapshots = sqliteTable(
+  'portfolio_snapshots',
+  {
+    id: text('id')
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    gameId: text('game_id')
+      .notNull()
+      .references(() => games.id, { onDelete: 'cascade' }),
+    gamePlayerId: text('game_player_id')
+      .notNull()
+      .references(() => gamePlayers.id, { onDelete: 'cascade' }),
+    capturedAt: text('captured_at')
+      .default(sql`(datetime('now'))`)
+      .notNull(),
+    totalValue: real('total_value').notNull(),
+    rank: integer('rank').notNull(),
+  },
+  (t) => [
+    index('portfolio_snapshots_game_time_idx').on(t.gameId, t.capturedAt),
+    index('portfolio_snapshots_player_time_idx').on(t.gamePlayerId, t.capturedAt),
+  ],
+);

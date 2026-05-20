@@ -24,7 +24,7 @@ import {
   WorkingOrderNotFoundError,
 } from '../services/working-order.js';
 import type { OrderType, TimeInForce } from '@markettrader/shared';
-import { computeLeaderboard } from '../services/leaderboard.js';
+import { recordSnapshot } from '../services/portfolio-snapshot.js';
 import type { TradeDirection } from '@markettrader/shared';
 import type { GameClientRegistry } from '../ws/registry.js';
 import { env } from '../env.js';
@@ -378,8 +378,11 @@ export function tradingRoutes(
           const last = lastLeaderboardBroadcast.get(gameId) ?? 0;
           if (now - last >= leaderboardThrottleMs) {
             lastLeaderboardBroadcast.set(gameId, now);
-            // Fire-and-forget — do not delay the HTTP response
-            computeLeaderboard(db, gameId)
+            // Fire-and-forget — do not delay the HTTP response.
+            // recordSnapshot internally calls computeLeaderboard once and uses
+            // the result for both the WS broadcast and the snapshot rows, so
+            // there's no double work here.
+            recordSnapshot(db, gameId)
               .then((entries) => {
                 registry.broadcast(gameId, { event: 'leaderboard_update', data: entries });
               })

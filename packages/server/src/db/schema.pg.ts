@@ -8,6 +8,7 @@ import {
   boolean,
   unique,
   primaryKey,
+  index,
 } from 'drizzle-orm/pg-core';
 
 // PostgreSQL enums for status and direction fields; the SQLite schema uses text enums instead.
@@ -119,6 +120,12 @@ export const games = pgTable('games', {
     .notNull()
     .references(() => users.id, { onDelete: 'restrict' }),
   createdAt: timestamp('created_at', { mode: 'string' }).defaultNow().notNull(),
+  /**
+   * ISO timestamp set when the portfolio-snapshot worker has compacted this
+   * game's `portfolio_snapshots` rows to one-per-player-per-day. Null while
+   * the game is active.
+   */
+  snapshotsCompactedAt: timestamp('snapshots_compacted_at', { mode: 'string' }),
 });
 
 /**
@@ -267,3 +274,31 @@ export const systemSettings = pgTable('system_settings', {
   /** User id of the most recent writer; null when seeded by the server. */
   updatedBy: text('updated_by'),
 });
+
+/**
+ * Periodic capture of every player's total portfolio value. See the SQLite
+ * variant for the full description. Written by the portfolio-snapshot worker
+ * at a fixed interval and on each trade execution. Ended games are compacted
+ * to one row per player per day.
+ */
+export const portfolioSnapshots = pgTable(
+  'portfolio_snapshots',
+  {
+    id: text('id')
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    gameId: text('game_id')
+      .notNull()
+      .references(() => games.id, { onDelete: 'cascade' }),
+    gamePlayerId: text('game_player_id')
+      .notNull()
+      .references(() => gamePlayers.id, { onDelete: 'cascade' }),
+    capturedAt: timestamp('captured_at', { mode: 'string' }).defaultNow().notNull(),
+    totalValue: decimal('total_value', { precision: 15, scale: 2 }).notNull(),
+    rank: integer('rank').notNull(),
+  },
+  (t) => [
+    index('portfolio_snapshots_game_time_idx').on(t.gameId, t.capturedAt),
+    index('portfolio_snapshots_player_time_idx').on(t.gamePlayerId, t.capturedAt),
+  ],
+);

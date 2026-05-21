@@ -129,6 +129,15 @@ export const env = {
     'PENDING_ORDERS_TICK_MS',
     optional('PENDING_ORDERS_TICK_MS', '30000'),
   ),
+  /**
+   * How often the portfolio-snapshot worker captures every active player's
+   * total portfolio value. Default 5 minutes — aligns with the WS price-batch
+   * cadence. Drives the leaderboard race chart and per-row sparklines.
+   */
+  PORTFOLIO_SNAPSHOT_INTERVAL_MS: parsePositiveInt(
+    'PORTFOLIO_SNAPSHOT_INTERVAL_MS',
+    optional('PORTFOLIO_SNAPSHOT_INTERVAL_MS', '300000'),
+  ),
 
   /**
    * Sentry DSN. When set, the server initializes @sentry/node and forwards

@@ -6,8 +6,14 @@ import type { Db } from '../db/index.js';
 import { schema } from '../db/index.js';
 import { recomputeGameStatus, recomputeMany } from '../services/game-status.js';
 import { computeLeaderboard } from '../services/leaderboard.js';
+import { getLeaderboardHistory } from '../services/leaderboard-history.js';
 
 const gameIdParamsSchema = z.object({ id: z.string() });
+
+const leaderboardHistoryQuerySchema = z.object({
+  range: z.enum(['1d', '5d', '10d', 'all']).optional().default('5d'),
+  maxPoints: z.coerce.number().int().min(10).max(1000).optional().default(240),
+});
 
 const createGameSchema = z
   .object({
@@ -201,6 +207,35 @@ export function gameRoutes(db: Db) {
         status,
         leaderboard,
       });
+    });
+
+    app.get('/games/:id/leaderboard/history', {
+      onRequest: rawApp.authenticate,
+      schema: {
+        tags: ['Games'],
+        summary: 'Portfolio-value history per player over the requested range.',
+        security: [{ bearerAuth: [] }],
+        params: gameIdParamsSchema,
+        querystring: leaderboardHistoryQuerySchema,
+      },
+    }, async (request, reply) => {
+      const { id: gameId } = request.params;
+      const { range, maxPoints } = request.query;
+      const userId = request.user.id;
+
+      // 404 for non-members so game IDs aren't enumerable. Matches GET /games/:id.
+      const [game] = await db.select().from(games).where(eq(games.id, gameId)).limit(1);
+      if (!game) return reply.status(404).send({ error: 'Game not found' });
+
+      const [membership] = await db
+        .select({ id: gamePlayers.id })
+        .from(gamePlayers)
+        .where(and(eq(gamePlayers.gameId, gameId), eq(gamePlayers.userId, userId)))
+        .limit(1);
+      if (!membership) return reply.status(404).send({ error: 'Game not found' });
+
+      const response = await getLeaderboardHistory(db, gameId, { range, maxPoints });
+      return reply.status(200).send(response);
     });
   };
 }

@@ -17,7 +17,58 @@ const { loadHistoricalPrices } = await import('./historical-prices.js');
 const { SEED_SYMBOLS } = await import('./symbols.js');
 const { seedPlayers, SEED_USER_PASSWORD } = await import('./seed-players.js');
 const { seedTradesForPlayer } = await import('./seed-trades.js');
+const { seedSnapshotsForGame, clearSnapshotsForGame } = await import('./seed-snapshots.js');
 const { randInt } = await import('./rng.js');
+
+function parseArgs(argv: string[]): { gameId?: string; skipSnapshots: boolean; help: boolean } {
+  const out: { gameId?: string; skipSnapshots: boolean; help: boolean } = {
+    skipSnapshots: false,
+    help: false,
+  };
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === '--no-snapshots') out.skipSnapshots = true;
+    else if (a === '--help' || a === '-h') out.help = true;
+    else if (a === '--game-id' || a === '--game') {
+      const next = argv[i + 1];
+      if (!next || next.startsWith('--')) {
+        console.error(`${a} requires a game id (full UUID or unique prefix).`);
+        process.exit(1);
+      }
+      out.gameId = next;
+      i++;
+    } else if (a?.startsWith('--game-id=')) {
+      out.gameId = a.slice('--game-id='.length);
+    } else if (a?.startsWith('--game=')) {
+      out.gameId = a.slice('--game='.length);
+    }
+  }
+  return out;
+}
+
+const args = parseArgs(process.argv.slice(2));
+
+if (args.help) {
+  console.log(`Usage: pnpm seed [options]
+
+Seeds an active game with synthetic players, executed trades, and
+backfilled leaderboard snapshots. With no arguments, prompts the operator
+to pick a game from the list of active games.
+
+Options:
+  --game-id <id>     Pick the game non-interactively. Accepts the full
+                     UUID or any unique prefix. Aliased as --game.
+  --no-snapshots     Skip backfilling portfolio_snapshots rows.
+  -h, --help         Print this message and exit.
+
+Examples:
+  pnpm seed
+  pnpm seed --game-id a1b2c3d4
+  pnpm seed --game=a1b2c3d4 --no-snapshots`);
+  process.exit(0);
+}
+
+const SKIP_SNAPSHOTS = args.skipSnapshots;
 
 const PLAYER_MIN = 5;
 const PLAYER_MAX = 20;
@@ -25,7 +76,7 @@ const TRADES_MIN = 10;
 const TRADES_MAX = 60;
 
 async function main(): Promise<void> {
-  const game = await selectActiveGame();
+  const game = await selectActiveGame(args.gameId);
   const nowISO = new Date().toISOString();
 
   const playerCount = randInt(PLAYER_MIN, PLAYER_MAX);
@@ -67,11 +118,35 @@ async function main(): Promise<void> {
     );
   }
 
+  let snapshotsInserted = 0;
+  let snapshotTicks = 0;
+  let snapshotsCleared = 0;
+  if (!SKIP_SNAPSHOTS) {
+    console.log('\nBackfilling leaderboard snapshots …');
+    // Wipe any prior snapshot rows for this game so re-running the seed
+    // tool on the same game doesn't pile up duplicate ticks.
+    snapshotsCleared = await clearSnapshotsForGame(game.id);
+    const snapshotResult = await seedSnapshotsForGame(
+      game.id,
+      game.startingBalance,
+      effectiveStartISO,
+      nowISO,
+      players,
+      { symbols: SEED_SYMBOLS, earliestBarMs, priceAt },
+    );
+    snapshotsInserted = snapshotResult.inserted;
+    snapshotTicks = snapshotResult.ticks;
+    console.log(`  ${snapshotsInserted} snapshot rows across ${snapshotTicks} ticks (${snapshotsCleared} cleared first).`);
+  }
+
   console.log('\n──────────────────────────────────────────────');
   console.log(`Seeded "${game.name}" (id=${game.id})`);
   console.log(`  Players created: ${players.length}`);
   console.log(`  Trades inserted: ${totalInserted}`);
   console.log(`  Trades skipped:  ${totalSkipped}`);
+  if (!SKIP_SNAPSHOTS) {
+    console.log(`  Snapshot rows:   ${snapshotsInserted} (${snapshotTicks} ticks)`);
+  }
   console.log(`  Login password for all seeded users: ${SEED_USER_PASSWORD}`);
   console.log('──────────────────────────────────────────────');
 }

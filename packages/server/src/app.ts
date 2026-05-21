@@ -35,6 +35,7 @@ import { globalLiveRoute } from './ws/global-live-route.js';
 import { IndicesBroadcaster } from './ws/indices-broadcaster.js';
 import { startPricePoller } from './ws/price-poller.js';
 import { startPendingOrdersWorker } from './workers/pending-orders.js';
+import { startPortfolioSnapshotWorker } from './workers/portfolio-snapshot.js';
 import { attachSentry } from './observability/sentry.js';
 
 export async function buildApp(
@@ -135,6 +136,14 @@ export async function buildApp(
         pendingWorker.stop();
       });
     }
+
+    const snapshotWorker = startPortfolioSnapshotWorker({
+      db,
+      logger: app.log,
+    });
+    app.addHook('onClose', async () => {
+      snapshotWorker.stop();
+    });
   }
 
   attachSentry(app);

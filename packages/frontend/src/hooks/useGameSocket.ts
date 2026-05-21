@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useAuthStore } from '@/stores/authStore';
 import { useLiveStore } from '@/stores/liveStore';
 import { tradeKeys } from '@/api/trades';
+import { leaderboardHistoryKeys } from '@/api/leaderboard-history';
 import { toast } from '@/components/ui/toast';
 import type { WsClientEvent, WsServerEvent } from '@markettrader/shared';
 
@@ -73,7 +74,13 @@ export function useGameSocket(gameId: string, symbols: string[]): void {
           const parsed = JSON.parse(evt.data) as WsServerEvent;
           const store = useLiveStore.getState();
           if (parsed.event === 'price_update') store.applyPriceUpdate(parsed.data);
-          else if (parsed.event === 'leaderboard_update') store.applyLeaderboard(parsed.data);
+          else if (parsed.event === 'leaderboard_update') {
+            store.applyLeaderboard(parsed.data);
+            // History snapshot was written server-side just before this
+            // broadcast — refresh sparklines and the race chart so they
+            // pick up the new point on the next render.
+            void qcRef.current.invalidateQueries({ queryKey: leaderboardHistoryKeys.all });
+          }
           else if (parsed.event === 'trade_executed') {
             store.applyTradeExecuted(parsed.data);
             // A working order may have just flipped to executed — refresh.

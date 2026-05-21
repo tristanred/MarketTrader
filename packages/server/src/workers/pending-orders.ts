@@ -6,7 +6,7 @@ import type { StockProvider } from '../providers/index.js';
 import type { MarketStatusProvider } from '../providers/market-status/index.js';
 import { settlePendingTrades } from '../services/pending-trade.js';
 import { evaluateTriggers, expireDayOrders } from '../services/working-order.js';
-import { computeLeaderboard } from '../services/leaderboard.js';
+import { recordSnapshot } from '../services/portfolio-snapshot.js';
 import type { GameClientRegistry } from '../ws/registry.js';
 import { env } from '../env.js';
 import type { MarketState, TradeDirection } from '@markettrader/shared';
@@ -149,10 +149,12 @@ export async function runPendingOrdersTick(deps: {
     });
   }
 
-  // One leaderboard refresh per touched game.
+  // One leaderboard refresh per touched game. recordSnapshot internally calls
+  // computeLeaderboard and writes a portfolio_snapshots row per player, so the
+  // chart sees a fresh point at every settle without a second leaderboard query.
   for (const gameId of gameIdsTouched) {
     try {
-      const entries = await computeLeaderboard(db, gameId);
+      const entries = await recordSnapshot(db, gameId);
       registry.broadcast(gameId, { event: 'leaderboard_update', data: entries });
     } catch {
       // Swallow — a failed leaderboard broadcast must not affect settlement.

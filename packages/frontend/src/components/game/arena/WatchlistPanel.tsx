@@ -153,161 +153,163 @@ export function WatchlistPanel({
   const headerLabel = (() => {
     if (mode === 'add') return 'Add to watchlist';
     if (mode === 'create') return 'New watchlist';
-    return (
-      <span ref={menuRef} className="relative inline-flex">
-        <button
-          type="button"
-          onClick={() => setMenuOpen((v) => !v)}
-          className="inline-flex items-center gap-1.5 font-mono uppercase tracking-[0.14em] text-muted hover:text-text-strong"
-          aria-haspopup="menu"
-          aria-expanded={menuOpen}
+    return `Watchlist · ${activeLabel}`;
+  })();
+
+  const listSwitcher = (
+    <div ref={menuRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setMenuOpen((v) => !v)}
+        className="inline-flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.14em] text-muted hover:text-text-strong"
+        aria-haspopup="menu"
+        aria-expanded={menuOpen}
+      >
+        <span aria-hidden>▾</span>
+        <span>{activeLabel}</span>
+      </button>
+      {menuOpen ? (
+        <div
+          role="menu"
+          className="absolute left-0 top-full z-50 mt-1 min-w-[220px] overflow-hidden rounded-chip border border-hairline-strong bg-panel"
         >
-          <span aria-hidden>▾</span>
-          <span>{activeLabel}</span>
-        </button>
-        {menuOpen ? (
-          <div
-            role="menu"
-            className="absolute left-0 top-full z-50 mt-1 min-w-[220px] overflow-hidden rounded-chip border border-hairline-strong bg-panel"
-          >
-            <ul>
-              {lists.map((l) => {
-                const isActive = l.id === watchlistId;
-                const isRenaming = renamingId === l.id;
-                const isConfirmingDelete = confirmDeleteId === l.id;
-                return (
-                  <li key={l.id} className="group">
-                    {isRenaming ? (
-                      <div className="flex items-center gap-1 px-2 py-1">
-                        <input
-                          autoFocus
-                          value={renameDraft}
-                          onChange={(e) => setRenameDraft(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              e.preventDefault();
-                              void submitRename(l.id);
-                            } else if (e.key === 'Escape') {
-                              setRenamingId(null);
-                              setRenameDraft('');
-                            }
-                          }}
-                          maxLength={64}
-                          className="h-6 flex-1 rounded-chip border border-hairline-strong bg-bg px-1.5 font-mono text-xs text-text focus:outline-none focus:ring-1 focus:ring-accent"
-                        />
-                        <button
-                          type="button"
-                          aria-label="Save rename"
-                          onClick={() => void submitRename(l.id)}
-                          className="px-1.5 font-mono text-xs text-accent hover:text-text-strong"
-                        >
-                          ✓
-                        </button>
-                        <button
-                          type="button"
-                          aria-label="Cancel rename"
-                          onClick={() => {
+          <ul>
+            {lists.map((l) => {
+              const isActive = l.id === watchlistId;
+              const isRenaming = renamingId === l.id;
+              const isConfirmingDelete = confirmDeleteId === l.id;
+              return (
+                <li key={l.id} className="group">
+                  {isRenaming ? (
+                    <div className="flex items-center gap-1 px-2 py-1">
+                      <input
+                        autoFocus
+                        value={renameDraft}
+                        onChange={(e) => setRenameDraft(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            void submitRename(l.id);
+                          } else if (e.key === 'Escape') {
                             setRenamingId(null);
                             setRenameDraft('');
-                          }}
-                          className="px-1.5 font-mono text-xs text-muted hover:text-text"
+                          }
+                        }}
+                        maxLength={64}
+                        className="h-6 flex-1 rounded-chip border border-hairline-strong bg-bg px-1.5 font-mono text-xs text-text focus:outline-none focus:ring-1 focus:ring-accent"
+                      />
+                      <button
+                        type="button"
+                        aria-label="Save rename"
+                        onClick={() => void submitRename(l.id)}
+                        className="px-1.5 font-mono text-xs text-accent hover:text-text-strong"
+                      >
+                        ✓
+                      </button>
+                      <button
+                        type="button"
+                        aria-label="Cancel rename"
+                        onClick={() => {
+                          setRenamingId(null);
+                          setRenameDraft('');
+                        }}
+                        className="px-1.5 font-mono text-xs text-muted hover:text-text"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ) : isConfirmingDelete ? (
+                    <div className="flex items-center justify-between gap-2 px-3 py-1.5 font-mono text-xs">
+                      <span className="text-loss">Delete &ldquo;{l.name}&rdquo;?</span>
+                      <span className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => void submitDelete(l.id)}
+                          className="font-mono text-[10px] uppercase tracking-[0.14em] text-loss hover:underline"
                         >
-                          ✕
+                          Yes
                         </button>
-                      </div>
-                    ) : isConfirmingDelete ? (
-                      <div className="flex items-center justify-between gap-2 px-3 py-1.5 font-mono text-xs">
-                        <span className="text-loss">Delete &ldquo;{l.name}&rdquo;?</span>
-                        <span className="flex items-center gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => void submitDelete(l.id)}
-                            className="font-mono text-[10px] uppercase tracking-[0.14em] text-loss hover:underline"
-                          >
-                            Yes
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setConfirmDeleteId(null)}
-                            className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted hover:text-text"
-                          >
-                            No
-                          </button>
+                        <button
+                          type="button"
+                          onClick={() => setConfirmDeleteId(null)}
+                          className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted hover:text-text"
+                        >
+                          No
+                        </button>
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center hover:bg-hairline">
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          onSelectList?.(l.id);
+                          setMenuOpen(false);
+                        }}
+                        className="flex flex-1 items-center gap-2 px-3 py-1.5 text-left font-mono text-xs text-text"
+                      >
+                        <span aria-hidden className={isActive ? 'text-accent' : 'text-muted'}>
+                          {isActive ? '•' : ' '}
                         </span>
-                      </div>
-                    ) : (
-                      <div className="flex items-center hover:bg-hairline">
-                        <button
-                          type="button"
-                          role="menuitem"
-                          onClick={() => {
-                            onSelectList?.(l.id);
-                            setMenuOpen(false);
-                          }}
-                          className="flex flex-1 items-center gap-2 px-3 py-1.5 text-left font-mono text-xs text-text"
-                        >
-                          <span aria-hidden className={isActive ? 'text-accent' : 'text-muted'}>
-                            {isActive ? '•' : ' '}
-                          </span>
-                          {l.name}
-                        </button>
-                        <button
-                          type="button"
-                          aria-label={`Rename ${l.name}`}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setRenamingId(l.id);
-                            setRenameDraft(l.name);
-                            setConfirmDeleteId(null);
-                          }}
-                          className="px-2 py-1.5 text-muted opacity-0 hover:text-text-strong group-hover:opacity-100 focus-visible:opacity-100"
-                        >
-                          <PencilIcon />
-                        </button>
-                        <button
-                          type="button"
-                          aria-label={`Delete ${l.name}`}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setConfirmDeleteId(l.id);
-                            setRenamingId(null);
-                          }}
-                          className="px-2 py-1.5 text-muted opacity-0 hover:text-loss group-hover:opacity-100 focus-visible:opacity-100"
-                        >
-                          <XIcon />
-                        </button>
-                      </div>
-                    )}
-                  </li>
-                );
-              })}
-              {lists.length === 0 ? (
-                <li className="px-3 py-1.5 font-mono text-xs text-muted">No lists yet.</li>
-              ) : null}
-              <li className="border-t border-hairline-strong">
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    setMode('create');
-                  }}
-                  className="flex w-full items-center px-3 py-1.5 text-left font-mono text-xs uppercase tracking-[0.14em] text-accent hover:bg-hairline"
-                >
-                  + New list
-                </button>
-              </li>
-            </ul>
-            {error ? (
-              <p className="border-t border-hairline-strong px-3 py-1 font-mono text-[10px] text-loss">
-                {error}
-              </p>
+                        {l.name}
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={`Rename ${l.name}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setRenamingId(l.id);
+                          setRenameDraft(l.name);
+                          setConfirmDeleteId(null);
+                        }}
+                        className="px-2 py-1.5 text-muted opacity-0 hover:text-text-strong group-hover:opacity-100 focus-visible:opacity-100"
+                      >
+                        <PencilIcon />
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={`Delete ${l.name}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setConfirmDeleteId(l.id);
+                          setRenamingId(null);
+                        }}
+                        className="px-2 py-1.5 text-muted opacity-0 hover:text-loss group-hover:opacity-100 focus-visible:opacity-100"
+                      >
+                        <XIcon />
+                      </button>
+                    </div>
+                  )}
+                </li>
+              );
+            })}
+            {lists.length === 0 ? (
+              <li className="px-3 py-1.5 font-mono text-xs text-muted">No lists yet.</li>
             ) : null}
-          </div>
-        ) : null}
-      </span>
-    );
-  })();
+            <li className="border-t border-hairline-strong">
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setMenuOpen(false);
+                  setMode('create');
+                }}
+                className="flex w-full items-center px-3 py-1.5 text-left font-mono text-xs uppercase tracking-[0.14em] text-accent hover:bg-hairline"
+              >
+                + New list
+              </button>
+            </li>
+          </ul>
+          {error ? (
+            <p className="border-t border-hairline-strong px-3 py-1 font-mono text-[10px] text-loss">
+              {error}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
 
   const headerRight =
     mode === 'idle' ? (
@@ -328,6 +330,11 @@ export function WatchlistPanel({
     <Panel className={className}>
       <PanelHeader right={headerRight}>{headerLabel}</PanelHeader>
       <PanelBody>
+        {mode === 'idle' ? (
+          <div className="mb-1.5 flex items-center justify-between border-b border-hairline pb-1.5">
+            {listSwitcher}
+          </div>
+        ) : null}
         {mode === 'add' ? (
           <div className="flex flex-col gap-1.5">
             <SymbolSearch

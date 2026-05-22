@@ -54,10 +54,13 @@ test.describe('WebSocket live updates', () => {
     },
   );
 
-  // OpenOrdersList exists at packages/frontend/src/components/OpenOrdersList.tsx
-  // but is not mounted in GameDetailPage (the new arena layout). The arena's
-  // right column is SymbolSearchPanel / WatchlistPanel / ActivityPanel.
-  // Re-enable once OpenOrdersList is wired into the arena.
+  // OpenOrdersList is now mounted in the arena (center column, below
+  // HoldingsPanel), but its empty state still renders null — see the unit
+  // test in tests/OpenOrdersList.test.tsx. The assertion below polls for
+  // "no open orders" text that the component does not produce. Either
+  // give the component an arena-style empty-state line and update the
+  // unit test, or rewrite this assertion to detect the row disappearing,
+  // before un-fixming.
   test.fixme(
     'open-orders updates when admin force-executes a working order',
     async ({ playerPage, apiClient, adminUser, makeGame, playerUser }) => {

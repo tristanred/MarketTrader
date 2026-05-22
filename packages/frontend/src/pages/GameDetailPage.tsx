@@ -25,6 +25,7 @@ import {
   SymbolSearchPanel,
 } from '@/components/game/arena';
 import { JoinGameCard } from '@/components/game/arena/JoinGameCard';
+import { OpenOrdersList } from '@/components/OpenOrdersList';
 import { TradeOrderDialog } from '@/components/TradeOrderDialog';
 import { QuoteInfoDialog } from '@/components/QuoteInfoDialog';
 import { useQuoteDialogStore } from '@/stores/quoteDialogStore';
@@ -251,6 +252,7 @@ function ArenaBody({
         <ChartPanel symbol={selectedSymbol} />
         <OhlcStrip />
         <HoldingsPanel rows={holdingRows} onSelect={setSelectedSymbol} />
+        <OpenOrdersList gameId={gameId} />
         {/* Leaderboard moved here from the left rail to gain horizontal room
             for per-row sparklines and full-length usernames. */}
         <LeaderboardPanel

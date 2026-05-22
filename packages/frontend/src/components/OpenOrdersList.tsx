@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Panel, PanelHeader, PanelBody } from '@/components/panel';
 import { SymbolButton } from '@/components/SymbolButton';
 import { DirectionLabel } from '@/components/DirectionLabel';
 import {
@@ -202,24 +202,24 @@ export function OpenOrdersList({ gameId }: { gameId: string }) {
     });
   };
 
+  const totalOrders = groups.reduce((n, g) => n + g.ids.length, 0);
+
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Open Orders</CardTitle>
-      </CardHeader>
-      <CardContent>
+    <Panel>
+      <PanelHeader>Open Orders · {totalOrders}</PanelHeader>
+      <PanelBody>
         <div className="overflow-x-auto scrollbar-always-x">
-          <table className="w-full text-sm">
-            <thead className="border-b text-left text-xs uppercase text-muted-foreground">
-              <tr>
-                <th className="px-2 py-2">Symbol</th>
-                <th className="px-2 py-2">Side</th>
-                <th className="px-2 py-2">Qty</th>
-                <th className="px-2 py-2">Type</th>
-                <th className="px-2 py-2">Trigger</th>
-                <th className="px-2 py-2">TIF</th>
-                <th className="px-2 py-2">Status</th>
-                <th className="px-2 py-2">Placed</th>
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-hairline text-[9px] uppercase tracking-[0.16em] text-muted">
+                <th className="py-1 text-left font-medium">Symbol</th>
+                <th className="text-left font-medium">Side</th>
+                <th className="text-right font-medium">Qty</th>
+                <th className="text-left font-medium">Type</th>
+                <th className="text-left font-medium">Trigger</th>
+                <th className="text-left font-medium">TIF</th>
+                <th className="text-left font-medium">Status</th>
+                <th className="text-right font-medium">Placed</th>
               </tr>
             </thead>
             <tbody>
@@ -234,8 +234,8 @@ export function OpenOrdersList({ gameId }: { gameId: string }) {
             </tbody>
           </table>
         </div>
-      </CardContent>
-    </Card>
+      </PanelBody>
+    </Panel>
   );
 }
 
@@ -251,25 +251,25 @@ function OrderRow({
   const isWorking = group.kind === 'working';
   const count = group.ids.length;
   return (
-    <tr className="border-b last:border-b-0">
-      <td className="px-2 py-2 font-medium">
-        <SymbolButton symbol={group.symbol} />
+    <tr className="border-b border-hairline last:border-0">
+      <td className="py-1">
+        <SymbolButton symbol={group.symbol} className="font-mono text-accent" />
       </td>
-      <td className="px-2 py-2">
-        <DirectionLabel direction={group.direction} />
+      <td>
+        <DirectionLabel direction={group.direction} className="text-[11px]" />
       </td>
-      <td className="px-2 py-2 tabular-nums">
+      <td className="text-right font-mono">
         {group.totalQuantity}
         {count > 1 && (
-          <span className="ml-1 text-xs font-normal text-muted-foreground">
+          <span className="ml-1 text-[10px] font-normal text-muted">
             ({count} orders)
           </span>
         )}
       </td>
-      <td className="px-2 py-2">{group.type}</td>
-      <td className="px-2 py-2 text-muted-foreground">{group.trigger}</td>
-      <td className="px-2 py-2 text-xs">{group.tif}</td>
-      <td className="px-2 py-2">
+      <td className="text-muted">{group.type}</td>
+      <td className="font-mono text-muted">{group.trigger}</td>
+      <td className="font-mono text-[10px] text-muted">{group.tif}</td>
+      <td>
         <StatusCancelBadge
           isWorking={isWorking}
           count={count}
@@ -277,7 +277,7 @@ function OrderRow({
           onCancel={onCancel}
         />
       </td>
-      <td className="px-2 py-2 text-xs text-muted-foreground whitespace-nowrap">
+      <td className="whitespace-nowrap text-right font-mono text-[10px] text-muted">
         {formatRange(group)}
       </td>
     </tr>
@@ -302,9 +302,7 @@ function StatusCancelBadge({
 }) {
   const statusLabel = isWorking ? 'Working' : 'Pending';
   const cancelLabel = count > 1 ? '✕ Cancel all' : '✕ Cancel';
-  const baseColor = isWorking
-    ? 'bg-green-100 text-green-800'
-    : 'bg-amber-100 text-amber-800';
+  const baseColor = isWorking ? 'text-gain' : 'text-muted';
   return (
     <button
       type="button"
@@ -313,10 +311,10 @@ function StatusCancelBadge({
       title={`Cancel ${count > 1 ? `${count} ${statusLabel.toLowerCase()} orders` : `this ${statusLabel.toLowerCase()} order`}`}
       aria-label={cancelLabel}
       className={cn(
-        'group/cancel inline-flex items-center rounded px-1.5 py-0.5 text-xs font-semibold transition-colors',
+        'group/cancel inline-flex items-center font-mono text-[10px] uppercase tracking-[0.14em] transition-colors',
         baseColor,
-        'hover:bg-red-100 hover:text-red-800 focus-visible:bg-red-100 focus-visible:text-red-800',
-        'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-red-500',
+        'hover:text-loss focus-visible:text-loss',
+        'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-loss',
         'disabled:cursor-not-allowed disabled:opacity-60',
       )}
     >

@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import type { Db } from '../db/index.js';
 import { schema } from '../db/index.js';
 import type { AchievementEngine } from '../achievements/engine.js';
@@ -18,6 +18,7 @@ const gameAndPlayerParams = z.object({ id: z.string(), gamePlayerId: z.string() 
  * and game membership):
  *  - `GET /games/:id/achievements` — definitions + progress for every player
  *  - `GET /games/:id/players/:gamePlayerId/achievements` — one player's view
+ *  - `POST /games/:id/players/:gamePlayerId/achievements/ack` — advance `last_seen_unlock_at`
  */
 export function achievementsRoutes(db: Db, engine: AchievementEngine) {
   return async function (rawApp: FastifyInstance): Promise<void> {
@@ -88,6 +89,52 @@ export function achievementsRoutes(db: Db, engine: AchievementEngine) {
 
         const view = await getProgressForPlayer(db, engine, gameId, gamePlayerId);
         return reply.status(200).send(view);
+      },
+    );
+
+    app.post(
+      '/games/:id/players/:gamePlayerId/achievements/ack',
+      {
+        onRequest: rawApp.authenticate,
+        schema: {
+          tags: ['Achievements'],
+          summary: 'Acknowledge an achievement unlock; advances last_seen_unlock_at.',
+          security: [{ bearerAuth: [] }],
+          params: gameAndPlayerParams,
+          body: z.object({ unlockedAt: z.string().datetime() }),
+        },
+      },
+      async (request, reply) => {
+        const { id: gameId, gamePlayerId } = request.params;
+        const { unlockedAt } = request.body;
+        const userId = request.user.id;
+
+        const [player] = await db
+          .select({ userId: gamePlayers.userId, gameId: gamePlayers.gameId })
+          .from(gamePlayers)
+          .where(eq(gamePlayers.id, gamePlayerId))
+          .limit(1);
+        if (!player || player.gameId !== gameId) {
+          return reply.status(404).send({ error: 'Player not in this game' });
+        }
+        if (player.userId !== userId) {
+          return reply.status(403).send({ error: 'Forbidden' });
+        }
+
+        await db
+          .update(gamePlayers)
+          .set({
+            lastSeenUnlockAt: sql`
+              CASE
+                WHEN ${gamePlayers.lastSeenUnlockAt} IS NULL THEN ${unlockedAt}
+                WHEN ${gamePlayers.lastSeenUnlockAt} < ${unlockedAt} THEN ${unlockedAt}
+                ELSE ${gamePlayers.lastSeenUnlockAt}
+              END
+            `,
+          })
+          .where(eq(gamePlayers.id, gamePlayerId));
+
+        return reply.status(204).send();
       },
     );
   };

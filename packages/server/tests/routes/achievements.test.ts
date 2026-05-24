@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import type { FastifyInstance } from 'fastify';
-import { createTestApp } from '../helpers/app.js';
+import { eq } from 'drizzle-orm';
+import { createTestApp, createTestDb } from '../helpers/app.js';
+import * as schema from '../../src/db/schema.sqlite.js';
 
 async function registerUser(app: FastifyInstance, username: string) {
   const res = await app.inject({
@@ -95,5 +97,98 @@ describe('GET /games/:id/achievements', () => {
       headers: { Authorization: `Bearer ${stranger}` },
     });
     expect(res.statusCode).toBe(404);
+  });
+});
+
+async function joinGame(app: FastifyInstance, token: string, gameId: string) {
+  const res = await app.inject({
+    method: 'POST',
+    url: `/games/${gameId}/join`,
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return res.json<{ playerId: string }>();
+}
+
+describe('POST /games/:id/players/:gamePlayerId/achievements/ack', () => {
+  let app: FastifyInstance;
+  let db: Awaited<ReturnType<typeof createTestDb>>;
+
+  beforeAll(async () => {
+    app = await createTestApp();
+    db = await createTestDb();
+  });
+  afterAll(async () => { await app.close(); });
+
+  it('advances last_seen_unlock_at to the provided timestamp', async () => {
+    const { token } = await registerUser(app, `u-${Math.random().toString(36).slice(2)}`);
+    const game = await createGame(app, token);
+    // Creator is auto-joined; get their gamePlayerId via join response or by joining directly.
+    // The game creator is already a player — join returns 409. We create a second user to join.
+    const { token: token2 } = await registerUser(app, `u-${Math.random().toString(36).slice(2)}`);
+    const { playerId: gamePlayerId } = await joinGame(app, token2, game.id);
+
+    const ts = '2026-05-23T12:00:00.000Z';
+    const res = await app.inject({
+      method: 'POST',
+      url: `/games/${game.id}/players/${gamePlayerId}/achievements/ack`,
+      headers: { Authorization: `Bearer ${token2}` },
+      payload: { unlockedAt: ts },
+    });
+    expect(res.statusCode).toBe(204);
+
+    const [row] = await db
+      .select({ lastSeenUnlockAt: schema.gamePlayers.lastSeenUnlockAt })
+      .from(schema.gamePlayers)
+      .where(eq(schema.gamePlayers.id, gamePlayerId))
+      .limit(1);
+    expect(row?.lastSeenUnlockAt).toBe(ts);
+  });
+
+  it('never regresses last_seen_unlock_at when sent an older timestamp', async () => {
+    const { token } = await registerUser(app, `u-${Math.random().toString(36).slice(2)}`);
+    const game = await createGame(app, token);
+    const { token: token2 } = await registerUser(app, `u-${Math.random().toString(36).slice(2)}`);
+    const { playerId: gamePlayerId } = await joinGame(app, token2, game.id);
+
+    const newer = '2026-05-23T15:00:00.000Z';
+    const older = '2026-05-23T10:00:00.000Z';
+
+    await app.inject({
+      method: 'POST',
+      url: `/games/${game.id}/players/${gamePlayerId}/achievements/ack`,
+      headers: { Authorization: `Bearer ${token2}` },
+      payload: { unlockedAt: newer },
+    });
+    const res = await app.inject({
+      method: 'POST',
+      url: `/games/${game.id}/players/${gamePlayerId}/achievements/ack`,
+      headers: { Authorization: `Bearer ${token2}` },
+      payload: { unlockedAt: older },
+    });
+    expect(res.statusCode).toBe(204);
+
+    const [row] = await db
+      .select({ lastSeenUnlockAt: schema.gamePlayers.lastSeenUnlockAt })
+      .from(schema.gamePlayers)
+      .where(eq(schema.gamePlayers.id, gamePlayerId))
+      .limit(1);
+    expect(row?.lastSeenUnlockAt).toBe(newer);
+  });
+
+  it('returns 403 when ack-ing another player\'s gamePlayerId', async () => {
+    const { token: tokenA } = await registerUser(app, `u-${Math.random().toString(36).slice(2)}`);
+    const game = await createGame(app, tokenA);
+    // tokenA is the creator — get their gamePlayerId from the DB via the second user's perspective.
+    // Actually, let's have tokenB join the game, then tokenA tries to ack tokenB's player.
+    const { token: tokenB } = await registerUser(app, `u-${Math.random().toString(36).slice(2)}`);
+    const { playerId: playerBId } = await joinGame(app, tokenB, game.id);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/games/${game.id}/players/${playerBId}/achievements/ack`,
+      headers: { Authorization: `Bearer ${tokenA}` },
+      payload: { unlockedAt: '2026-05-23T12:00:00.000Z' },
+    });
+    expect(res.statusCode).toBe(403);
   });
 });

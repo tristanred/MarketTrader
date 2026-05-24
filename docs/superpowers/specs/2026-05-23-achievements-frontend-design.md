@@ -77,6 +77,110 @@ The hex values above intentionally re-use the existing `--p2`..`--p8` player pal
 
 ---
 
+## Showing each unlock exactly once
+
+The backend already broadcasts `achievement_unlocked` exactly once per unlock (see `markUnlocked()` in `packages/server/src/achievements/engine.ts`: `UPDATE … WHERE unlocked_at IS NULL` + only broadcast on the row-changed transition). That handles the happy path while the player is connected. But the toast still needs to behave correctly across four failure modes:
+
+| Scenario | What can go wrong without explicit handling |
+|---|---|
+| Player **offline** when the unlock happens | They miss the toast forever |
+| Player **refreshes** mid-toast (before any ack) | A naive replay would re-toast |
+| **React StrictMode** double-mounts the WS hook in dev | Same frame fed to two effect runs → double-toast |
+| Player has **multiple tabs** open | Each tab subscribes independently → toast in both |
+
+The chosen mechanism is **server-replay on WS connect + client ack on toast dismiss + localStorage marker as belt-and-braces.** Two layers, each handling a different subset of the failure modes.
+
+### Layer 1 — Server replay on WS connect
+
+One new column on `gamePlayers`:
+
+```ts
+// schema.{sqlite,pg}.ts
+gamePlayers = {
+  …,
+  lastSeenUnlockAt: text('last_seen_unlock_at'),  // ISO 8601 nullable; pg uses timestamp
+}
+```
+
+Migration: nullable column, no backfill needed. Existing rows default `NULL`, which means "the player has seen no unlocks yet" — first connect replays everything currently unlocked, which is the right behavior for a feature being introduced mid-game.
+
+Wire into the existing WS upgrade handler (`packages/server/src/ws/live-route.ts`, sits next to auth + room-join):
+
+1. Authenticate JWT → resolve `gamePlayerId`.
+2. Load that player's `lastSeenUnlockAt`.
+3. `SELECT achievement_key, unlocked_at FROM achievement_progress WHERE game_player_id = ? AND unlocked_at IS NOT NULL AND unlocked_at > coalesce(?, '1970-01-01') ORDER BY unlocked_at ASC`.
+4. For each row, send an `achievement_unlocked` frame in chronological order, hydrating `name`/`description`/`rarity`/`icon` from the in-memory definition registry.
+5. **Do NOT advance `lastSeenUnlockAt` here** — the client acks instead (Layer 2). This way, a mid-replay disconnect re-replays the un-acked entries on the next connect.
+
+Each replayed frame carries a new optional flag so the client can adjust copy:
+
+```ts
+export interface WsAchievementUnlockedEvent {
+  event: 'achievement_unlocked';
+  data: {
+    gamePlayerId: string;
+    achievementKey: string;
+    name: string;
+    description: string;
+    rarity: AchievementRarity;
+    icon: string;
+    unlockedAt: string;
+    replayed?: boolean;     // true when sent from connect-time replay; false/undefined for live
+  };
+}
+```
+
+Toast eyebrow when `replayed === true`: `"{RARITY} · UNLOCKED · {RELATIVE TIME}"` (e.g. `"LEGENDARY · UNLOCKED · 2H AGO"`). Live unlocks stay `"{RARITY} · UNLOCKED"`. Animation is identical — a replayed unlock still earns its ceremony.
+
+### Layer 2 — Client ack + localStorage marker
+
+One new REST endpoint:
+
+```
+POST /api/games/:gameId/players/:gamePlayerId/achievements/ack
+body: { unlockedAt: string }
+```
+
+Implementation: `UPDATE game_players SET last_seen_unlock_at = greatest(last_seen_unlock_at, ?) WHERE id = ?` (use `MAX(coalesce(last_seen_unlock_at, '1970-01-01'), ?)` for SQLite which lacks `greatest`). Idempotent; safe to retry. Auth: caller must be the player or an admin.
+
+Client behavior:
+
+1. Each `AchievementToast` calls the ack endpoint when its lifecycle completes (auto-dismiss after 6s display, or × button). Failures log and silently retry once; persistent failure is non-fatal (next connect's replay catches it).
+2. Client also writes `last_seen_unlock_at:{gameId}:{gamePlayerId}` = the same ISO timestamp to `localStorage` on every ack, AND on every dismissed toast even if the ack request is in flight.
+3. `useAchievementUnlockStream` checks each incoming WS frame's `unlockedAt` against the localStorage marker **before** enqueuing. If `frame.unlockedAt <= marker`, drop silently. This is the belt-and-braces against StrictMode, mid-toast refresh, and ack-in-flight.
+4. The Zustand toast store also de-dups by `(achievementKey, unlockedAt)` on enqueue — a third safety net for any in-session double-emit (e.g. simultaneous live frame + replay frame during a reconnect race).
+
+### Behavior matrix
+
+| Scenario | Outcome |
+|---|---|
+| Single live unlock, player connected | WS frame arrives → localStorage marker stale → enqueue → toast plays → dismiss → ack fires → both markers advance |
+| Player offline at unlock time, reconnects an hour later | Replay frame on connect (`replayed: true`) → localStorage marker stale → enqueue → toast plays with "1H AGO" eyebrow → ack on dismiss advances markers |
+| Player refreshes mid-toast (before ack fired) | WS reconnects → server replays same frame → localStorage marker advanced *iff* the previous dismissal touched it; if not, toast plays once more, ack on dismiss advances. Worst case: one re-show after an interrupted dismissal |
+| React StrictMode double-mount | Hook subscribes twice → same WS frame fed twice → store de-dup by `(key, unlockedAt)` drops the second; no toast doubles |
+| Two tabs open | Each tab subscribes independently → both toast. First tab to dismiss acks. Second tab's localStorage is per-tab so it doesn't learn until next page load. **Two simultaneous toasts of the player's own unlock across two of their own tabs is acceptable** — flagged here so it doesn't surprise anyone |
+| localStorage cleared / private browsing | Server `lastSeenUnlockAt` still gates replay scope. The player only re-sees unlocks that haven't been acked yet — a clean ack history means no re-show after the marker is gone |
+
+### Why not just trust `lastSeenUnlockAt` alone?
+
+Two reasons we keep the localStorage marker:
+
+1. The server marker only advances on ack, and acks fire on toast dismiss. If the player closes the tab mid-toast, no ack fires; next connect would replay; without a localStorage marker the same toast could play on every reconnect until the player completes a dismiss. The localStorage marker is updated on the dismissal itself (synchronously, before the ack network request), so a closed-tab-mid-toast scenario at least prevents the in-tab replay after a refresh in the same browser.
+2. StrictMode double-emit during dev would double-toast without a client-side de-dup. The store-level `(key, unlockedAt)` de-dup handles it without needing a server round-trip.
+
+### What's added to the data model summary
+
+| Field | Where | Purpose |
+|---|---|---|
+| `gamePlayers.lastSeenUnlockAt: text/timestamp \| null` | New column (both schemas) | Server-side high-water mark of acknowledged unlocks |
+| `POST /api/games/:gameId/players/:gamePlayerId/achievements/ack` body `{ unlockedAt: string }` | New route | Client confirms display; idempotent `MAX(current, body)` update |
+| `WsAchievementUnlockedEvent.data.replayed?: boolean` | Existing DTO | Distinguishes connect-time replays from live unlocks |
+| `localStorage["last_seen_unlock_at:{gameId}:{gamePlayerId}"]` | Client | Pre-WS-enqueue de-dup; survives ack-network failure |
+
+This work belongs in the same PR as the rest of the frontend — the migration + WS handler + REST endpoint are small and the design depends on them.
+
+---
+
 ## Backend changes required
 
 This spec amends — not replaces — the backend spec. Three additions:
@@ -147,11 +251,12 @@ export interface WsAchievementUnlockedEvent {
     rarity: AchievementRarity;   // new
     icon: string;                // new
     unlockedAt: string;
+    replayed?: boolean;          // new — true when sent from connect-time replay; see "Showing each unlock exactly once"
   };
 }
 ```
 
-The engine reads these from the in-memory definition registry when broadcasting (no extra DB read).
+The engine reads `name`, `description`, `rarity`, `icon` from the in-memory definition registry when broadcasting (no extra DB read). `replayed` is set by the WS connect handler when emitting from the catch-up loop; live broadcasts from the engine leave it `undefined` (treated as `false` by the client).
 
 ---
 
@@ -172,9 +277,11 @@ packages/frontend/src/
     AchievementsPage.tsx            # /games/:id/achievements route
   hooks/
     useAchievements.ts              # React Query hook (definitions + progress)
-    useAchievementUnlockStream.ts   # subscribes to WS, pushes own-unlocks into the toast store
+    useAchievementUnlockStream.ts   # subscribes to WS, dedups vs localStorage marker, pushes own-unlocks to the toast store
   stores/
-    achievementToastStore.ts        # Zustand: queued own-unlocks + currently displayed
+    achievementToastStore.ts        # Zustand: queued own-unlocks + currently displayed; dedups by (key, unlockedAt)
+  lib/
+    achievementSeenMarker.ts        # localStorage helper: read/write per-(gameId, gamePlayerId) "last seen" timestamp; ack to server
 ```
 
 Routing: register the route in the existing router (currently in `App.tsx` or `pages/` index) as `/games/:gameId/achievements`. Add an "Achievements" link to the game-scoped nav inside `AppHeader.tsx` (matches the existing "Portfolio" / "Game" links).

@@ -110,6 +110,7 @@ export function useGameSocket(gameId: string, symbols: string[], myGamePlayerId:
             });
           } else if (parsed.event === 'achievement_unlocked') {
             handleAchievementUnlockRef.current(parsed.data);
+            void qcRef.current.invalidateQueries({ queryKey: ['achievements', gameId] });
           }
         } catch {
           // malformed — drop

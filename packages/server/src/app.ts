@@ -139,7 +139,7 @@ export async function buildApp(
   await registerAdminGuard(app, db);
   await app.register(adminRoutes(db, provider, systemSettings));
   await app.register(adminAchievementsRoutes(db, achievementEngine, systemSettings));
-  await app.register(liveRoute(db, registry));
+  await app.register(liveRoute(db, registry, achievementEngine));
   await app.register(globalLiveRoute(globalRegistry));
 
   if (!disablePoller) {

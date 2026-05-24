@@ -58,6 +58,10 @@ describe('GET /games/:id/achievements', () => {
     expect(body.definitions.map((d) => d.key)).toEqual(
       expect.arrayContaining(['first-trade', 'ten-buys', 'rock-bottom']),
     );
+    expect(body.definitions[0]).toMatchObject({
+      rarity: expect.stringMatching(/^(common|uncommon|rare|epic|legendary)$/),
+      icon: expect.any(String),
+    });
     const flat = Object.values(body.progress).flat();
     const firstTrade = flat.find((p) => p.achievementKey === 'first-trade');
     expect(firstTrade?.unlockedAt).not.toBeNull();

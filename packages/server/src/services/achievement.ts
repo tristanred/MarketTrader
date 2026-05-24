@@ -155,6 +155,8 @@ async function buildDefinitionDTOs(
       name: d.name,
       description: d.description,
       ...(d.category !== undefined && { category: d.category }),
+      rarity: d.rarity,
+      icon: d.icon,
       target: d.target,
       enabled: await engine.isEnabled(gameId, d.key),
     })),

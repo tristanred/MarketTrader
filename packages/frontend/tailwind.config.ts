@@ -57,6 +57,13 @@ export default {
         },
         'muted-foreground': 'var(--muted)',
         'accent-foreground': 'var(--text-strong)',
+        rarity: {
+          common: 'var(--r-common)',
+          uncommon: 'var(--r-uncommon)',
+          rare: 'var(--r-rare)',
+          epic: 'var(--r-epic)',
+          legendary: 'var(--r-legendary)',
+        },
       },
       fontFamily: {
         sans: ['Geist Sans', 'system-ui', 'sans-serif'],

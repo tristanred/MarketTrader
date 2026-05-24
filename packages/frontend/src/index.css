@@ -32,6 +32,18 @@
     --p6: #60a5fa;
     --p7: #fb7185;
     --p8: #facc15;
+
+    /* Achievement rarity tokens. See docs/superpowers/specs/2026-05-23-achievements-frontend-design.md */
+    --r-common:    #9ca3af;
+    --r-uncommon:  #34d399;
+    --r-rare:      #60a5fa;
+    --r-epic:      #a78bfa;
+    --r-legendary: #f59e0b;
+    --r-common-glow:    rgba(156, 163, 175, 0.06);
+    --r-uncommon-glow:  rgba(52,  211, 153, 0.08);
+    --r-rare-glow:      rgba(96,  165, 250, 0.10);
+    --r-epic-glow:      rgba(167, 139, 250, 0.14);
+    --r-legendary-glow: rgba(245, 158,  11, 0.18);
   }
 
   /* The themeStore writes `.dark` on <html> when dark is active.
@@ -61,6 +73,18 @@
     --p6: #60a5fa;
     --p7: #fb7185;
     --p8: #facc15;
+
+    /* Achievement rarity tokens. See docs/superpowers/specs/2026-05-23-achievements-frontend-design.md */
+    --r-common:    #9ca3af;
+    --r-uncommon:  #34d399;
+    --r-rare:      #60a5fa;
+    --r-epic:      #a78bfa;
+    --r-legendary: #f59e0b;
+    --r-common-glow:    rgba(156, 163, 175, 0.06);
+    --r-uncommon-glow:  rgba(52,  211, 153, 0.08);
+    --r-rare-glow:      rgba(96,  165, 250, 0.10);
+    --r-epic-glow:      rgba(167, 139, 250, 0.14);
+    --r-legendary-glow: rgba(245, 158,  11, 0.18);
   }
 
   /* ─── Light theme — "Paper" ──────────────────────────── */
@@ -88,6 +112,17 @@
     --p6: #1d4ed8;
     --p7: #be123c;
     --p8: #a16207;
+
+    --r-common:    #6b7280;
+    --r-uncommon:  #047857;
+    --r-rare:      #1d4ed8;
+    --r-epic:      #7c3aed;
+    --r-legendary: #b45309;
+    --r-common-glow:    rgba(107, 114, 128, 0.08);
+    --r-uncommon-glow:  rgba(4,   120,  87, 0.10);
+    --r-rare-glow:      rgba(29,   78, 216, 0.10);
+    --r-epic-glow:      rgba(124,  58, 237, 0.12);
+    --r-legendary-glow: rgba(180,  83,   9, 0.16);
   }
 
   * {
@@ -143,6 +178,12 @@
   .animate-pulse-dot {
     animation: pulse-dot 1.6s ease-in-out infinite;
   }
+
+  .rar-common    { --rarity: var(--r-common);    --rarity-glow: var(--r-common-glow); }
+  .rar-uncommon  { --rarity: var(--r-uncommon);  --rarity-glow: var(--r-uncommon-glow); }
+  .rar-rare      { --rarity: var(--r-rare);      --rarity-glow: var(--r-rare-glow); }
+  .rar-epic      { --rarity: var(--r-epic);      --rarity-glow: var(--r-epic-glow); }
+  .rar-legendary { --rarity: var(--r-legendary); --rarity-glow: var(--r-legendary-glow); }
 }
 
 @layer components {

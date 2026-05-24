@@ -147,6 +147,13 @@ export const gamePlayers = sqliteTable(
     joinedAt: text('joined_at')
       .default(sql`(datetime('now'))`)
       .notNull(),
+    /**
+     * High-water mark of the latest `unlocked_at` timestamp this player has
+     * acknowledged seeing as a toast. Used by the WS connect-time replay to
+     * avoid re-sending unlocks the player has already toasted. Advanced via
+     * `POST /api/games/:gameId/players/:gamePlayerId/achievements/ack`.
+     */
+    lastSeenUnlockAt: text('last_seen_unlock_at'),
   },
   (t) => [unique().on(t.gameId, t.userId)],
 );

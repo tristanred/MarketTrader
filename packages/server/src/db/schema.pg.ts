@@ -149,6 +149,13 @@ export const gamePlayers = pgTable(
       .references(() => users.id, { onDelete: 'cascade' }),
     cashBalance: decimal('cash_balance', { precision: 15, scale: 2 }).notNull(),
     joinedAt: timestamp('joined_at', { mode: 'string' }).defaultNow().notNull(),
+    /**
+     * High-water mark of the latest `unlocked_at` timestamp this player has
+     * acknowledged seeing as a toast. Used by the WS connect-time replay to
+     * avoid re-sending unlocks the player has already toasted. Advanced via
+     * `POST /api/games/:gameId/players/:gamePlayerId/achievements/ack`.
+     */
+    lastSeenUnlockAt: timestamp('last_seen_unlock_at', { mode: 'string' }),
   },
   (t) => [unique().on(t.gameId, t.userId)],
 );

@@ -64,6 +64,13 @@
       "when": 1779575183768,
       "tag": "0008_heavy_big_bertha",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1779642761289,
+      "tag": "0009_quick_korvac",
+      "breakpoints": true
     }
   ]
 }

@@ -275,9 +275,11 @@ describe('GET /games/:id', () => {
     expect(res.statusCode).toBe(200);
     const body = res.json<{
       id: string;
+      viewerGamePlayerId: string | null;
       leaderboard: Array<{ rank: number; playerId: string; username: string; totalValue: number; cashBalance: number }>;
     }>();
     expect(body.id).toBe(gameId);
+    expect(typeof body.viewerGamePlayerId).toBe('string');
     expect(body.leaderboard).toHaveLength(2);
     expect(body.leaderboard[0]!.rank).toBe(1);
     expect(body.leaderboard[0]!.totalValue).toBe(10000);

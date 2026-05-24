@@ -80,4 +80,10 @@ export interface LeaderboardEntry {
 /** Game detail response from `GET /games/:id` — includes the current leaderboard. */
 export interface GameWithLeaderboard extends Game {
   leaderboard: LeaderboardEntry[];
+  /**
+   * The viewer's gamePlayerId — used by frontend hooks (achievements toast,
+   * ack endpoint) to scope per-player operations without needing a separate
+   * lookup. Null when the viewer is not (yet) a member of this game.
+   */
+  viewerGamePlayerId: string | null;
 }

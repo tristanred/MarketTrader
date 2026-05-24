@@ -234,6 +234,7 @@ export function gameRoutes(db: Db, bus?: EventBus) {
         startingBalance: Number(game.startingBalance),
         status,
         leaderboard,
+        viewerGamePlayerId: membership.id,
       });
     });
 

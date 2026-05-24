@@ -5,6 +5,7 @@ import { useLiveStore } from '@/stores/liveStore';
 import { tradeKeys } from '@/api/trades';
 import { leaderboardHistoryKeys } from '@/api/leaderboard-history';
 import { toast } from '@/components/ui/toast';
+import { useAchievementUnlockStream } from './useAchievementUnlockStream';
 import type { WsClientEvent, WsServerEvent } from '@markettrader/shared';
 
 const MAX_BACKOFF_MS = 30_000;
@@ -21,8 +22,12 @@ function buildWsUrl(gameId: string, token: string): string {
  * live store, sends a `subscribe` message whenever the symbol list changes,
  * and reconnects with exponential backoff. Returns nothing; tear-down happens
  * on unmount.
+ *
+ * @param myGamePlayerId - The viewer's gamePlayerId, used to filter
+ *   achievement_unlocked events to only those belonging to the current player.
+ *   Pass null when the viewer is not yet a member of the game.
  */
-export function useGameSocket(gameId: string, symbols: string[]): void {
+export function useGameSocket(gameId: string, symbols: string[], myGamePlayerId: string | null): void {
   const token = useAuthStore((s) => s.token);
   const qc = useQueryClient();
   // Stash qc + store setters in refs so the primary effect can depend only on
@@ -31,6 +36,10 @@ export function useGameSocket(gameId: string, symbols: string[]): void {
   // provider remounts.
   const qcRef = useRef(qc);
   qcRef.current = qc;
+
+  const { handle: handleAchievementUnlock } = useAchievementUnlockStream(gameId, myGamePlayerId);
+  const handleAchievementUnlockRef = useRef(handleAchievementUnlock);
+  handleAchievementUnlockRef.current = handleAchievementUnlock;
 
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectRef = useRef<{ attempt: number; timer: number | null }>({ attempt: 0, timer: null });
@@ -99,6 +108,8 @@ export function useGameSocket(gameId: string, symbols: string[]): void {
               description: `Order ${parsed.data.tradeId.slice(0, 8)} now resting as a limit at ${parsed.data.triggerPrice.toFixed(2)}.`,
               variant: 'success',
             });
+          } else if (parsed.event === 'achievement_unlocked') {
+            handleAchievementUnlockRef.current(parsed.data);
           }
         } catch {
           // malformed — drop

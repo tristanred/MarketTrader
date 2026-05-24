@@ -68,6 +68,8 @@ export interface CreateGameRequest {
 export interface LeaderboardEntry {
   /** The player's userId (matches {@link Game.createdBy}). */
   playerId: string;
+  /** The player's gamePlayerId — used to scope per-game queries (achievements, etc.). */
+  gamePlayerId: string;
   username: string;
   /** Cash currently held (does not include the market value of open positions). */
   cashBalance: number;

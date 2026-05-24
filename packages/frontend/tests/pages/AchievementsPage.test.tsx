@@ -68,7 +68,7 @@ describe('AchievementsPage', () => {
       isLoading: false,
     } as unknown as ReturnType<typeof useAchievements>);
     mockedUseGame.mockReturnValue({
-      data: { id: 'g1', viewerGamePlayerId: 'gp1', leaderboard: [{ playerId: 'u1', username: 'alice', cashBalance: 1, totalValue: 1, rank: 1 }] },
+      data: { id: 'g1', viewerGamePlayerId: 'gp1', leaderboard: [{ playerId: 'u1', gamePlayerId: 'gp1', username: 'alice', cashBalance: 1, totalValue: 1, rank: 1 }] },
       isLoading: false,
     } as unknown as ReturnType<typeof useGame>);
     renderPage();
@@ -90,7 +90,7 @@ describe('AchievementsPage', () => {
       isLoading: false,
     } as unknown as ReturnType<typeof useAchievements>);
     mockedUseGame.mockReturnValue({
-      data: { id: 'g1', viewerGamePlayerId: 'gp1', leaderboard: [{ playerId: 'u1', username: 'alice', cashBalance: 1, totalValue: 1, rank: 1 }] },
+      data: { id: 'g1', viewerGamePlayerId: 'gp1', leaderboard: [{ playerId: 'u1', gamePlayerId: 'gp1', username: 'alice', cashBalance: 1, totalValue: 1, rank: 1 }] },
       isLoading: false,
     } as unknown as ReturnType<typeof useGame>);
     renderPage();

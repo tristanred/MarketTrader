@@ -6,6 +6,8 @@ import { schema } from '../db/index.js';
 export interface LeaderboardEntry {
   rank: number;
   playerId: string;
+  /** The player's gamePlayerId — used to scope per-game queries (achievements, etc.). */
+  gamePlayerId: string;
   username: string;
   cashBalance: number;
   /** Cash balance + current market value of all holdings. */
@@ -52,6 +54,7 @@ export async function computeLeaderboard(db: Db, gameId: string): Promise<Leader
   // Aggregate portfolio value per player; a single player may have multiple
   // holdings, so one SQL row is returned per (player × symbol) combination.
   const playerMap = new Map<string, {
+    gamePlayerId: string;
     playerId: string;
     username: string;
     cashBalance: number;
@@ -62,6 +65,7 @@ export async function computeLeaderboard(db: Db, gameId: string): Promise<Leader
   for (const row of rows) {
     if (!playerMap.has(row.gpId)) {
       playerMap.set(row.gpId, {
+        gamePlayerId: row.gpId,
         playerId: row.playerId,
         username: row.username,
         cashBalance: Number(row.cashBalance),
@@ -107,6 +111,7 @@ export async function computeLeaderboard(db: Db, gameId: string): Promise<Leader
   const entries = [...playerMap.values()].map(p => ({
     rank: 0,
     playerId: p.playerId,
+    gamePlayerId: p.gamePlayerId,
     username: p.username,
     cashBalance: p.cashBalance,
     totalValue: p.cashBalance + p.portfolioValue,

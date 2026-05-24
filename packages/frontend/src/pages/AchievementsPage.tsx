@@ -20,13 +20,9 @@ export function AchievementsPage() {
   const myGamePlayerId = game.data?.viewerGamePlayerId ?? null;
   const view = useAchievements(gameId);
 
-  // leaderboard entries are keyed by userId, not gamePlayerId. The roster
-  // needs gamePlayerId → username, but we only have userId → username here.
-  // Fall back to displaying gamePlayerId.slice(0, 8) when no match — a future
-  // refactor can broaden the leaderboard payload to include gamePlayerId.
   const usernames = useMemo(() => {
     const m: Record<string, string> = {};
-    for (const e of game.data?.leaderboard ?? []) m[e.playerId] = e.username;
+    for (const e of game.data?.leaderboard ?? []) m[e.gamePlayerId] = e.username;
     return m;
   }, [game.data]);
 

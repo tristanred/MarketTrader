@@ -30,6 +30,11 @@ export interface Game {
   allowBracketOrders: boolean;
   /** When true, `timeInForce='gtc'` is accepted. Server rejects with 409 GTC_DISABLED otherwise. */
   allowGTC: boolean;
+  /**
+   * When false, the achievement engine ignores every event for this game.
+   * Defaults to true on game creation.
+   */
+  achievementsEnabled: boolean;
   status: GameStatus;
   /** ID of the user who created the game. */
   createdBy: string;
@@ -55,6 +60,8 @@ export interface CreateGameRequest {
   allowBracketOrders?: boolean;
   /** Defaults to false when omitted. */
   allowGTC?: boolean;
+  /** Defaults to true when omitted. */
+  achievementsEnabled?: boolean;
 }
 
 /** A single player's rank entry as returned in the game leaderboard. */

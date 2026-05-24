@@ -5,6 +5,7 @@ import { schema } from '../db/index.js';
 import type { TickerTapeSettings } from '@markettrader/shared';
 
 const KEY_TICKER_TAPE = 'ticker_tape_symbols' as const;
+const KEY_ACHIEVEMENTS_DISABLED = 'achievements.disabled' as const;
 
 /** The default tape seeded on first boot. Mixed indices + major stocks. */
 export const DEFAULT_TICKER_TAPE_SYMBOLS = [
@@ -113,5 +114,45 @@ export class SystemSettingsService extends EventEmitter {
       });
 
     this.emit('change', normalized);
+  }
+
+  /**
+   * Returns the set of achievement keys that have been disabled platform-wide.
+   * Absent row is treated as an empty set. Persisted as a JSON array.
+   */
+  async getDisabledAchievements(): Promise<ReadonlySet<string>> {
+    const [row] = await this.db
+      .select()
+      .from(schema.systemSettings)
+      .where(eq(schema.systemSettings.key, KEY_ACHIEVEMENTS_DISABLED))
+      .limit(1);
+    if (!row) return new Set();
+    try {
+      const parsed = JSON.parse(row.value) as { keys?: string[] };
+      return new Set(parsed.keys ?? []);
+    } catch {
+      return new Set();
+    }
+  }
+
+  /**
+   * Toggle whether an achievement key is in the global disable list. Idempotent:
+   * disabling an already-disabled key (or enabling an already-enabled one) is
+   * a no-op except for `updated_at`.
+   */
+  async setAchievementGloballyEnabled(key: string, enabled: boolean, actorId: string | null): Promise<void> {
+    const current = await this.getDisabledAchievements();
+    const next = new Set(current);
+    if (enabled) next.delete(key);
+    else next.add(key);
+    const value = JSON.stringify({ keys: [...next].sort() });
+    const now = new Date().toISOString();
+    await this.db
+      .insert(schema.systemSettings)
+      .values({ key: KEY_ACHIEVEMENTS_DISABLED, value, updatedAt: now, updatedBy: actorId })
+      .onConflictDoUpdate({
+        target: schema.systemSettings.key,
+        set: { value, updatedAt: now, updatedBy: actorId },
+      });
   }
 }

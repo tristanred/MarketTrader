@@ -27,6 +27,7 @@ import type { OrderType, TimeInForce } from '@markettrader/shared';
 import { recordSnapshot } from '../services/portfolio-snapshot.js';
 import type { TradeDirection } from '@markettrader/shared';
 import type { GameClientRegistry } from '../ws/registry.js';
+import type { EventBus } from '../events/bus.js';
 import { env } from '../env.js';
 
 /** Returns whether the configured policy treats this market state as "open" for trading. */
@@ -107,6 +108,7 @@ export function tradingRoutes(
   marketStatusProvider: MarketStatusProvider,
   registry?: GameClientRegistry,
   leaderboardThrottleMs = LEADERBOARD_THROTTLE_MS,
+  bus?: EventBus,
 ) {
   // Per-game leaderboard throttle: gameId → timestamp of last broadcast (ms)
   const lastLeaderboardBroadcast = new Map<string, number>();
@@ -186,7 +188,7 @@ export function tradingRoutes(
             .send({ code: 'GTC_DISABLED', message: 'Good-Til-Cancelled orders are not allowed in this game' });
         }
 
-        const status = await recomputeGameStatus(db, game);
+        const status = await recomputeGameStatus(db, game, new Date().toISOString(), bus);
         if (status !== 'active') {
           return reply.status(409).send({ error: 'GAME_NOT_ACTIVE', message: `Game is ${status}` });
         }
@@ -358,6 +360,23 @@ export function tradingRoutes(
           .where(eq(gamePlayers.id, gamePlayer.id))
           .limit(1);
 
+        // Emit on the in-process bus for achievement (and future) consumers.
+        // Decoupled from the WS broadcast so the engine still runs in tests
+        // that don't provide a `registry`.
+        if (bus) {
+          void bus.emit({
+            type: 'trade.executed',
+            gameId,
+            gamePlayerId: gamePlayer.id,
+            symbol: trade.symbol,
+            direction: trade.direction as 'buy' | 'sell',
+            quantity: trade.quantity,
+            price: Number(trade.price),
+            tradeId: trade.id,
+            executedAt: trade.executedAt!,
+          });
+        }
+
         // ── WebSocket broadcasts ──────────────────────────────────────────────
         if (registry) {
           // Immediate: notify all game clients that a trade occurred
@@ -369,7 +388,7 @@ export function tradingRoutes(
               direction: trade.direction as TradeDirection,
               quantity: trade.quantity,
               price: Number(trade.price),
-              executedAt: trade.executedAt,
+              executedAt: trade.executedAt!,
             },
           });
 
@@ -382,7 +401,7 @@ export function tradingRoutes(
             // recordSnapshot internally calls computeLeaderboard once and uses
             // the result for both the WS broadcast and the snapshot rows, so
             // there's no double work here.
-            recordSnapshot(db, gameId)
+            recordSnapshot(db, gameId, bus)
               .then((entries) => {
                 registry.broadcast(gameId, { event: 'leaderboard_update', data: entries });
               })

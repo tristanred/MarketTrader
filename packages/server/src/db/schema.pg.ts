@@ -115,6 +115,8 @@ export const games = pgTable('games', {
   allowStopOrders: boolean('allow_stop_orders').notNull().default(false),
   allowBracketOrders: boolean('allow_bracket_orders').notNull().default(false),
   allowGTC: boolean('allow_gtc').notNull().default(false),
+  /** When false, the achievement engine ignores every event for this game. */
+  achievementsEnabled: boolean('achievements_enabled').notNull().default(true),
   status: gameStatusEnum('status').notNull().default('pending'),
   createdBy: text('created_by')
     .notNull()
@@ -301,4 +303,55 @@ export const portfolioSnapshots = pgTable(
     index('portfolio_snapshots_game_time_idx').on(t.gameId, t.capturedAt),
     index('portfolio_snapshots_player_time_idx').on(t.gamePlayerId, t.capturedAt),
   ],
+);
+
+/**
+ * Per-player per-achievement progress, scoped to a single game. Mirrors the
+ * SQLite variant. Rows are created lazily by the achievement engine. `target`
+ * is snapshotted from the code definition; `unlockedAt` freezes the row once
+ * `progress >= target`.
+ */
+export const achievementProgress = pgTable(
+  'achievement_progress',
+  {
+    id: text('id')
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    gameId: text('game_id')
+      .notNull()
+      .references(() => games.id, { onDelete: 'cascade' }),
+    gamePlayerId: text('game_player_id')
+      .notNull()
+      .references(() => gamePlayers.id, { onDelete: 'cascade' }),
+    achievementKey: text('achievement_key').notNull(),
+    progress: integer('progress').notNull().default(0),
+    target: integer('target').notNull(),
+    unlockedAt: timestamp('unlocked_at', { mode: 'string' }),
+    metadata: text('metadata'),
+    createdAt: timestamp('created_at', { mode: 'string' }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { mode: 'string' }).defaultNow().notNull(),
+  },
+  (t) => [
+    unique('uq_achievement_progress_player_key').on(t.gamePlayerId, t.achievementKey),
+    index('achievement_progress_game_idx').on(t.gameId),
+  ],
+);
+
+/**
+ * Per-game per-achievement enable/disable override. Absence = use default.
+ */
+export const gameAchievementOverrides = pgTable(
+  'game_achievement_overrides',
+  {
+    id: text('id')
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    gameId: text('game_id')
+      .notNull()
+      .references(() => games.id, { onDelete: 'cascade' }),
+    achievementKey: text('achievement_key').notNull(),
+    enabled: boolean('enabled').notNull(),
+    updatedAt: timestamp('updated_at', { mode: 'string' }).defaultNow().notNull(),
+  },
+  (t) => [unique('uq_game_achievement_override').on(t.gameId, t.achievementKey)],
 );

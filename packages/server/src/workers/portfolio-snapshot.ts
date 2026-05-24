@@ -1,5 +1,6 @@
 import type { FastifyBaseLogger } from 'fastify';
 import type { Db } from '../db/index.js';
+import type { EventBus } from '../events/bus.js';
 import {
   recordSnapshotsForActiveGames,
   compactEndedGames,
@@ -16,9 +17,9 @@ import { env } from '../env.js';
  * does not block the rest. The tick itself rethrows only on programmer
  * errors (e.g. db handle gone) — the outer setInterval guards re-entrancy.
  */
-export async function runPortfolioSnapshotTick(deps: { db: Db }): Promise<void> {
-  const { db } = deps;
-  await recordSnapshotsForActiveGames(db);
+export async function runPortfolioSnapshotTick(deps: { db: Db; bus?: EventBus }): Promise<void> {
+  const { db, bus } = deps;
+  await recordSnapshotsForActiveGames(db, bus);
   await compactEndedGames(db);
 }
 
@@ -29,6 +30,7 @@ export async function runPortfolioSnapshotTick(deps: { db: Db }): Promise<void> 
  */
 export function startPortfolioSnapshotWorker(deps: {
   db: Db;
+  bus?: EventBus;
   logger?: FastifyBaseLogger;
   intervalMs?: number;
 }): { stop: () => void } {

@@ -103,6 +103,10 @@ export const games = sqliteTable('games', {
   allowGTC: integer('allow_gtc', { mode: 'boolean' })
     .notNull()
     .default(false),
+  /** When false, the achievement engine ignores every event for this game. */
+  achievementsEnabled: integer('achievements_enabled', { mode: 'boolean' })
+    .notNull()
+    .default(true),
   status: text('status', { enum: ['pending', 'active', 'ended'] })
     .notNull()
     .default('pending'),
@@ -332,4 +336,64 @@ export const portfolioSnapshots = sqliteTable(
     index('portfolio_snapshots_game_time_idx').on(t.gameId, t.capturedAt),
     index('portfolio_snapshots_player_time_idx').on(t.gamePlayerId, t.capturedAt),
   ],
+);
+
+/**
+ * Per-player per-achievement progress, scoped to a single game. Rows are
+ * created lazily on first write by the achievement engine. `target` is
+ * snapshotted from the code-defined definition so later changes to a target
+ * don't retroactively un-unlock players. `unlockedAt` is set the moment
+ * `progress >= target`; once set, the engine treats the row as frozen.
+ */
+export const achievementProgress = sqliteTable(
+  'achievement_progress',
+  {
+    id: text('id')
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    gameId: text('game_id')
+      .notNull()
+      .references(() => games.id, { onDelete: 'cascade' }),
+    gamePlayerId: text('game_player_id')
+      .notNull()
+      .references(() => gamePlayers.id, { onDelete: 'cascade' }),
+    achievementKey: text('achievement_key').notNull(),
+    progress: integer('progress').notNull().default(0),
+    target: integer('target').notNull(),
+    unlockedAt: text('unlocked_at'),
+    metadata: text('metadata'),
+    createdAt: text('created_at')
+      .default(sql`(datetime('now'))`)
+      .notNull(),
+    updatedAt: text('updated_at')
+      .default(sql`(datetime('now'))`)
+      .notNull(),
+  },
+  (t) => [
+    unique('uq_achievement_progress_player_key').on(t.gamePlayerId, t.achievementKey),
+    index('achievement_progress_game_idx').on(t.gameId),
+  ],
+);
+
+/**
+ * Per-game per-achievement enable/disable override. Absence of a row means
+ * use the default (enabled, modulo the global `achievements.disabled`
+ * setting and the game-level `achievementsEnabled` flag).
+ */
+export const gameAchievementOverrides = sqliteTable(
+  'game_achievement_overrides',
+  {
+    id: text('id')
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    gameId: text('game_id')
+      .notNull()
+      .references(() => games.id, { onDelete: 'cascade' }),
+    achievementKey: text('achievement_key').notNull(),
+    enabled: integer('enabled', { mode: 'boolean' }).notNull(),
+    updatedAt: text('updated_at')
+      .default(sql`(datetime('now'))`)
+      .notNull(),
+  },
+  (t) => [unique('uq_game_achievement_override').on(t.gameId, t.achievementKey)],
 );

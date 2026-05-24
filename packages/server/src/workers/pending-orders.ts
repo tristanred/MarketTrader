@@ -8,6 +8,7 @@ import { settlePendingTrades } from '../services/pending-trade.js';
 import { evaluateTriggers, expireDayOrders } from '../services/working-order.js';
 import { recordSnapshot } from '../services/portfolio-snapshot.js';
 import type { GameClientRegistry } from '../ws/registry.js';
+import type { EventBus } from '../events/bus.js';
 import { env } from '../env.js';
 import type { MarketState, TradeDirection } from '@markettrader/shared';
 
@@ -34,8 +35,9 @@ export async function runPendingOrdersTick(deps: {
   provider: StockProvider;
   marketStatusProvider: MarketStatusProvider;
   registry?: GameClientRegistry;
+  bus?: EventBus;
 }): Promise<void> {
-  const { db, provider, marketStatusProvider, registry } = deps;
+  const { db, provider, marketStatusProvider, registry, bus } = deps;
   const { gamePlayers } = schema;
 
   // Step 1: expire day-TIF orders. Cheap and side-effect-only on the DB.
@@ -58,7 +60,7 @@ export async function runPendingOrdersTick(deps: {
   const settleOutcomes = marketOpen ? await settlePendingTrades(db, provider) : [];
   const triggerOutcomes = marketOpen ? await evaluateTriggers(db, provider) : [];
 
-  if (!registry) return;
+  if (!registry && !bus) return;
 
   const gameIdsTouched = new Set<string>();
   const playerCache = new Map<string, { gameId: string; userId: string }>();
@@ -81,7 +83,7 @@ export async function runPendingOrdersTick(deps: {
     const player = await resolvePlayer(o.trade.gamePlayerId);
     if (!player) continue;
     gameIdsTouched.add(player.gameId);
-    registry.broadcast(player.gameId, {
+    registry?.broadcast(player.gameId, {
       event: 'trade_executed',
       data: {
         playerId: player.userId,
@@ -92,6 +94,19 @@ export async function runPendingOrdersTick(deps: {
         executedAt: o.trade.executedAt,
       },
     });
+    if (bus) {
+      void bus.emit({
+        type: 'trade.executed',
+        gameId: player.gameId,
+        gamePlayerId: o.trade.gamePlayerId,
+        symbol: o.trade.symbol,
+        direction: o.trade.direction as 'buy' | 'sell',
+        quantity: o.trade.quantity,
+        price: o.trade.price,
+        tradeId: o.trade.id,
+        executedAt: o.trade.executedAt,
+      });
+    }
   }
 
   // Broadcasts: trigger evaluator outcomes (limit/stop fills, OCO cancels, stop_limit triggers).
@@ -103,7 +118,7 @@ export async function runPendingOrdersTick(deps: {
     gameIdsTouched.add(player.gameId);
 
     if (o.kind === 'filled') {
-      registry.broadcast(player.gameId, {
+      registry?.broadcast(player.gameId, {
         event: 'trade_executed',
         data: {
           playerId: player.userId,
@@ -114,13 +129,26 @@ export async function runPendingOrdersTick(deps: {
           executedAt: o.trade.executedAt,
         },
       });
+      if (bus) {
+        void bus.emit({
+          type: 'trade.executed',
+          gameId: player.gameId,
+          gamePlayerId: o.row.gamePlayerId,
+          symbol: o.trade.symbol,
+          direction: o.trade.direction as 'buy' | 'sell',
+          quantity: o.trade.quantity,
+          price: o.trade.price,
+          tradeId: o.trade.id,
+          executedAt: o.trade.executedAt,
+        });
+      }
     } else if (o.kind === 'cancelled') {
-      registry.broadcast(player.gameId, {
+      registry?.broadcast(player.gameId, {
         event: 'order_cancelled',
         data: { playerId: player.userId, tradeId: o.tradeId, reason: o.reason },
       });
     } else {
-      registry.broadcast(player.gameId, {
+      registry?.broadcast(player.gameId, {
         event: 'order_triggered',
         data: {
           playerId: player.userId,
@@ -143,7 +171,7 @@ export async function runPendingOrdersTick(deps: {
     const player = await resolvePlayer(t.gamePlayerId);
     if (!player) continue;
     gameIdsTouched.add(player.gameId);
-    registry.broadcast(player.gameId, {
+    registry?.broadcast(player.gameId, {
       event: 'order_cancelled',
       data: { playerId: player.userId, tradeId, reason: 'TIF_EXPIRED' },
     });
@@ -154,8 +182,8 @@ export async function runPendingOrdersTick(deps: {
   // chart sees a fresh point at every settle without a second leaderboard query.
   for (const gameId of gameIdsTouched) {
     try {
-      const entries = await recordSnapshot(db, gameId);
-      registry.broadcast(gameId, { event: 'leaderboard_update', data: entries });
+      const entries = await recordSnapshot(db, gameId, bus);
+      registry?.broadcast(gameId, { event: 'leaderboard_update', data: entries });
     } catch {
       // Swallow — a failed leaderboard broadcast must not affect settlement.
     }
@@ -172,6 +200,7 @@ export function startPendingOrdersWorker(deps: {
   provider: StockProvider;
   marketStatusProvider: MarketStatusProvider;
   registry?: GameClientRegistry;
+  bus?: EventBus;
   logger?: FastifyBaseLogger;
   intervalMs?: number;
 }): { stop: () => void } {

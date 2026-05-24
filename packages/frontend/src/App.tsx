@@ -48,6 +48,9 @@ const GameDetailPage = lazy(() =>
 const GameLeaderboardPage = lazy(() =>
   import('@/pages/GameLeaderboardPage').then((m) => ({ default: m.GameLeaderboardPage })),
 );
+const AchievementsPage = lazy(() =>
+  import('@/pages/AchievementsPage').then((m) => ({ default: m.AchievementsPage })),
+);
 const SymbolPage = lazy(() => import('@/pages/SymbolPage').then((m) => ({ default: m.SymbolPage })));
 
 const AdminUsersPage = lazy(() =>
@@ -121,6 +124,7 @@ function App() {
               <Route path="/" element={<GamesListPage />} />
               <Route path="/games/:gameId" element={<GameDetailPage />} />
               <Route path="/games/:gameId/leaderboard" element={<GameLeaderboardPage />} />
+              <Route path="/games/:gameId/achievements" element={<AchievementsPage />} />
               <Route path="/symbols/:symbol" element={<SymbolPage />} />
               <Route
                 path="/admin"

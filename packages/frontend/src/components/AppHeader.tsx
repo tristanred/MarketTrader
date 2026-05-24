@@ -1,4 +1,4 @@
-import { NavLink, useNavigate } from 'react-router-dom';
+import { NavLink, useNavigate, useParams } from 'react-router-dom';
 import { Moon, Sun } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAuthStore, useIsAdmin } from '@/stores/authStore';
@@ -17,6 +17,8 @@ export function AppHeader() {
   const logout = useLogout();
   const navigate = useNavigate();
   const { theme, toggle } = useTheme();
+  const params = useParams();
+  const onGamePage = Boolean(params.gameId);
 
   const linkClass = (isActive: boolean) =>
     cn(
@@ -39,6 +41,14 @@ export function AppHeader() {
           <NavLink to="/" end className={({ isActive }) => linkClass(isActive)}>
             Games
           </NavLink>
+          {onGamePage && (
+            <NavLink
+              to={`/games/${params.gameId}/achievements`}
+              className={({ isActive }) => linkClass(isActive)}
+            >
+              Achievements
+            </NavLink>
+          )}
           {isAdmin ? (
             <NavLink to="/admin" className={({ isActive }) => linkClass(isActive)}>
               Admin

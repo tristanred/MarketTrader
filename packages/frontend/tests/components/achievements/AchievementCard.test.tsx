@@ -49,6 +49,7 @@ describe('AchievementCard', () => {
     };
     render(<AchievementCard definition={{ ...def, target: 10 }} progress={progress} />);
     expect(screen.getByText('4 / 10')).toBeInTheDocument();
+    expect(screen.getByText('In progress · Common')).toBeInTheDocument();
   });
 
   it('renders "unlocked · {time}" for unlocked achievements', () => {

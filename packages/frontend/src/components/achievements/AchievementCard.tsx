@@ -49,6 +49,8 @@ export function AchievementCard({ definition, progress, variant = 'grid', classN
       className={cn(
         'relative overflow-hidden rounded-panel border border-hairline-strong bg-panel',
         'grid items-start gap-3',
+        // 'roster' currently falls through to 'grid' styling.
+        // TODO(achievements-roster): differentiate when AchievementRoster (Task 21) consumes this card.
         variant === 'toast' ? 'p-4 grid-cols-[34px_1fr_auto]' : 'px-4 py-3 grid-cols-[28px_1fr]',
         !isLocked && rarityClass(definition.rarity),
         isLocked && 'opacity-55',

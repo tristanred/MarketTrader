@@ -1,5 +1,8 @@
 import type { DomainEventOf, DomainEventType } from '../events/types.js';
 import type { Db } from '../db/index.js';
+import type { AchievementRarity } from '@markettrader/shared';
+
+export type { AchievementRarity };
 
 /**
  * Helper context passed to every achievement handler. Hides all DB and
@@ -43,6 +46,10 @@ export interface AchievementDefinition<TEvents extends DomainEventType = DomainE
   description: string;
   /** Optional grouping label exposed via the API for UI presentation. */
   category?: string;
+  /** Visual tier — drives rarity color in the UI. Required. */
+  rarity: AchievementRarity;
+  /** Lucide icon name (kebab-case, e.g. 'flame', 'trending-up'). Required. */
+  icon: string;
   /** Numeric target. Boolean achievements use `1`. */
   target: number;
   /** Which event types the handler subscribes to. */

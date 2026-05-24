@@ -8,6 +8,8 @@ export default defineAchievement({
   key: 'rock-bottom',
   name: 'Rock Bottom',
   description: 'Be last on the leaderboard for 5 snapshots in a row.',
+  rarity: 'epic',
+  icon: 'trending-down',
   category: 'standing',
   target: 5,
   events: ['snapshot.recorded'],

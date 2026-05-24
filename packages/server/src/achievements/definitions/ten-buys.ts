@@ -5,6 +5,8 @@ export default defineAchievement({
   key: 'ten-buys',
   name: 'Active Trader',
   description: 'Buy stocks 10 times.',
+  rarity: 'uncommon',
+  icon: 'repeat-2',
   category: 'trading',
   target: 10,
   events: ['trade.executed'],

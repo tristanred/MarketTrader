@@ -54,6 +54,8 @@ describe('AchievementEngine', () => {
       key: 'unlock-on-trade',
       name: 'X',
       description: 'X',
+      rarity: 'common',
+      icon: 'circle',
       target: 1,
       events: ['trade.executed'],
       async onEvent(event, ctx) {
@@ -109,6 +111,8 @@ describe('AchievementEngine', () => {
       key: 'inc-3',
       name: 'X',
       description: 'X',
+      rarity: 'common',
+      icon: 'circle',
       target: 3,
       events: ['trade.executed'],
       async onEvent(event, ctx) {
@@ -150,6 +154,8 @@ describe('AchievementEngine', () => {
       key: 'streak-3',
       name: 'X',
       description: 'X',
+      rarity: 'common',
+      icon: 'circle',
       target: 3,
       events: ['snapshot.recorded'],
       async onEvent(event, ctx) {
@@ -200,6 +206,8 @@ describe('AchievementEngine', () => {
       key: 'bad',
       name: 'X',
       description: 'X',
+      rarity: 'common',
+      icon: 'circle',
       target: 1,
       events: ['trade.executed'],
       onEvent() {
@@ -210,6 +218,8 @@ describe('AchievementEngine', () => {
       key: 'good',
       name: 'X',
       description: 'X',
+      rarity: 'common',
+      icon: 'circle',
       target: 1,
       events: ['trade.executed'],
       async onEvent(event, ctx) {
@@ -244,6 +254,8 @@ describe('AchievementEngine', () => {
       key: 'should-not-fire',
       name: 'X',
       description: 'X',
+      rarity: 'common',
+      icon: 'circle',
       target: 1,
       events: ['trade.executed'],
       async onEvent(event, ctx) {
@@ -276,6 +288,8 @@ describe('AchievementEngine', () => {
       key: 'toggleable',
       name: 'X',
       description: 'X',
+      rarity: 'common',
+      icon: 'circle',
       target: 1,
       events: ['trade.executed'],
       async onEvent(event, ctx) {

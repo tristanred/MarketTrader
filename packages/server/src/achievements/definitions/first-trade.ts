@@ -5,6 +5,8 @@ export default defineAchievement({
   key: 'first-trade',
   name: 'First Trade',
   description: 'Execute your first trade.',
+  rarity: 'common',
+  icon: 'circle-dot',
   category: 'trading',
   target: 1,
   events: ['trade.executed'],

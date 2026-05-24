@@ -46,7 +46,6 @@ export function AchievementToast({ gameId, toast }: AchievementToastProps) {
     ).catch((err) => {
       // TODO(achievements-ack-retry): spec requires one silent retry on failure;
       // replay-on-reconnect is the fallback if both attempts fail.
-      // eslint-disable-next-line no-console
       console.warn('[AchievementToast] ack failed — replay on reconnect will cover it', err);
     });
     exitTimerRef.current = window.setTimeout(() => dismiss(toast.id), EXIT_MS);
@@ -60,7 +59,6 @@ export function AchievementToast({ gameId, toast }: AchievementToastProps) {
         window.clearTimeout(exitTimerRef.current);
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [toast.id]);
 
   const Icon = getAchievementIcon(toast.unlock.icon);

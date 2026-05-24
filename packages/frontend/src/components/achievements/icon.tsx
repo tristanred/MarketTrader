@@ -17,7 +17,6 @@ export function getAchievementIcon(name: string): LucideIcon {
   if (candidate) return candidate;
   if (!warned.has(name)) {
     warned.add(name);
-    // eslint-disable-next-line no-console
     console.warn(`[achievements] Unknown Lucide icon "${name}" — falling back to Award.`);
   }
   return Award;

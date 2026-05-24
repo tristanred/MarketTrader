@@ -66,11 +66,11 @@ describe('AchievementsPage', () => {
         },
       },
       isLoading: false,
-    } as any);
+    } as unknown as ReturnType<typeof useAchievements>);
     mockedUseGame.mockReturnValue({
       data: { id: 'g1', viewerGamePlayerId: 'gp1', leaderboard: [{ playerId: 'u1', username: 'alice', cashBalance: 1, totalValue: 1, rank: 1 }] },
       isLoading: false,
-    } as any);
+    } as unknown as ReturnType<typeof useGame>);
     renderPage();
     await waitFor(() => expect(screen.getByText('A')).toBeInTheDocument());
     expect(screen.getByText('B')).toBeInTheDocument();
@@ -88,11 +88,11 @@ describe('AchievementsPage', () => {
         },
       },
       isLoading: false,
-    } as any);
+    } as unknown as ReturnType<typeof useAchievements>);
     mockedUseGame.mockReturnValue({
       data: { id: 'g1', viewerGamePlayerId: 'gp1', leaderboard: [{ playerId: 'u1', username: 'alice', cashBalance: 1, totalValue: 1, rank: 1 }] },
       isLoading: false,
-    } as any);
+    } as unknown as ReturnType<typeof useGame>);
     renderPage();
     await waitFor(() => expect(screen.getByText(/1 \/ 2 unlocked/i)).toBeInTheDocument());
   });

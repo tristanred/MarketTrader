@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { and, eq } from 'drizzle-orm';
 import { createTestDb } from '../helpers/app.js';
 import * as schema from '../../src/db/schema.sqlite.js';
@@ -282,6 +282,48 @@ describe('AchievementEngine', () => {
       .where(eq(schema.achievementProgress.gamePlayerId, gamePlayerId));
     expect(rows).toHaveLength(0);
   });
+
+  it('broadcast includes rarity and icon', async () => {
+    const { gameId, gamePlayerId } = await seedGame(db as unknown as Db);
+    const def = defineAchievement({
+      key: 'broadcast-fields',
+      name: 'Broadcast Test',
+      description: 'desc',
+      rarity: 'common',
+      icon: 'circle',
+      target: 1,
+      events: ['trade.executed'],
+      async onEvent(event, ctx) {
+        await ctx.unlock(event.gamePlayerId);
+      },
+    });
+    const { bus, registry } = makeEngine(db as unknown as Db, [def]);
+    vi.spyOn(registry, 'broadcast');
+
+    await bus.emit({
+      type: 'trade.executed',
+      gameId,
+      gamePlayerId,
+      symbol: 'AAPL',
+      direction: 'buy',
+      quantity: 1,
+      price: 100,
+      tradeId: 't-broadcast',
+      executedAt: new Date().toISOString(),
+    });
+
+    expect(registry.broadcast).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        event: 'achievement_unlocked',
+        data: expect.objectContaining({
+          rarity: 'common',
+          icon: 'circle',
+        }),
+      }),
+    );
+  });
+
   it('honors the global disable setting and per-game override', async () => {
     const { gameId, gamePlayerId } = await seedGame(db as unknown as Db);
     const def = defineAchievement({

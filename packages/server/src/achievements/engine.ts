@@ -286,6 +286,8 @@ export class AchievementEngine {
           achievementKey: def.key,
           name: def.name,
           description: def.description,
+          rarity: def.rarity,
+          icon: def.icon,
           unlockedAt: now,
         },
       });

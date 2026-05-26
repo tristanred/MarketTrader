@@ -71,6 +71,24 @@ describe('applyTradeStats', () => {
     expect(row!.distinctSymbolsTradedEver).toBe(1);
   });
 
+  it('increments sellTrades (not buyTrades) on a sell', async () => {
+    await applyTradeStats(db as unknown as Db, {
+      gamePlayerId,
+      direction: 'sell',
+      symbol: 'AAPL',
+      quantity: 5,
+      price: 200,
+    });
+    const [row] = await db
+      .select()
+      .from(schema.gamePlayerStats)
+      .where(eq(schema.gamePlayerStats.gamePlayerId, gamePlayerId));
+    expect(row!.totalTrades).toBe(1);
+    expect(row!.buyTrades).toBe(0);
+    expect(row!.sellTrades).toBe(1);
+    expect(Number(row!.totalVolumeTraded)).toBe(1000);
+  });
+
   it('does not double-count distinctSymbolsTradedEver on a repeat symbol', async () => {
     await applyTradeStats(db as unknown as Db, {
       gamePlayerId,
@@ -214,6 +232,52 @@ describe('applySnapshotStats', () => {
       .where(eq(schema.gamePlayerStats.gamePlayerId, gpId));
     expect(row!.daysAtRankOne).toBe(1);
     expect(row!.consecutiveDaysAtRankOne).toBe(1);
+  });
+
+  it('advances top-3 and median day counters; skips last-place when totalPlayers <= 1', async () => {
+    const db = await createTestDb();
+    const gpId = await seedGamePlayer(db as unknown as Db);
+    // Day 1: rank 3 of 5 (in top 3, above median ceil(5/2)=3, not last) → seed only.
+    await applySnapshotStats(db as unknown as Db, {
+      gamePlayerId: gpId, totalValue: 100, rank: 3, totalPlayers: 5,
+      capturedAt: '2026-05-25T10:00:00.000Z',
+    });
+    // Day 2: any rank rollover — uses day-1 prior rank=3 → advances top3 and median, not last.
+    await applySnapshotStats(db as unknown as Db, {
+      gamePlayerId: gpId, totalValue: 100, rank: 4, totalPlayers: 5,
+      capturedAt: '2026-05-26T10:00:00.000Z',
+    });
+    let [row] = await db.select().from(schema.gamePlayerStats).where(eq(schema.gamePlayerStats.gamePlayerId, gpId));
+    expect(row!.daysInTopThree).toBe(1);
+    expect(row!.consecutiveDaysAtOrAboveMedian).toBe(1);
+    expect(row!.consecutiveDaysInLastPlace).toBe(0);
+
+    // Day 3: rollover — uses day-2 prior rank=4 (last of 5) → consecutiveDaysInLastPlace = 1.
+    await applySnapshotStats(db as unknown as Db, {
+      gamePlayerId: gpId, totalValue: 100, rank: 5, totalPlayers: 5,
+      capturedAt: '2026-05-27T10:00:00.000Z',
+    });
+    // Wait — day 2 final rank was 4, totalPlayers 5, so not last. Day 3 prior rank=4 not last.
+    // Bump to day 4 with prior rank=5 (last) to verify last-place advance.
+    await applySnapshotStats(db as unknown as Db, {
+      gamePlayerId: gpId, totalValue: 100, rank: 5, totalPlayers: 5,
+      capturedAt: '2026-05-28T10:00:00.000Z',
+    });
+    [row] = await db.select().from(schema.gamePlayerStats).where(eq(schema.gamePlayerStats.gamePlayerId, gpId));
+    expect(row!.consecutiveDaysInLastPlace).toBe(1);
+
+    // totalPlayers===1 path: last-place check is skipped entirely.
+    const gpSolo = await seedGamePlayer(db as unknown as Db);
+    await applySnapshotStats(db as unknown as Db, {
+      gamePlayerId: gpSolo, totalValue: 100, rank: 1, totalPlayers: 1,
+      capturedAt: '2026-05-25T10:00:00.000Z',
+    });
+    await applySnapshotStats(db as unknown as Db, {
+      gamePlayerId: gpSolo, totalValue: 100, rank: 1, totalPlayers: 1,
+      capturedAt: '2026-05-26T10:00:00.000Z',
+    });
+    const [soloRow] = await db.select().from(schema.gamePlayerStats).where(eq(schema.gamePlayerStats.gamePlayerId, gpSolo));
+    expect(soloRow!.consecutiveDaysInLastPlace).toBe(0);
   });
 
   it('resets consecutive counters when standing breaks', async () => {

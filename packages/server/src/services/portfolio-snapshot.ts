@@ -3,6 +3,7 @@ import type { Db } from '../db/index.js';
 import { schema } from '../db/index.js';
 import type { EventBus } from '../events/bus.js';
 import { computeLeaderboard, type LeaderboardEntry } from './leaderboard.js';
+import { applySnapshotStats } from './game-player-stats.js';
 
 /**
  * Persists one `portfolio_snapshots` row per player for the given game,
@@ -53,11 +54,30 @@ export async function recordSnapshot(
     .filter((r): r is NonNullable<typeof r> => r !== null);
 
   if (rows.length === 0) return entries;
-  await db.insert(schema.portfolioSnapshots).values(rows);
+
+  // Capture one timestamp for the batch so the inserted snapshots, the
+  // emitted snapshot.recorded events, and the per-player stats writes all
+  // agree on the same `capturedAt`. Without this, the DB-defaulted value
+  // could drift from the value used to advance day counters.
+  const capturedAt = new Date().toISOString();
+  const totalPlayers = rows.length;
+
+  await db.transaction(async (tx) => {
+    await tx
+      .insert(schema.portfolioSnapshots)
+      .values(rows.map((r) => ({ ...r, capturedAt })));
+    for (const r of rows) {
+      await applySnapshotStats(tx as unknown as Db, {
+        gamePlayerId: r.gamePlayerId,
+        totalValue: r.totalValue,
+        rank: r.rank,
+        totalPlayers,
+        capturedAt,
+      });
+    }
+  });
 
   if (bus) {
-    const capturedAt = new Date().toISOString();
-    const totalPlayers = rows.length;
     for (const r of rows) {
       void bus.emit({
         type: 'snapshot.recorded',

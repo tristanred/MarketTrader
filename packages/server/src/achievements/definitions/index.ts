@@ -20,6 +20,12 @@ import doubleUp from './double-up.js';
 import tripleThreat from './triple-threat.js';
 import underwater from './underwater.js';
 import phoenix from './phoenix.js';
+import diversified from './diversified.js';
+import indexFund from './index-fund.js';
+import allIn from './all-in.js';
+import cashIsKing from './cash-is-king.js';
+import fullyInvested from './fully-invested.js';
+import concentratedBet from './concentrated-bet.js';
 
 /**
  * The full registry of code-defined achievements. Adding a new achievement is:
@@ -49,6 +55,13 @@ export const achievements: readonly AnyAchievementDefinition[] = [
   tripleThreat,
   underwater,
   phoenix,
+  // Portfolio category
+  diversified,
+  indexFund,
+  allIn,
+  cashIsKing,
+  fullyInvested,
+  concentratedBet,
   // Standing category
   rockBottom,
 ];

@@ -11,6 +11,7 @@ import {
 } from '../../services/working-order.js';
 import { executeTrade } from '../../services/trade.js';
 import type { StockProvider } from '../../providers/index.js';
+import type { EventBus } from '../../events/bus.js';
 
 const idParams = z.object({ id: z.string() });
 const forceExecBody = z.object({ price: z.number().positive().optional() });
@@ -26,7 +27,7 @@ const priceBody = z.object({ price: z.number().positive() });
  *                                        delta is applied, holdings unchanged.
  *                                        Refuses if it would push cash < 0.
  */
-export function adminTradesRoutes(db: Db, provider: StockProvider) {
+export function adminTradesRoutes(db: Db, provider: StockProvider, bus?: EventBus) {
   return async function (rawApp: FastifyInstance): Promise<void> {
     const app = rawApp.withTypeProvider<ZodTypeProvider>();
     const { trades, gamePlayers, portfolios } = schema;
@@ -121,6 +122,33 @@ export function adminTradesRoutes(db: Db, provider: StockProvider) {
             metadata: { overrideUsed: overridePrice !== undefined },
           });
         });
+
+        // Emit on the in-process bus so the achievement engine (and any
+        // other domain-event consumer) treats an admin-driven force-execute
+        // the same as a normal fill. Without this, achievements like
+        // first-trade and ten-buys would silently skip admin-resolved
+        // orders. Mirrors the emit in routes/trading.ts.
+        if (bus) {
+          // The trades table has no gameId column; resolve via gamePlayers.
+          const [player] = await db
+            .select({ gameId: gamePlayers.gameId })
+            .from(gamePlayers)
+            .where(eq(gamePlayers.id, trade.gamePlayerId))
+            .limit(1);
+          if (player) {
+            void bus.emit({
+              type: 'trade.executed',
+              gameId: player.gameId,
+              gamePlayerId: trade.gamePlayerId,
+              symbol: trade.symbol,
+              direction: trade.direction as 'buy' | 'sell',
+              quantity: trade.quantity,
+              price: Number(executed.price),
+              tradeId: id,
+              executedAt: executed.executedAt!,
+            });
+          }
+        }
 
         return reply.status(200).send(executed);
       } catch (err: unknown) {

@@ -239,6 +239,10 @@ function ArenaBody({
     <main className="mx-auto grid w-full max-w-[1600px] grid-cols-1 gap-2 p-3 lg:grid-cols-[280px_1fr_300px]">
       <aside className="flex flex-col gap-2">
         <PortfolioPanel value={myPortfolioValue} pnlPct={myPnlPct} cash={myCash} dayPnl={myDayPnl} />
+        {/* On narrow viewports the grid collapses to one column, so surface
+            the search bar right under the portfolio (above the quote). At
+            lg+ the right rail owns it. */}
+        <SymbolSearchPanel onSelect={setSelectedSymbol} className="lg:hidden" />
       </aside>
 
       <section className="flex flex-col gap-2">
@@ -263,7 +267,7 @@ function ArenaBody({
       </section>
 
       <aside className="flex flex-col gap-2">
-        <SymbolSearchPanel onSelect={setSelectedSymbol} />
+        <SymbolSearchPanel onSelect={setSelectedSymbol} className="hidden lg:block" />
         <WatchlistPanel
           rows={watchlistRows}
           onSelect={setSelectedSymbol}

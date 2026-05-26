@@ -116,3 +116,29 @@ These are candidates for future design cycles. None are committed.
 | Should games be public (discoverable) or private (join by ID only)? | Deferred to post-MVP |
 | What happens to stock price cache when market is closed? | Use last known price, mark as "stale" |
 | Should there be a rate limit on trades per player per game? | Not in MVP |
+
+---
+
+## Known Gaps
+
+### Resting / pending-market sell realized P&L
+
+For limit/stop sell orders that fill via the trigger worker — and for pending
+market sells that settle via the market-hours worker — the portfolio row is
+decremented at *placement* (when the order is queued), not at fill. By the time
+`executeTrade` (or `settlePendingTrades`) finalises the fill, the cost basis is
+already gone. Consequence:
+
+- `ExecuteTradeResult.realizedPnl`, `realizedPnlPct`, `holdDurationMs`, and
+  `fullyClosed` are zero/false for these fills.
+- The trade-emit helper (`services/trade-emit.ts`) suppresses
+  `position.closed` for resting/pending sells (`isResting: true` at the call
+  site). The `holdings.changed` event still fires with accurate
+  `distinctSymbols` / `topConcentrationRatio` / `cashRatio`.
+- Achievements that subscribe to `position.closed` (Moonshot, Ten-Bagger, Bag
+  Holder, Catastrophe, Paper Hands, Diamond Hands, First Blood, etc.) will NOT
+  fire on resting or pending-market sell fills.
+
+Acceptable for now; revisit by capturing the cost basis at placement time
+(e.g. snapshot `avgCostBasis` onto the working/pending `trades` row) once
+resting orders become more common.

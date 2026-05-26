@@ -71,6 +71,13 @@
       "when": 1779642761289,
       "tag": "0009_quick_korvac",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1779760142990,
+      "tag": "0010_stormy_major_mapleleaf",
+      "breakpoints": true
     }
   ]
 }

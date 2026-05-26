@@ -175,7 +175,11 @@ export const portfolios = sqliteTable(
     symbol: text('symbol').notNull(),
     quantity: integer('quantity').notNull(),
     avgCostBasis: real('avg_cost_basis').notNull(),
-    /** ISO 8601 timestamp set when quantity went 0 → positive. Cleared when the row is deleted (full close). */
+    /**
+     * ISO 8601 timestamp captured on the buy that transitions quantity from 0 → positive.
+     * Unchanged by add-on buys; the row (and column) cease to exist on full close. Used by
+     * achievements that measure hold duration of the current position.
+     */
     openedAt: text('opened_at'),
   },
   (t) => [unique().on(t.gamePlayerId, t.symbol)],
@@ -431,7 +435,9 @@ export const gamePlayerStats = sqliteTable('game_player_stats', {
   daysInTopThree: integer('days_in_top_three').notNull().default(0),
   consecutiveDaysAtOrAboveMedian: integer('consecutive_days_at_or_above_median').notNull().default(0),
   consecutiveDaysInLastPlace: integer('consecutive_days_in_last_place').notNull().default(0),
+  /** UTC calendar day (`YYYY-MM-DD`) of the most recent snapshot processed by the day-counter rollup. */
   lastDayCounted: text('last_day_counted'),
+  /** Rank at the most recent snapshot of `lastDayCounted`; consumed at the next day rollover. */
   lastDayRank: integer('last_day_rank'),
 
   totalTrades: integer('total_trades').notNull().default(0),
@@ -452,5 +458,7 @@ export const gamePlayerStats = sqliteTable('game_player_stats', {
   shortestHoldMs: integer('shortest_hold_ms'),
   longestHoldMs: integer('longest_hold_ms'),
 
-  updatedAt: text('updated_at').default(sql`(datetime('now'))`).notNull(),
+  updatedAt: text('updated_at')
+    .default(sql`(datetime('now'))`)
+    .notNull(),
 });

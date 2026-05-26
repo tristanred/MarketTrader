@@ -6,6 +6,8 @@ import type { Db } from '../../src/db/index.js';
 import {
   utcDayKey,
   applyTradeStats,
+  applyPositionCloseStats,
+  applySnapshotStats,
 } from '../../src/services/game-player-stats.js';
 
 async function seedGamePlayer(db: Db): Promise<string> {
@@ -98,5 +100,158 @@ describe('applyTradeStats', () => {
       .from(schema.gamePlayerStats)
       .where(eq(schema.gamePlayerStats.gamePlayerId, gamePlayerId));
     expect(row!.distinctSymbolsTradedEver).toBe(1);
+  });
+});
+
+describe('applyPositionCloseStats', () => {
+  it('records a winning close: increments wins, consecutiveWins, updates bestSinglePnl', async () => {
+    const db = await createTestDb();
+    const gpId = await seedGamePlayer(db as unknown as Db);
+    await applyPositionCloseStats(db as unknown as Db, {
+      gamePlayerId: gpId,
+      realizedPnl: 50,
+      realizedPnlPct: 0.5,
+      holdDurationMs: 1000,
+    });
+    const [row] = await db
+      .select()
+      .from(schema.gamePlayerStats)
+      .where(eq(schema.gamePlayerStats.gamePlayerId, gpId));
+    expect(row!.winningClosedPositions).toBe(1);
+    expect(row!.losingClosedPositions).toBe(0);
+    expect(row!.consecutiveWins).toBe(1);
+    expect(Number(row!.realizedPnl)).toBe(50);
+    expect(Number(row!.bestSinglePnl)).toBe(50);
+    expect(Number(row!.bestSinglePnlPct)).toBe(0.5);
+    expect(row!.shortestHoldMs).toBe(1000);
+    expect(row!.longestHoldMs).toBe(1000);
+  });
+
+  it('records a losing close: resets consecutiveWins, updates worstSinglePnl', async () => {
+    const db = await createTestDb();
+    const gpId = await seedGamePlayer(db as unknown as Db);
+    await applyPositionCloseStats(db as unknown as Db, {
+      gamePlayerId: gpId,
+      realizedPnl: 10,
+      realizedPnlPct: 0.1,
+      holdDurationMs: 500,
+    });
+    await applyPositionCloseStats(db as unknown as Db, {
+      gamePlayerId: gpId,
+      realizedPnl: -30,
+      realizedPnlPct: -0.3,
+      holdDurationMs: 2000,
+    });
+    const [row] = await db
+      .select()
+      .from(schema.gamePlayerStats)
+      .where(eq(schema.gamePlayerStats.gamePlayerId, gpId));
+    expect(row!.consecutiveWins).toBe(0);
+    expect(row!.losingClosedPositions).toBe(1);
+    expect(Number(row!.realizedPnl)).toBe(-20);
+    expect(Number(row!.worstSinglePnl)).toBe(-30);
+    expect(Number(row!.worstSinglePnlPct)).toBe(-0.3);
+    expect(row!.shortestHoldMs).toBe(500);
+    expect(row!.longestHoldMs).toBe(2000);
+  });
+});
+
+describe('applySnapshotStats', () => {
+  it('updates peak on first snapshot', async () => {
+    const db = await createTestDb();
+    const gpId = await seedGamePlayer(db as unknown as Db);
+    await applySnapshotStats(db as unknown as Db, {
+      gamePlayerId: gpId,
+      totalValue: 120_000,
+      rank: 2,
+      totalPlayers: 5,
+      capturedAt: '2026-05-25T10:00:00.000Z',
+    });
+    const [row] = await db
+      .select()
+      .from(schema.gamePlayerStats)
+      .where(eq(schema.gamePlayerStats.gamePlayerId, gpId));
+    expect(Number(row!.peakPortfolioValue)).toBe(120_000);
+    expect(Number(row!.troughPortfolioValue)).toBe(120_000);
+    expect(row!.bestRank).toBe(2);
+    expect(row!.worstRank).toBe(2);
+    expect(row!.lastRank).toBe(2);
+  });
+
+  it('advances day counters only on day rollover', async () => {
+    const db = await createTestDb();
+    const gpId = await seedGamePlayer(db as unknown as Db);
+    await applySnapshotStats(db as unknown as Db, {
+      gamePlayerId: gpId,
+      totalValue: 100,
+      rank: 1,
+      totalPlayers: 5,
+      capturedAt: '2026-05-25T10:00:00.000Z',
+    });
+    await applySnapshotStats(db as unknown as Db, {
+      gamePlayerId: gpId,
+      totalValue: 100,
+      rank: 1,
+      totalPlayers: 5,
+      capturedAt: '2026-05-25T18:00:00.000Z',
+    });
+    let [row] = await db
+      .select()
+      .from(schema.gamePlayerStats)
+      .where(eq(schema.gamePlayerStats.gamePlayerId, gpId));
+    expect(row!.daysAtRankOne).toBe(0);
+
+    await applySnapshotStats(db as unknown as Db, {
+      gamePlayerId: gpId,
+      totalValue: 100,
+      rank: 1,
+      totalPlayers: 5,
+      capturedAt: '2026-05-26T10:00:00.000Z',
+    });
+    [row] = await db
+      .select()
+      .from(schema.gamePlayerStats)
+      .where(eq(schema.gamePlayerStats.gamePlayerId, gpId));
+    expect(row!.daysAtRankOne).toBe(1);
+    expect(row!.consecutiveDaysAtRankOne).toBe(1);
+  });
+
+  it('resets consecutive counters when standing breaks', async () => {
+    const db = await createTestDb();
+    const gpId = await seedGamePlayer(db as unknown as Db);
+    await applySnapshotStats(db as unknown as Db, {
+      gamePlayerId: gpId,
+      totalValue: 100,
+      rank: 1,
+      totalPlayers: 5,
+      capturedAt: '2026-05-25T10:00:00.000Z',
+    });
+    await applySnapshotStats(db as unknown as Db, {
+      gamePlayerId: gpId,
+      totalValue: 100,
+      rank: 1,
+      totalPlayers: 5,
+      capturedAt: '2026-05-26T10:00:00.000Z',
+    });
+    await applySnapshotStats(db as unknown as Db, {
+      gamePlayerId: gpId,
+      totalValue: 100,
+      rank: 3,
+      totalPlayers: 5,
+      capturedAt: '2026-05-27T10:00:00.000Z',
+    });
+    await applySnapshotStats(db as unknown as Db, {
+      gamePlayerId: gpId,
+      totalValue: 100,
+      rank: 3,
+      totalPlayers: 5,
+      capturedAt: '2026-05-28T10:00:00.000Z',
+    });
+    const [row] = await db
+      .select()
+      .from(schema.gamePlayerStats)
+      .where(eq(schema.gamePlayerStats.gamePlayerId, gpId));
+    expect(row!.consecutiveDaysAtRankOne).toBe(0);
+    expect(row!.daysAtRankOne).toBe(2);
   });
 });

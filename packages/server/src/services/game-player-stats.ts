@@ -39,6 +39,8 @@ export interface ApplyTradeStatsParams {
  * trade row is inserted — the `distinctSymbolsTradedEver` delta is computed
  * by checking for any prior `trades` row on the same `(gamePlayerId, symbol)`.
  * Idempotency is the caller's concern — never call twice for the same trade.
+ * Assumes single-writer-per-player ordering (the trade route already serializes
+ * per-player trades inside one transaction).
  */
 export async function applyTradeStats(db: Db, params: ApplyTradeStatsParams): Promise<void> {
   await ensureStatsRow(db, params.gamePlayerId);
@@ -142,6 +144,11 @@ export interface ApplySnapshotStatsParams {
  * — the rank captured at the most recent snapshot of the prior day. The
  * very first snapshot ever only seeds `lastDayCounted` and `lastDayRank`
  * without advancing (there's no prior day to count for).
+ *
+ * Note: the final day of a game is not counted by this writer alone —
+ * advance only happens at the next-day rollover. Game-end paths that need
+ * the final day to count must call {@link finalizeSnapshotStats} once when
+ * the game ends.
  */
 export async function applySnapshotStats(
   db: Db,
@@ -215,4 +222,37 @@ export async function applySnapshotStats(
       updatedAt: now,
     })
     .where(eq(schema.gamePlayerStats.gamePlayerId, params.gamePlayerId));
+}
+
+/**
+ * Counts the player's final day at its stored `lastDayRank` against the day
+ * counters. Idempotent: clears `lastDayCounted` after flushing, so a second
+ * call is a no-op. Call once at game end when the final day's standings
+ * matter (e.g. wire-to-wire / podium-day achievements).
+ */
+export async function finalizeSnapshotStats(
+  db: Db,
+  gamePlayerId: string,
+  totalPlayers: number,
+): Promise<void> {
+  const row = await ensureStatsRow(db, gamePlayerId);
+  if (row.lastDayCounted == null || row.lastDayRank == null) return;
+  const priorRank = row.lastDayRank;
+  const wasAtOne = priorRank === 1;
+  const wasInTop3 = priorRank <= 3;
+  const wasAboveMedian = priorRank <= Math.ceil(totalPlayers / 2);
+  const wasLast = totalPlayers > 1 && priorRank === totalPlayers;
+
+  await db
+    .update(schema.gamePlayerStats)
+    .set({
+      daysAtRankOne: row.daysAtRankOne + (wasAtOne ? 1 : 0),
+      consecutiveDaysAtRankOne: wasAtOne ? row.consecutiveDaysAtRankOne + 1 : 0,
+      daysInTopThree: row.daysInTopThree + (wasInTop3 ? 1 : 0),
+      consecutiveDaysAtOrAboveMedian: wasAboveMedian ? row.consecutiveDaysAtOrAboveMedian + 1 : 0,
+      consecutiveDaysInLastPlace: wasLast ? row.consecutiveDaysInLastPlace + 1 : 0,
+      lastDayCounted: null,
+      updatedAt: new Date().toISOString(),
+    })
+    .where(eq(schema.gamePlayerStats.gamePlayerId, gamePlayerId));
 }

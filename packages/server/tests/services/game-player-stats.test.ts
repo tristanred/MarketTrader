@@ -8,6 +8,7 @@ import {
   applyTradeStats,
   applyPositionCloseStats,
   applySnapshotStats,
+  finalizeSnapshotStats,
 } from '../../src/services/game-player-stats.js';
 
 async function seedGamePlayer(db: Db): Promise<string> {
@@ -317,5 +318,31 @@ describe('applySnapshotStats', () => {
       .where(eq(schema.gamePlayerStats.gamePlayerId, gpId));
     expect(row!.consecutiveDaysAtRankOne).toBe(0);
     expect(row!.daysAtRankOne).toBe(2);
+  });
+});
+
+describe('finalizeSnapshotStats', () => {
+  it('counts the final day at lastDayRank and is idempotent', async () => {
+    const db = await createTestDb();
+    const gpId = await seedGamePlayer(db as unknown as Db);
+    // One day of snapshots at rank 1 — seeds lastDayCounted/lastDayRank.
+    await applySnapshotStats(db as unknown as Db, {
+      gamePlayerId: gpId, totalValue: 100, rank: 1, totalPlayers: 5,
+      capturedAt: '2026-05-25T10:00:00.000Z',
+    });
+    // Without finalize, the day never counted (no rollover happened).
+    let [row] = await db.select().from(schema.gamePlayerStats).where(eq(schema.gamePlayerStats.gamePlayerId, gpId));
+    expect(row!.daysAtRankOne).toBe(0);
+
+    await finalizeSnapshotStats(db as unknown as Db, gpId, 5);
+    [row] = await db.select().from(schema.gamePlayerStats).where(eq(schema.gamePlayerStats.gamePlayerId, gpId));
+    expect(row!.daysAtRankOne).toBe(1);
+    expect(row!.consecutiveDaysAtRankOne).toBe(1);
+    expect(row!.lastDayCounted).toBeNull();
+
+    // Second call is a no-op (lastDayCounted is now null).
+    await finalizeSnapshotStats(db as unknown as Db, gpId, 5);
+    [row] = await db.select().from(schema.gamePlayerStats).where(eq(schema.gamePlayerStats.gamePlayerId, gpId));
+    expect(row!.daysAtRankOne).toBe(1);
   });
 });

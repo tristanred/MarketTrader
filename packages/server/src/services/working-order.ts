@@ -697,7 +697,7 @@ export async function evaluateTriggers(
     // Attempt the fill. The price is the triggering quote, per the design
     // decision (real-exchange "next available" semantics).
     try {
-      const trade = await executeTrade(db, {
+      const { trade } = await executeTrade(db, {
         gamePlayerId: row.gamePlayerId,
         symbol: row.symbol,
         direction: row.direction as TradeDirection,

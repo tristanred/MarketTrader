@@ -339,14 +339,18 @@ export function tradingRoutes(
         }
 
         let trade;
+        // `_result` holds the full ExecuteTradeResult so Task 9 can wire
+        // derived metrics (realizedPnl, distinctSymbols, ...) into emits.
+        let _result;
         try {
-          trade = await executeTrade(db, {
+          _result = await executeTrade(db, {
             gamePlayerId: gamePlayer.id,
             symbol,
             direction: direction as TradeDirection,
             quantity,
             price: quote.price,
           });
+          trade = _result.trade;
         } catch (err) {
           if (err instanceof TradeError) {
             return reply.status(422).send({ code: err.code, message: err.message });

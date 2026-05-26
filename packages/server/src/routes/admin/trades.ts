@@ -108,7 +108,7 @@ export function adminTradesRoutes(
       const price = overridePrice ?? (await provider.getQuote(trade.symbol)).price;
 
       try {
-        const executed = await executeTrade(db, {
+        const executedResult = await executeTrade(db, {
           gamePlayerId: trade.gamePlayerId,
           symbol: trade.symbol,
           direction: trade.direction,
@@ -117,6 +117,7 @@ export function adminTradesRoutes(
           existingTradeId: id,
           reservedCash: trade.reservedCash == null ? 0 : Number(trade.reservedCash),
         });
+        const executed = executedResult.trade;
 
         await db.transaction(async (tx) => {
           await recordAdminAction(tx, {

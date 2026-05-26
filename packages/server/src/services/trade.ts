@@ -3,6 +3,7 @@ import type { Db } from '../db/index.js';
 import { schema } from '../db/index.js';
 import type { TradeDirection, Trade } from '@markettrader/shared';
 import { TradeError } from '../providers/index.js';
+import { applyTradeStats, applyPositionCloseStats } from './game-player-stats.js';
 
 /**
  * Validates that a buy order can be filled given the player's current cash.
@@ -98,6 +99,21 @@ export interface ExecuteTradeParams {
   executedAt?: string;
 }
 
+/** Returned by {@link executeTrade}. Carries derived data needed for downstream event emits. */
+export interface ExecuteTradeResult {
+  trade: Trade;
+  /** Realized P&L for this trade. 0 for buys and for resting sells (cost basis unavailable at fill). */
+  realizedPnl: number;
+  /** Realized P&L as a fraction of cost basis. 0 for buys and resting sells. */
+  realizedPnlPct: number;
+  /** ms between most recent position open and this trade. 0 for buys and resting sells. */
+  holdDurationMs: number;
+  /** True iff this sell brought the position to 0. False for buys, partial sells, and resting sells. */
+  fullyClosed: boolean;
+  /** Distinct symbols (qty > 0) held by the player after the trade. */
+  distinctSymbols: number;
+}
+
 /**
  * Atomically executes a trade and updates the player's cash balance and portfolio.
  *
@@ -114,11 +130,12 @@ export interface ExecuteTradeParams {
  * @throws {TradeError} if the order fails validation (see {@link validateBuy} /
  *   {@link validateSell}).
  */
-export async function executeTrade(db: Db, params: ExecuteTradeParams): Promise<Trade> {
+export async function executeTrade(db: Db, params: ExecuteTradeParams): Promise<ExecuteTradeResult> {
   const { gamePlayerId, symbol, direction, quantity, price, existingTradeId } = params;
   const reservedCash = Number(params.reservedCash ?? 0);
   const { gamePlayers, portfolios, trades } = schema;
   const isResting = existingTradeId != null;
+  const executedAt = params.executedAt ?? new Date().toISOString();
 
   const [player] = await db
     .select({ cashBalance: gamePlayers.cashBalance })
@@ -131,7 +148,12 @@ export async function executeTrade(db: Db, params: ExecuteTradeParams): Promise<
   const cashBalance = Number(player.cashBalance);
 
   const [holding] = await db
-    .select({ id: portfolios.id, quantity: portfolios.quantity, avgCostBasis: portfolios.avgCostBasis })
+    .select({
+      id: portfolios.id,
+      quantity: portfolios.quantity,
+      avgCostBasis: portfolios.avgCostBasis,
+      openedAt: portfolios.openedAt,
+    })
     .from(portfolios)
     .where(and(eq(portfolios.gamePlayerId, gamePlayerId), eq(portfolios.symbol, symbol)))
     .limit(1);
@@ -174,14 +196,31 @@ export async function executeTrade(db: Db, params: ExecuteTradeParams): Promise<
     newAvg = Number(holding?.avgCostBasis ?? 0);
   }
 
-  return db.transaction(async (tx) => {
+  // Derive close metrics for non-resting sells from the pre-update holding.
+  // Resting sells already mutated the row at placement, so cost basis isn't
+  // available here — return zeros and let the caller skip downstream wiring.
+  const sellAvgCost = Number(holding?.avgCostBasis ?? 0);
+  const realizedPnl =
+    direction === 'sell' && !isResting ? (price - sellAvgCost) * quantity : 0;
+  const realizedPnlPct =
+    direction === 'sell' && !isResting && sellAvgCost > 0 ? price / sellAvgCost - 1 : 0;
+  const openedAtForHold =
+    direction === 'sell' && !isResting ? holding?.openedAt ?? null : null;
+  const holdDurationMs = openedAtForHold
+    ? new Date(executedAt).getTime() - new Date(openedAtForHold).getTime()
+    : 0;
+  const fullyClosed = direction === 'sell' && !isResting && newQty === 0;
+
+  const tradeRow = await db.transaction(async (tx) => {
     await tx.update(gamePlayers).set({ cashBalance: newCash }).where(eq(gamePlayers.id, gamePlayerId));
 
     if (direction === 'buy') {
       if (holding) {
+        // Add-on buy: do not touch openedAt — position is the same one.
         await tx.update(portfolios).set({ quantity: newQty, avgCostBasis: newAvg }).where(eq(portfolios.id, holding.id));
       } else {
-        await tx.insert(portfolios).values({ gamePlayerId, symbol, quantity: newQty, avgCostBasis: newAvg });
+        // Brand-new position — stamp openedAt so hold-duration metrics work.
+        await tx.insert(portfolios).values({ gamePlayerId, symbol, quantity: newQty, avgCostBasis: newAvg, openedAt: executedAt });
       }
     } else if (!isResting) {
       if (newQty === 0) {
@@ -191,7 +230,18 @@ export async function executeTrade(db: Db, params: ExecuteTradeParams): Promise<
       }
     }
 
-    const executedAt = params.executedAt ?? new Date().toISOString();
+    // Stats writers must run inside the same tx as the trade write. Trade-level
+    // stats fire for every executed trade (resting sells included — they're
+    // still trades). Position-close stats only fire for non-resting sells
+    // where we have the cost basis to compute realized P&L.
+    await applyTradeStats(tx as unknown as Db, {
+      gamePlayerId,
+      direction,
+      symbol,
+      quantity,
+      price,
+    });
+
     let trade: typeof trades.$inferSelect | undefined;
     if (isResting) {
       // Guard: only flip if still in working/pending — protects against a
@@ -240,7 +290,16 @@ export async function executeTrade(db: Db, params: ExecuteTradeParams): Promise<
       throw new Error('Trade insert returned null price/executedAt');
     }
 
-    return {
+    if (direction === 'sell' && !isResting) {
+      await applyPositionCloseStats(tx as unknown as Db, {
+        gamePlayerId,
+        realizedPnl,
+        realizedPnlPct,
+        holdDurationMs,
+      });
+    }
+
+    const result: Trade = {
       id: trade.id,
       gamePlayerId: trade.gamePlayerId,
       symbol: trade.symbol,
@@ -249,5 +308,21 @@ export async function executeTrade(db: Db, params: ExecuteTradeParams): Promise<
       price: Number(trade.price),
       executedAt: trade.executedAt,
     };
+    return result;
   });
+
+  const symbolsAfter = await db
+    .select({ id: portfolios.id })
+    .from(portfolios)
+    .where(eq(portfolios.gamePlayerId, gamePlayerId));
+  const distinctSymbols = symbolsAfter.length;
+
+  return {
+    trade: tradeRow,
+    realizedPnl,
+    realizedPnlPct,
+    holdDurationMs,
+    fullyClosed,
+    distinctSymbols,
+  };
 }

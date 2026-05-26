@@ -10,6 +10,7 @@ import {
   WorkingOrderNotFoundError,
 } from '../../services/working-order.js';
 import { executeTrade } from '../../services/trade.js';
+import { emitTradeEvents } from '../../services/trade-emit.js';
 import type { StockProvider } from '../../providers/index.js';
 import type { EventBus } from '../../events/bus.js';
 import type { GameClientRegistry } from '../../ws/registry.js';
@@ -108,7 +109,7 @@ export function adminTradesRoutes(
       const price = overridePrice ?? (await provider.getQuote(trade.symbol)).price;
 
       try {
-        const executed = await executeTrade(db, {
+        const result = await executeTrade(db, {
           gamePlayerId: trade.gamePlayerId,
           symbol: trade.symbol,
           direction: trade.direction,
@@ -117,6 +118,7 @@ export function adminTradesRoutes(
           existingTradeId: id,
           reservedCash: trade.reservedCash == null ? 0 : Number(trade.reservedCash),
         });
+        const executed = result.trade;
 
         await db.transaction(async (tx) => {
           await recordAdminAction(tx, {
@@ -156,6 +158,31 @@ export function adminTradesRoutes(
                 price: Number(executed.price),
                 tradeId: id,
                 executedAt: executed.executedAt!,
+              });
+              // Forced fills always come from a resting `working`/`pending`
+              // trade — the cost basis for the sell side is already gone, so
+              // we mark isResting=true to suppress `position.closed` and
+              // avoid false-positive duration achievements on stale data.
+              const [updated] = await db
+                .select({ cashBalance: gamePlayers.cashBalance })
+                .from(gamePlayers)
+                .where(eq(gamePlayers.id, trade.gamePlayerId))
+                .limit(1);
+              void emitTradeEvents({
+                bus,
+                db,
+                provider,
+                gameId: player.gameId,
+                gamePlayerId: trade.gamePlayerId,
+                cashAfter: Number(updated?.cashBalance ?? 0),
+                symbol: trade.symbol,
+                direction: trade.direction as 'buy' | 'sell',
+                quantity: trade.quantity,
+                result,
+                executedAt: executed.executedAt!,
+                isResting: true,
+              }).catch((err) => {
+                request.log?.error({ err }, 'failed to emit trade follow-on events');
               });
             }
             if (registry) {

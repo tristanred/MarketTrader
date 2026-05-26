@@ -324,6 +324,39 @@ describe('AchievementEngine', () => {
     );
   });
 
+  it('routes position.closed events to subscribed achievements by gameId', async () => {
+    const { gameId, gamePlayerId } = await seedGame(db as unknown as Db);
+    const def = defineAchievement({
+      key: 'test-pc',
+      name: 'Test PC',
+      description: '',
+      rarity: 'common',
+      icon: 'star',
+      target: 1,
+      events: ['position.closed'],
+      async onEvent(event, ctx) {
+        await ctx.unlock(event.gamePlayerId);
+      },
+    });
+    const { bus } = makeEngine(db as unknown as Db, [def]);
+
+    await bus.emit({
+      type: 'position.closed',
+      gameId,
+      gamePlayerId,
+      symbol: 'AAPL',
+      quantity: 1,
+      realizedPnl: 0,
+      realizedPnlPct: 0,
+      holdDurationMs: 0,
+      fullyClosed: false,
+      closedAt: new Date().toISOString(),
+    });
+
+    const [row] = await rowFor(db, gamePlayerId, 'test-pc');
+    expect(row?.unlockedAt).not.toBeNull();
+  });
+
   it('honors the global disable setting and per-game override', async () => {
     const { gameId, gamePlayerId } = await seedGame(db as unknown as Db);
     const def = defineAchievement({

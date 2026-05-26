@@ -11,19 +11,22 @@ import type { AchievementContext, AnyAchievementDefinition } from './define.js';
 /**
  * Resolves a `gameId` from any {@link DomainEvent}. The `engine.tick` event
  * has no game scope and is handled separately by definitions that opt into it.
+ * The switch is exhaustive so adding a new {@link DomainEvent} variant without
+ * a case here is a TypeScript error.
  */
 function gameIdOf(event: DomainEvent): string | null {
-  return event.type === 'engine.tick' ? null : event.type === 'game.ended'
-    ? event.gameId
-    : event.type === 'game.started'
-      ? event.gameId
-      : event.type === 'player.joined'
-        ? event.gameId
-        : event.type === 'snapshot.recorded'
-          ? event.gameId
-          : event.type === 'trade.executed'
-            ? event.gameId
-            : null;
+  switch (event.type) {
+    case 'engine.tick':
+      return null;
+    case 'game.ended':
+    case 'game.started':
+    case 'player.joined':
+    case 'snapshot.recorded':
+    case 'trade.executed':
+    case 'position.closed':
+    case 'holdings.changed':
+      return event.gameId;
+  }
 }
 
 /**

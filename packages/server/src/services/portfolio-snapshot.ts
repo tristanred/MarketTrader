@@ -3,6 +3,7 @@ import type { Db } from '../db/index.js';
 import { schema } from '../db/index.js';
 import type { EventBus } from '../events/bus.js';
 import { computeLeaderboard, type LeaderboardEntry } from './leaderboard.js';
+import { applySnapshotStats } from './game-player-stats.js';
 
 /**
  * Persists one `portfolio_snapshots` row per player for the given game,
@@ -53,11 +54,37 @@ export async function recordSnapshot(
     .filter((r): r is NonNullable<typeof r> => r !== null);
 
   if (rows.length === 0) return entries;
-  await db.insert(schema.portfolioSnapshots).values(rows);
+
+  // Capture one timestamp for the batch so the inserted snapshots, the
+  // emitted snapshot.recorded events, and the per-player stats writes all
+  // agree on the same `capturedAt`. Without this, the DB-defaulted value
+  // could drift from the value used to advance day counters.
+  const capturedAt = new Date().toISOString();
+  const totalPlayers = rows.length;
+
+  // One short batch insert for the snapshot rows themselves — keeps SQLite's
+  // write lock held for milliseconds, not the duration of N stats round-trips.
+  await db
+    .insert(schema.portfolioSnapshots)
+    .values(rows.map((r) => ({ ...r, capturedAt })));
+
+  // Stats updates run outside any explicit transaction. They aren't required
+  // to be atomic with the snapshot insert: if the process crashes between the
+  // two, the worst case is one missed day-counter advance, which self-heals
+  // on the next snapshot. Running these inside one big tx caused SQLITE_BUSY
+  // collisions with concurrent trade transactions, since recordSnapshot is
+  // called fire-and-forget from the trade route after every trade.
+  for (const r of rows) {
+    await applySnapshotStats(db, {
+      gamePlayerId: r.gamePlayerId,
+      totalValue: r.totalValue,
+      rank: r.rank,
+      totalPlayers,
+      capturedAt,
+    });
+  }
 
   if (bus) {
-    const capturedAt = new Date().toISOString();
-    const totalPlayers = rows.length;
     for (const r of rows) {
       void bus.emit({
         type: 'snapshot.recorded',

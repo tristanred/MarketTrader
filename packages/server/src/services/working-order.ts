@@ -11,7 +11,7 @@ import type {
 } from '@markettrader/shared';
 import type { StockProvider } from '../providers/index.js';
 import { TradeError } from '../providers/index.js';
-import { executeTrade } from './trade.js';
+import { executeTrade, type ExecuteTradeResult } from './trade.js';
 
 type TradeRow = typeof schema.trades.$inferSelect;
 
@@ -595,7 +595,7 @@ function isTriggered(row: TradeRow, quote: number): boolean {
 
 /** Outcome of a single trigger evaluation. */
 export type EvaluateOutcome =
-  | { kind: 'filled'; trade: Trade; row: TradeRow }
+  | { kind: 'filled'; trade: Trade; row: TradeRow; result: ExecuteTradeResult }
   | { kind: 'cancelled'; tradeId: string; reason: string; gamePlayerId: string }
   | { kind: 'triggered'; tradeId: string; gamePlayerId: string; triggerPrice: number };
 
@@ -697,7 +697,7 @@ export async function evaluateTriggers(
     // Attempt the fill. The price is the triggering quote, per the design
     // decision (real-exchange "next available" semantics).
     try {
-      const trade = await executeTrade(db, {
+      const result = await executeTrade(db, {
         gamePlayerId: row.gamePlayerId,
         symbol: row.symbol,
         direction: row.direction as TradeDirection,
@@ -706,7 +706,7 @@ export async function evaluateTriggers(
         existingTradeId: row.id,
         reservedCash: row.reservedCash == null ? 0 : Number(row.reservedCash),
       });
-      outcomes.push({ kind: 'filled', trade, row });
+      outcomes.push({ kind: 'filled', trade: result.trade, row, result });
 
       // OCO: if this was a bracket child, cancel its sibling. Same transaction
       // is not strictly required because each side's guard predicate

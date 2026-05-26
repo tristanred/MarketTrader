@@ -4,6 +4,8 @@ import type { Db } from '../db/index.js';
 import { schema } from '../db/index.js';
 import type { EventBus } from '../events/bus.js';
 import { computeLeaderboard } from './leaderboard.js';
+import { finalizeSnapshotStats } from './game-player-stats.js';
+import { recordSnapshot } from './portfolio-snapshot.js';
 
 type GameRecord = { id: string; startDate: string; endDate: string; status: string };
 
@@ -42,8 +44,13 @@ export async function recomputeGameStatus(
         // Final ranking is convenient context for "finish top N" achievements.
         // Best-effort: leaderboard read failures must not roll back the status.
         try {
+          // Take one final snapshot so the latest portfolio values feed the day
+          // counters before we flush them. recordSnapshot also emits
+          // `snapshot.recorded` per player, giving day-counter achievements a
+          // chance to evaluate against the pre-flush state.
+          await recordSnapshot(db, game.id, bus);
+
           const entries = await computeLeaderboard(db, game.id);
-          // Map playerId (user id) → gamePlayerId for consumer convenience.
           const gpRows = await db
             .select({ id: schema.gamePlayers.id, userId: schema.gamePlayers.userId })
             .from(schema.gamePlayers)
@@ -55,6 +62,30 @@ export async function recomputeGameStatus(
               return gpId ? { gamePlayerId: gpId, rank: e.rank, totalValue: e.totalValue } : null;
             })
             .filter((r): r is NonNullable<typeof r> => r !== null);
+
+          // Flush the final day into day counters (applySnapshotStats only
+          // advances on rollover, so the game's last day would otherwise be
+          // dropped). Then re-emit `snapshot.recorded` so day-counter
+          // achievements (rock-bottom, untouchable, podium-days, etc.) see
+          // the now-advanced counters and can unlock at the threshold.
+          const totalPlayers = finalRanking.length;
+          if (totalPlayers > 0) {
+            await Promise.all(
+              finalRanking.map((r) => finalizeSnapshotStats(db, r.gamePlayerId, totalPlayers)),
+            );
+            for (const r of finalRanking) {
+              void bus.emit({
+                type: 'snapshot.recorded',
+                gameId: game.id,
+                gamePlayerId: r.gamePlayerId,
+                totalValue: r.totalValue,
+                rank: r.rank,
+                totalPlayers,
+                capturedAt: now,
+              });
+            }
+          }
+
           void bus.emit({ type: 'game.ended', gameId: game.id, endedAt: now, finalRanking });
         } catch {
           void bus.emit({ type: 'game.ended', gameId: game.id, endedAt: now, finalRanking: [] });

@@ -114,20 +114,30 @@ describe('ten-buys definition', () => {
 });
 
 describe('rock-bottom definition', () => {
-  it('increments only when last, resets otherwise, ignores single-player games', async () => {
+  it('mirrors consecutiveDaysInLastPlace and ignores single-player games', async () => {
     const db = await createTestDb();
     const { gameId, gamePlayerId } = await seedGame(db as unknown as Db);
     const bus = makeEngine(db as unknown as Db);
-    const snap = (rank: number, totalPlayers: number) =>
+    const snap = (totalPlayers: number) =>
       bus.emit({
         type: 'snapshot.recorded',
         gameId,
         gamePlayerId,
         totalValue: 1,
-        rank,
+        rank: totalPlayers, // last
         totalPlayers,
         capturedAt: new Date().toISOString(),
       });
+
+    const setConsec = async (n: number) => {
+      await db
+        .insert(schema.gamePlayerStats)
+        .values({ gamePlayerId, consecutiveDaysInLastPlace: n })
+        .onConflictDoUpdate({
+          target: schema.gamePlayerStats.gamePlayerId,
+          set: { consecutiveDaysInLastPlace: n },
+        });
+    };
 
     const rowsFor = () =>
       db
@@ -140,24 +150,23 @@ describe('rock-bottom definition', () => {
           ),
         );
 
-    // Single-player game: ignored.
-    await snap(1, 1);
+    // Single-player game: ignored even with stats present.
+    await setConsec(3);
+    await snap(1);
     expect(await rowsFor()).toHaveLength(0);
 
-    // Last in a 3-player game: increments.
-    await snap(3, 3);
-    await snap(3, 3);
+    // 2 days in last place → progress 2, not unlocked.
+    await setConsec(2);
+    await snap(3);
     let [row] = await rowsFor();
     expect(row?.progress).toBe(2);
+    expect(row?.unlockedAt).toBeNull();
 
-    // Not last: resets.
-    await snap(2, 3);
+    // 3 days → unlock.
+    await setConsec(3);
+    await snap(3);
     [row] = await rowsFor();
-    expect(row?.progress).toBe(0);
-
-    // Five consecutive lasts → unlock.
-    for (let i = 0; i < 5; i++) await snap(3, 3);
-    [row] = await rowsFor();
+    expect(row?.progress).toBe(3);
     expect(row?.unlockedAt).not.toBeNull();
   });
 });

@@ -7,6 +7,7 @@ import type { MarketStatusProvider } from '../providers/market-status/index.js';
 import { settlePendingTrades } from '../services/pending-trade.js';
 import { evaluateTriggers, expireDayOrders } from '../services/working-order.js';
 import { recordSnapshot } from '../services/portfolio-snapshot.js';
+import { emitTradeEvents } from '../services/trade-emit.js';
 import type { GameClientRegistry } from '../ws/registry.js';
 import type { EventBus } from '../events/bus.js';
 import { env } from '../env.js';
@@ -36,9 +37,23 @@ export async function runPendingOrdersTick(deps: {
   marketStatusProvider: MarketStatusProvider;
   registry?: GameClientRegistry;
   bus?: EventBus;
+  logger?: FastifyBaseLogger;
 }): Promise<void> {
-  const { db, provider, marketStatusProvider, registry, bus } = deps;
-  const { gamePlayers } = schema;
+  const { db, provider, marketStatusProvider, registry, bus, logger } = deps;
+  const { gamePlayers, portfolios } = schema;
+
+  // Synthesize an ExecuteTradeResult for settle-path fills (which don't go
+  // through executeTrade) so emitTradeEvents has the shape it expects. P&L
+  // and hold-duration are zeroed because the cost basis was lost when the
+  // sell was queued — see docs/design.md "Known gap: resting-sell realized
+  // P&L". The isResting flag at the call site suppresses position.closed.
+  async function countDistinctSymbols(gamePlayerId: string): Promise<number> {
+    const rows = await db
+      .select({ id: portfolios.id })
+      .from(portfolios)
+      .where(eq(portfolios.gamePlayerId, gamePlayerId));
+    return rows.length;
+  }
 
   // Step 1: expire day-TIF orders. Cheap and side-effect-only on the DB.
   let expired: { cancelledIds: string[] } = { cancelledIds: [] };
@@ -106,6 +121,35 @@ export async function runPendingOrdersTick(deps: {
         tradeId: o.trade.id,
         executedAt: o.trade.executedAt,
       });
+      const [updated] = await db
+        .select({ cashBalance: gamePlayers.cashBalance })
+        .from(gamePlayers)
+        .where(eq(gamePlayers.id, o.trade.gamePlayerId))
+        .limit(1);
+      const distinctSymbols = await countDistinctSymbols(o.trade.gamePlayerId);
+      void emitTradeEvents({
+        bus,
+        db,
+        provider,
+        gameId: player.gameId,
+        gamePlayerId: o.trade.gamePlayerId,
+        cashAfter: Number(updated?.cashBalance ?? 0),
+        symbol: o.trade.symbol,
+        direction: o.trade.direction as 'buy' | 'sell',
+        quantity: o.trade.quantity,
+        result: {
+          trade: o.trade,
+          realizedPnl: 0,
+          realizedPnlPct: 0,
+          holdDurationMs: 0,
+          fullyClosed: false,
+          distinctSymbols,
+        },
+        executedAt: o.trade.executedAt,
+        isResting: true,
+      }).catch((err) => {
+        logger?.error({ err }, 'failed to emit trade follow-on events (settle)');
+      });
     }
   }
 
@@ -140,6 +184,31 @@ export async function runPendingOrdersTick(deps: {
           price: o.trade.price,
           tradeId: o.trade.id,
           executedAt: o.trade.executedAt,
+        });
+        const [updated] = await db
+          .select({ cashBalance: gamePlayers.cashBalance })
+          .from(gamePlayers)
+          .where(eq(gamePlayers.id, o.row.gamePlayerId))
+          .limit(1);
+        // Triggered fills are always resting orders — suppress position.closed
+        // on sells (cost basis was lost at placement). Buys still emit
+        // holdings.changed with accurate metrics; their distinctSymbols and
+        // openedAt are tracked correctly inside executeTrade.
+        void emitTradeEvents({
+          bus,
+          db,
+          provider,
+          gameId: player.gameId,
+          gamePlayerId: o.row.gamePlayerId,
+          cashAfter: Number(updated?.cashBalance ?? 0),
+          symbol: o.trade.symbol,
+          direction: o.trade.direction as 'buy' | 'sell',
+          quantity: o.trade.quantity,
+          result: o.result,
+          executedAt: o.trade.executedAt,
+          isResting: true,
+        }).catch((err) => {
+          logger?.error({ err }, 'failed to emit trade follow-on events (trigger)');
         });
       }
     } else if (o.kind === 'cancelled') {

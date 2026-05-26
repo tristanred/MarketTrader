@@ -177,6 +177,12 @@ export const portfolios = pgTable(
     symbol: text('symbol').notNull(),
     quantity: integer('quantity').notNull(),
     avgCostBasis: decimal('avg_cost_basis', { precision: 15, scale: 2 }).notNull(),
+    /**
+     * ISO 8601 timestamp captured on the buy that transitions quantity from 0 → positive.
+     * Unchanged by add-on buys; the row (and column) cease to exist on full close. Used by
+     * achievements that measure hold duration of the current position.
+     */
+    openedAt: timestamp('opened_at', { mode: 'string' }),
   },
   (t) => [unique().on(t.gamePlayerId, t.symbol)],
 );
@@ -362,3 +368,66 @@ export const gameAchievementOverrides = pgTable(
   },
   (t) => [unique('uq_game_achievement_override').on(t.gameId, t.achievementKey)],
 );
+
+/**
+ * Per-player aggregate stats used by achievements. 1:1 sidecar to {@link gamePlayers}.
+ * Updated synchronously inside the trade and snapshot transactions so a handler
+ * reading stats never sees a value behind the canonical writes.
+ */
+export const gamePlayerStats = pgTable('game_player_stats', {
+  gamePlayerId: text('game_player_id')
+    .primaryKey()
+    .references(() => gamePlayers.id, { onDelete: 'cascade' }),
+
+  peakPortfolioValue: decimal('peak_portfolio_value', { precision: 15, scale: 2 }),
+  peakPortfolioAt: timestamp('peak_portfolio_at', { mode: 'string' }),
+  troughPortfolioValue: decimal('trough_portfolio_value', { precision: 15, scale: 2 }),
+  troughPortfolioAt: timestamp('trough_portfolio_at', { mode: 'string' }),
+
+  bestRank: integer('best_rank'),
+  worstRank: integer('worst_rank'),
+  lastRank: integer('last_rank'),
+
+  daysAtRankOne: integer('days_at_rank_one').notNull().default(0),
+  consecutiveDaysAtRankOne: integer('consecutive_days_at_rank_one').notNull().default(0),
+  daysInTopThree: integer('days_in_top_three').notNull().default(0),
+  consecutiveDaysAtOrAboveMedian: integer('consecutive_days_at_or_above_median')
+    .notNull()
+    .default(0),
+  consecutiveDaysInLastPlace: integer('consecutive_days_in_last_place').notNull().default(0),
+  /** UTC calendar day (`YYYY-MM-DD`) of the most recent snapshot processed by the day-counter rollup. */
+  lastDayCounted: text('last_day_counted'),
+  /** Rank at the most recent snapshot of `lastDayCounted`; consumed at the next day rollover. */
+  lastDayRank: integer('last_day_rank'),
+  /**
+   * Rank at the final snapshot of the prior UTC day, captured during the
+   * rollover branch of `applySnapshotStats`. Lets day-over-day delta
+   * achievements (comeback-kid, free-fall) compare today's rank to
+   * yesterday's once `lastDayRank` has already been overwritten.
+   */
+  previousDayRank: integer('previous_day_rank'),
+
+  totalTrades: integer('total_trades').notNull().default(0),
+  buyTrades: integer('buy_trades').notNull().default(0),
+  sellTrades: integer('sell_trades').notNull().default(0),
+  distinctSymbolsTradedEver: integer('distinct_symbols_traded_ever').notNull().default(0),
+  totalVolumeTraded: decimal('total_volume_traded', { precision: 18, scale: 2 })
+    .notNull()
+    .default('0'),
+
+  realizedPnl: decimal('realized_pnl', { precision: 15, scale: 2 }).notNull().default('0'),
+  winningClosedPositions: integer('winning_closed_positions').notNull().default(0),
+  losingClosedPositions: integer('losing_closed_positions').notNull().default(0),
+  consecutiveWins: integer('consecutive_wins').notNull().default(0),
+  bestSinglePnl: decimal('best_single_pnl', { precision: 15, scale: 2 }),
+  worstSinglePnl: decimal('worst_single_pnl', { precision: 15, scale: 2 }),
+  /** Fraction of cost basis, e.g. 0.5 = +50%. */
+  bestSinglePnlPct: decimal('best_single_pnl_pct', { precision: 12, scale: 6 }),
+  /** Fraction of cost basis, e.g. -0.9 = -90%. */
+  worstSinglePnlPct: decimal('worst_single_pnl_pct', { precision: 12, scale: 6 }),
+
+  shortestHoldMs: integer('shortest_hold_ms'),
+  longestHoldMs: integer('longest_hold_ms'),
+
+  updatedAt: timestamp('updated_at', { mode: 'string' }).defaultNow().notNull(),
+});

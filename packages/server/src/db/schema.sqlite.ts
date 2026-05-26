@@ -175,6 +175,12 @@ export const portfolios = sqliteTable(
     symbol: text('symbol').notNull(),
     quantity: integer('quantity').notNull(),
     avgCostBasis: real('avg_cost_basis').notNull(),
+    /**
+     * ISO 8601 timestamp captured on the buy that transitions quantity from 0 → positive.
+     * Unchanged by add-on buys; the row (and column) cease to exist on full close. Used by
+     * achievements that measure hold duration of the current position.
+     */
+    openedAt: text('opened_at'),
   },
   (t) => [unique().on(t.gamePlayerId, t.symbol)],
 );
@@ -404,3 +410,62 @@ export const gameAchievementOverrides = sqliteTable(
   },
   (t) => [unique('uq_game_achievement_override').on(t.gameId, t.achievementKey)],
 );
+
+/**
+ * Per-player aggregate stats used by achievements. 1:1 sidecar to {@link gamePlayers}.
+ * Updated synchronously inside the trade and snapshot transactions so a handler
+ * reading stats never sees a value behind the canonical writes.
+ */
+export const gamePlayerStats = sqliteTable('game_player_stats', {
+  gamePlayerId: text('game_player_id')
+    .primaryKey()
+    .references(() => gamePlayers.id, { onDelete: 'cascade' }),
+
+  peakPortfolioValue: real('peak_portfolio_value'),
+  peakPortfolioAt: text('peak_portfolio_at'),
+  troughPortfolioValue: real('trough_portfolio_value'),
+  troughPortfolioAt: text('trough_portfolio_at'),
+
+  bestRank: integer('best_rank'),
+  worstRank: integer('worst_rank'),
+  lastRank: integer('last_rank'),
+
+  daysAtRankOne: integer('days_at_rank_one').notNull().default(0),
+  consecutiveDaysAtRankOne: integer('consecutive_days_at_rank_one').notNull().default(0),
+  daysInTopThree: integer('days_in_top_three').notNull().default(0),
+  consecutiveDaysAtOrAboveMedian: integer('consecutive_days_at_or_above_median').notNull().default(0),
+  consecutiveDaysInLastPlace: integer('consecutive_days_in_last_place').notNull().default(0),
+  /** UTC calendar day (`YYYY-MM-DD`) of the most recent snapshot processed by the day-counter rollup. */
+  lastDayCounted: text('last_day_counted'),
+  /** Rank at the most recent snapshot of `lastDayCounted`; consumed at the next day rollover. */
+  lastDayRank: integer('last_day_rank'),
+  /**
+   * Rank at the final snapshot of the prior UTC day, captured during the
+   * rollover branch of `applySnapshotStats`. Lets day-over-day delta
+   * achievements (comeback-kid, free-fall) compare today's rank to
+   * yesterday's once `lastDayRank` has already been overwritten.
+   */
+  previousDayRank: integer('previous_day_rank'),
+
+  totalTrades: integer('total_trades').notNull().default(0),
+  buyTrades: integer('buy_trades').notNull().default(0),
+  sellTrades: integer('sell_trades').notNull().default(0),
+  distinctSymbolsTradedEver: integer('distinct_symbols_traded_ever').notNull().default(0),
+  totalVolumeTraded: real('total_volume_traded').notNull().default(0),
+
+  realizedPnl: real('realized_pnl').notNull().default(0),
+  winningClosedPositions: integer('winning_closed_positions').notNull().default(0),
+  losingClosedPositions: integer('losing_closed_positions').notNull().default(0),
+  consecutiveWins: integer('consecutive_wins').notNull().default(0),
+  bestSinglePnl: real('best_single_pnl'),
+  worstSinglePnl: real('worst_single_pnl'),
+  bestSinglePnlPct: real('best_single_pnl_pct'),
+  worstSinglePnlPct: real('worst_single_pnl_pct'),
+
+  shortestHoldMs: integer('shortest_hold_ms'),
+  longestHoldMs: integer('longest_hold_ms'),
+
+  updatedAt: text('updated_at')
+    .default(sql`(datetime('now'))`)
+    .notNull(),
+});

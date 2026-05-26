@@ -1,0 +1,1 @@
+ALTER TABLE "game_player_stats" ADD COLUMN "previous_day_rank" integer;

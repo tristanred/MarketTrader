@@ -92,6 +92,13 @@
       "when": 1779763661328,
       "tag": "0012_romantic_sunspot",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "6",
+      "when": 1779900000000,
+      "tag": "0013_reset_rock_bottom_progress",
+      "breakpoints": true
     }
   ]
 }

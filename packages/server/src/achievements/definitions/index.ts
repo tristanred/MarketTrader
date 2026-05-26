@@ -26,6 +26,13 @@ import allIn from './all-in.js';
 import cashIsKing from './cash-is-king.js';
 import fullyInvested from './fully-invested.js';
 import concentratedBet from './concentrated-bet.js';
+import topOfTheClass from './top-of-the-class.js';
+import reigningChamp from './reigning-champ.js';
+import untouchable from './untouchable.js';
+import podiumDays from './podium-days.js';
+import aboveAverage from './above-average.js';
+import comebackKid from './comeback-kid.js';
+import freeFall from './free-fall.js';
 
 /**
  * The full registry of code-defined achievements. Adding a new achievement is:
@@ -64,4 +71,11 @@ export const achievements: readonly AnyAchievementDefinition[] = [
   concentratedBet,
   // Standing category
   rockBottom,
+  topOfTheClass,
+  reigningChamp,
+  untouchable,
+  podiumDays,
+  aboveAverage,
+  comebackKid,
+  freeFall,
 ];

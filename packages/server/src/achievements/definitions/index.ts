@@ -33,6 +33,15 @@ import podiumDays from './podium-days.js';
 import aboveAverage from './above-average.js';
 import comebackKid from './comeback-kid.js';
 import freeFall from './free-fall.js';
+import paperHands from './paper-hands.js';
+import diamondHands from './diamond-hands.js';
+import revengeTrade from './revenge-trade.js';
+import fomo from './fomo.js';
+import champion from './champion.js';
+import podiumFinish from './podium-finish.js';
+import honourableMention from './honourable-mention.js';
+import woodenSpoon from './wooden-spoon.js';
+import wireToWire from './wire-to-wire.js';
 
 /**
  * The full registry of code-defined achievements. Adding a new achievement is:
@@ -78,4 +87,15 @@ export const achievements: readonly AnyAchievementDefinition[] = [
   aboveAverage,
   comebackKid,
   freeFall,
+  // Behavior category
+  paperHands,
+  diamondHands,
+  revengeTrade,
+  fomo,
+  // Finale category
+  champion,
+  podiumFinish,
+  honourableMention,
+  woodenSpoon,
+  wireToWire,
 ];

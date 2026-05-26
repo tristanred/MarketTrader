@@ -2,6 +2,9 @@ import { eq } from 'drizzle-orm';
 import type { GameStatus } from '@markettrader/shared';
 import type { Db } from '../db/index.js';
 import { schema } from '../db/index.js';
+import type { EventBus } from '../events/bus.js';
+import { computeLeaderboard } from './leaderboard.js';
+
 type GameRecord = { id: string; startDate: string; endDate: string; status: string };
 
 /**
@@ -27,10 +30,37 @@ export async function recomputeGameStatus(
   db: Db,
   game: GameRecord,
   now = new Date().toISOString(),
+  bus?: EventBus,
 ): Promise<GameStatus> {
   const newStatus = computeStatus(game, now);
   if (newStatus !== game.status) {
     await db.update(schema.games).set({ status: newStatus }).where(eq(schema.games.id, game.id));
+    if (bus) {
+      if (newStatus === 'active') {
+        void bus.emit({ type: 'game.started', gameId: game.id, startedAt: now });
+      } else if (newStatus === 'ended') {
+        // Final ranking is convenient context for "finish top N" achievements.
+        // Best-effort: leaderboard read failures must not roll back the status.
+        try {
+          const entries = await computeLeaderboard(db, game.id);
+          // Map playerId (user id) → gamePlayerId for consumer convenience.
+          const gpRows = await db
+            .select({ id: schema.gamePlayers.id, userId: schema.gamePlayers.userId })
+            .from(schema.gamePlayers)
+            .where(eq(schema.gamePlayers.gameId, game.id));
+          const gpByUser = new Map(gpRows.map((r) => [r.userId, r.id]));
+          const finalRanking = entries
+            .map((e) => {
+              const gpId = gpByUser.get(e.playerId);
+              return gpId ? { gamePlayerId: gpId, rank: e.rank, totalValue: e.totalValue } : null;
+            })
+            .filter((r): r is NonNullable<typeof r> => r !== null);
+          void bus.emit({ type: 'game.ended', gameId: game.id, endedAt: now, finalRanking });
+        } catch {
+          void bus.emit({ type: 'game.ended', gameId: game.id, endedAt: now, finalRanking: [] });
+        }
+      }
+    }
   }
   return newStatus;
 }
@@ -43,11 +73,12 @@ export async function recomputeMany(
   db: Db,
   games: GameRecord[],
   now = new Date().toISOString(),
+  bus?: EventBus,
 ): Promise<Map<string, GameStatus>> {
   const result = new Map<string, GameStatus>();
   await Promise.all(
     games.map(async game => {
-      const status = await recomputeGameStatus(db, game, now);
+      const status = await recomputeGameStatus(db, game, now, bus);
       result.set(game.id, status);
     }),
   );

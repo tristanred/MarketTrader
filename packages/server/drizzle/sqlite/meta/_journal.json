@@ -64,6 +64,20 @@
       "when": 1779320468539,
       "tag": "0008_useful_speed",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1779575168404,
+      "tag": "0009_nifty_spot",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1779642753543,
+      "tag": "0010_noisy_magik",
+      "breakpoints": true
     }
   ]
 }

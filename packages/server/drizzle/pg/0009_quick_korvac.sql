@@ -1,0 +1,1 @@
+ALTER TABLE "game_players" ADD COLUMN "last_seen_unlock_at" timestamp;

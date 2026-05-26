@@ -30,6 +30,11 @@ export interface Game {
   allowBracketOrders: boolean;
   /** When true, `timeInForce='gtc'` is accepted. Server rejects with 409 GTC_DISABLED otherwise. */
   allowGTC: boolean;
+  /**
+   * When false, the achievement engine ignores every event for this game.
+   * Defaults to true on game creation.
+   */
+  achievementsEnabled: boolean;
   status: GameStatus;
   /** ID of the user who created the game. */
   createdBy: string;
@@ -55,12 +60,16 @@ export interface CreateGameRequest {
   allowBracketOrders?: boolean;
   /** Defaults to false when omitted. */
   allowGTC?: boolean;
+  /** Defaults to true when omitted. */
+  achievementsEnabled?: boolean;
 }
 
 /** A single player's rank entry as returned in the game leaderboard. */
 export interface LeaderboardEntry {
   /** The player's userId (matches {@link Game.createdBy}). */
   playerId: string;
+  /** The player's gamePlayerId — used to scope per-game queries (achievements, etc.). */
+  gamePlayerId: string;
   username: string;
   /** Cash currently held (does not include the market value of open positions). */
   cashBalance: number;
@@ -73,4 +82,10 @@ export interface LeaderboardEntry {
 /** Game detail response from `GET /games/:id` — includes the current leaderboard. */
 export interface GameWithLeaderboard extends Game {
   leaderboard: LeaderboardEntry[];
+  /**
+   * The viewer's gamePlayerId — used by frontend hooks (achievements toast,
+   * ack endpoint) to scope per-player operations without needing a separate
+   * lookup. Null when the viewer is not (yet) a member of this game.
+   */
+  viewerGamePlayerId: string | null;
 }

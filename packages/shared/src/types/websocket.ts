@@ -2,6 +2,7 @@ import type { StockQuote } from './stock.js';
 import type { LeaderboardEntry } from './game.js';
 import type { TradeDirection, WorkingOrder } from './player.js';
 import type { IndexQuote } from './system-settings.js';
+import type { WsAchievementUnlockedEvent } from './achievement.js';
 
 /**
  * Pushed by the server every 5 seconds with fresh quotes for all symbols
@@ -72,7 +73,8 @@ export type WsServerEvent =
   | WsLeaderboardUpdateEvent
   | WsOrderPlacedEvent
   | WsOrderCancelledEvent
-  | WsOrderTriggeredEvent;
+  | WsOrderTriggeredEvent
+  | WsAchievementUnlockedEvent;
 
 /** Union of all event shapes a client can send to the server. */
 export type WsClientEvent = WsSubscribeEvent;

@@ -72,7 +72,7 @@ export function GameDetailPage() {
     () => (subscribedKey ? subscribedKey.split(',') : []),
     [subscribedKey],
   );
-  useGameSocket(gameId, subscribedSymbols);
+  useGameSocket(gameId, subscribedSymbols, game.data?.viewerGamePlayerId ?? null);
 
   const initialSymbol = heldSymbols[0] ?? null;
 

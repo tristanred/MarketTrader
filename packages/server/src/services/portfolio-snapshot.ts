@@ -1,6 +1,7 @@
 import { eq, and, inArray, sql } from 'drizzle-orm';
 import type { Db } from '../db/index.js';
 import { schema } from '../db/index.js';
+import type { EventBus } from '../events/bus.js';
 import { computeLeaderboard, type LeaderboardEntry } from './leaderboard.js';
 
 /**
@@ -12,7 +13,11 @@ import { computeLeaderboard, type LeaderboardEntry } from './leaderboard.js';
  * Returns the leaderboard entries that were written, so callers that need
  * to broadcast a `leaderboard_history_point` event don't have to recompute.
  */
-export async function recordSnapshot(db: Db, gameId: string): Promise<LeaderboardEntry[]> {
+export async function recordSnapshot(
+  db: Db,
+  gameId: string,
+  bus?: EventBus,
+): Promise<LeaderboardEntry[]> {
   const entries = await computeLeaderboard(db, gameId);
   if (entries.length === 0) return [];
 
@@ -49,6 +54,23 @@ export async function recordSnapshot(db: Db, gameId: string): Promise<Leaderboar
 
   if (rows.length === 0) return entries;
   await db.insert(schema.portfolioSnapshots).values(rows);
+
+  if (bus) {
+    const capturedAt = new Date().toISOString();
+    const totalPlayers = rows.length;
+    for (const r of rows) {
+      void bus.emit({
+        type: 'snapshot.recorded',
+        gameId,
+        gamePlayerId: r.gamePlayerId,
+        totalValue: r.totalValue,
+        rank: r.rank,
+        totalPlayers,
+        capturedAt,
+      });
+    }
+  }
+
   return entries;
 }
 
@@ -58,7 +80,7 @@ export async function recordSnapshot(db: Db, gameId: string): Promise<Leaderboar
  * pending-orders worker and game-status service already keep that field
  * up to date, and re-running `recomputeMany` here would double the load.
  */
-export async function recordSnapshotsForActiveGames(db: Db): Promise<void> {
+export async function recordSnapshotsForActiveGames(db: Db, bus?: EventBus): Promise<void> {
   const activeGames = await db
     .select({ id: schema.games.id })
     .from(schema.games)
@@ -66,7 +88,7 @@ export async function recordSnapshotsForActiveGames(db: Db): Promise<void> {
 
   for (const g of activeGames) {
     try {
-      await recordSnapshot(db, g.id);
+      await recordSnapshot(db, g.id, bus);
     } catch {
       // One bad game must not block the rest. The worker logs around this
       // call via its own error handler.

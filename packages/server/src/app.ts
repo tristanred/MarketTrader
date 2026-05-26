@@ -37,6 +37,11 @@ import { startPricePoller } from './ws/price-poller.js';
 import { startPendingOrdersWorker } from './workers/pending-orders.js';
 import { startPortfolioSnapshotWorker } from './workers/portfolio-snapshot.js';
 import { attachSentry } from './observability/sentry.js';
+import { EventBus } from './events/bus.js';
+import { AchievementEngine } from './achievements/engine.js';
+import { achievements as achievementDefinitions } from './achievements/definitions/index.js';
+import { achievementsRoutes } from './routes/achievements.js';
+import { adminAchievementsRoutes } from './routes/admin/achievements.js';
 
 export async function buildApp(
   opts: FastifyServerOptions & {
@@ -85,6 +90,23 @@ export async function buildApp(
   const systemSettings = new SystemSettingsService(db);
   await systemSettings.ensureSeeded();
 
+  // In-process event bus + achievement engine. Construct before route
+  // registration so route factories can capture the bus reference.
+  const bus = new EventBus();
+  bus.setLogger(app.log);
+  const achievementEngine = new AchievementEngine(
+    db,
+    bus,
+    registry,
+    systemSettings,
+    achievementDefinitions,
+    app.log,
+  );
+  achievementEngine.start();
+  app.addHook('onClose', async () => {
+    achievementEngine.stop();
+  });
+
   const indicesBroadcaster = new IndicesBroadcaster(provider, systemSettings, globalRegistry);
   if (!disablePoller) {
     await indicesBroadcaster.start();
@@ -104,18 +126,20 @@ export async function buildApp(
 
   await app.register(healthRoutes);
   await app.register(authRoutes(db));
-  await app.register(gameRoutes(db));
+  await app.register(gameRoutes(db, bus));
   await app.register(publicGamesRoutes(db));
   await app.register(stockRoutes(db, provider));
   await app.register(
-    tradingRoutes(db, provider, marketStatusProvider, registry, leaderboardThrottleMs),
+    tradingRoutes(db, provider, marketStatusProvider, registry, leaderboardThrottleMs, bus),
   );
   await app.register(marketStatusRoutes(marketStatusProvider));
   await app.register(watchlistRoutes(db));
   await app.register(systemSettingsRoutes(systemSettings));
+  await app.register(achievementsRoutes(db, achievementEngine));
   await registerAdminGuard(app, db);
-  await app.register(adminRoutes(db, provider, systemSettings));
-  await app.register(liveRoute(db, registry));
+  await app.register(adminRoutes(db, provider, systemSettings, bus, registry));
+  await app.register(adminAchievementsRoutes(db, achievementEngine, systemSettings));
+  await app.register(liveRoute(db, registry, achievementEngine));
   await app.register(globalLiveRoute(globalRegistry));
 
   if (!disablePoller) {
@@ -130,6 +154,7 @@ export async function buildApp(
         provider,
         marketStatusProvider,
         registry,
+        bus,
         logger: app.log,
       });
       app.addHook('onClose', async () => {
@@ -139,10 +164,20 @@ export async function buildApp(
 
     const snapshotWorker = startPortfolioSnapshotWorker({
       db,
+      bus,
       logger: app.log,
     });
     app.addHook('onClose', async () => {
       snapshotWorker.stop();
+    });
+
+    // Engine tick: feeds time-based achievements without external triggers.
+    // Cheap because the bus skips event types nobody listens to.
+    const tickHandle = setInterval(() => {
+      void bus.emit({ type: 'engine.tick', at: new Date().toISOString() });
+    }, 60_000);
+    app.addHook('onClose', async () => {
+      clearInterval(tickHandle);
     });
   }
 

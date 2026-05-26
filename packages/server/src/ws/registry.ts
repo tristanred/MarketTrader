@@ -57,6 +57,16 @@ export class GameClientRegistry {
   }
 
   /**
+   * Sends one event to a single socket — used for unicast replay on connect.
+   * Silently skips sockets in a non-OPEN state, matching {@link broadcast}'s
+   * fail-soft posture.
+   */
+  sendToSocket(socket: WebSocket, event: WsServerEvent): void {
+    if (socket.readyState !== 1 /* OPEN */) return;
+    try { socket.send(JSON.stringify(event)); } catch { /* socket may have closed between readyState check and send */ }
+  }
+
+  /**
    * Broadcast a price_update event filtered to each client's subscribed symbols.
    * Clients with no subscriptions receive nothing.
    */

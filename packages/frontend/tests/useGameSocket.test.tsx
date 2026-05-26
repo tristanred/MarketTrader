@@ -43,7 +43,7 @@ class MockWebSocket {
 }
 
 function Harness({ symbols }: { symbols: string[] }) {
-  useGameSocket('game-1', symbols);
+  useGameSocket('game-1', symbols, null);
   return null;
 }
 

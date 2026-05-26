@@ -2,6 +2,7 @@ import { Outlet, useParams } from 'react-router-dom';
 import { AppHeader } from '@/components/AppHeader';
 import { StatusStrip, TickerTape } from '@/components/shell';
 import { SymbolSearchOverlay } from '@/components/search';
+import { AchievementToastHost } from '@/components/achievements/AchievementToastHost';
 import { SelectedSymbolProvider } from '@/contexts/SelectedSymbolContext';
 import { useIndicesSocket } from '@/hooks/useIndicesSocket';
 import { useCommandK } from '@/hooks/useCommandK';
@@ -44,6 +45,7 @@ export function AppShell() {
         </main>
         <TickerTape />
         <SymbolSearchOverlay />
+        <AchievementToastHost />
       </div>
     </SelectedSymbolProvider>
   );

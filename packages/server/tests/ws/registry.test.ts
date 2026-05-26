@@ -82,4 +82,30 @@ describe('GameClientRegistry', () => {
     expect(registry.getActiveGameIds()).toContain('game-2');
     expect(registry.getActiveGameIds()).toHaveLength(2);
   });
+
+  describe('sendToSocket', () => {
+    it('sends only to the specified socket, not the whole game', () => {
+      const messagesA: string[] = [];
+      const messagesB: string[] = [];
+      const a = { readyState: 1, send: (m: string) => messagesA.push(m) } as unknown as WebSocket;
+      const b = { readyState: 1, send: (m: string) => messagesB.push(m) } as unknown as WebSocket;
+      registry.add('g1', 'u1', a);
+      registry.add('g1', 'u2', b);
+
+      registry.sendToSocket(a, { event: 'price_update', data: [] });
+
+      expect(messagesA).toHaveLength(1);
+      expect(messagesB).toHaveLength(0);
+    });
+
+    it('skips a non-OPEN socket silently', () => {
+      const messages: string[] = [];
+      const socket = { readyState: 3, send: (m: string) => messages.push(m) } as unknown as WebSocket;
+      registry.add('g1', 'u1', socket);
+
+      registry.sendToSocket(socket, { event: 'price_update', data: [] });
+
+      expect(messages).toHaveLength(0);
+    });
+  });
 });

@@ -7,6 +7,7 @@ import { schema } from '../db/index.js';
 import { recomputeGameStatus, recomputeMany } from '../services/game-status.js';
 import { computeLeaderboard } from '../services/leaderboard.js';
 import { getLeaderboardHistory } from '../services/leaderboard-history.js';
+import type { EventBus } from '../events/bus.js';
 
 const gameIdParamsSchema = z.object({ id: z.string() });
 
@@ -26,6 +27,7 @@ const createGameSchema = z
     allowStopOrders: z.boolean().optional().default(false),
     allowBracketOrders: z.boolean().optional().default(false),
     allowGTC: z.boolean().optional().default(false),
+    achievementsEnabled: z.boolean().optional().default(true),
   })
   .refine(d => d.endDate > d.startDate, {
     message: 'endDate must be after startDate',
@@ -42,7 +44,7 @@ const createGameSchema = z
  * All routes recompute game status on the fly so `pending`/`active`/`ended`
  * reflects real time rather than the stored snapshot.
  */
-export function gameRoutes(db: Db) {
+export function gameRoutes(db: Db, bus?: EventBus) {
   return async function (rawApp: FastifyInstance): Promise<void> {
     const app = rawApp.withTypeProvider<ZodTypeProvider>();
     const { games, gamePlayers } = schema;
@@ -65,6 +67,7 @@ export function gameRoutes(db: Db) {
           endDate: games.endDate,
           startingBalance: games.startingBalance,
           allowShortSelling: games.allowShortSelling,
+          achievementsEnabled: games.achievementsEnabled,
           status: games.status,
           createdBy: games.createdBy,
           createdAt: games.createdAt,
@@ -103,6 +106,7 @@ export function gameRoutes(db: Db) {
         allowStopOrders,
         allowBracketOrders,
         allowGTC,
+        achievementsEnabled,
       } = request.body;
       const userId = request.user.id;
 
@@ -118,15 +122,29 @@ export function gameRoutes(db: Db) {
           allowStopOrders,
           allowBracketOrders,
           allowGTC,
+          achievementsEnabled,
           createdBy: userId,
         })
         .returning();
 
       if (!game) return reply.status(500).send({ error: 'Failed to create game' });
 
-      await db.insert(gamePlayers).values({ gameId: game.id, userId, cashBalance: startingBalance });
+      const [creatorPlayer] = await db
+        .insert(gamePlayers)
+        .values({ gameId: game.id, userId, cashBalance: startingBalance })
+        .returning();
 
-      const status = await recomputeGameStatus(db, game);
+      const status = await recomputeGameStatus(db, game, new Date().toISOString(), bus);
+
+      if (bus && creatorPlayer) {
+        void bus.emit({
+          type: 'player.joined',
+          gameId: game.id,
+          gamePlayerId: creatorPlayer.id,
+          userId,
+          joinedAt: creatorPlayer.joinedAt,
+        });
+      }
 
       return reply.status(201).send({ ...game, startingBalance: Number(game.startingBalance), status });
     });
@@ -146,7 +164,7 @@ export function gameRoutes(db: Db) {
       const [game] = await db.select().from(games).where(eq(games.id, gameId)).limit(1);
       if (!game) return reply.status(404).send({ error: 'Game not found' });
 
-      const status = await recomputeGameStatus(db, game);
+      const status = await recomputeGameStatus(db, game, new Date().toISOString(), bus);
       if (status === 'ended') return reply.status(409).send({ error: 'Game has ended' });
 
       let player: typeof gamePlayers.$inferSelect | undefined;
@@ -165,6 +183,16 @@ export function gameRoutes(db: Db) {
       }
 
       if (!player) return reply.status(500).send({ error: 'Failed to join game' });
+
+      if (bus) {
+        void bus.emit({
+          type: 'player.joined',
+          gameId: player.gameId,
+          gamePlayerId: player.id,
+          userId,
+          joinedAt: player.joinedAt,
+        });
+      }
 
       return reply.status(201).send({
         playerId: player.id,
@@ -198,7 +226,7 @@ export function gameRoutes(db: Db) {
         .limit(1);
       if (!membership) return reply.status(404).send({ error: 'Game not found' });
 
-      const status = await recomputeGameStatus(db, game);
+      const status = await recomputeGameStatus(db, game, new Date().toISOString(), bus);
       const leaderboard = await computeLeaderboard(db, gameId);
 
       return reply.status(200).send({
@@ -206,6 +234,7 @@ export function gameRoutes(db: Db) {
         startingBalance: Number(game.startingBalance),
         status,
         leaderboard,
+        viewerGamePlayerId: membership.id,
       });
     });
 

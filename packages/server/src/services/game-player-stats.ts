@@ -180,6 +180,7 @@ export async function applySnapshotStats(
   let consecLast = row.consecutiveDaysInLastPlace;
   let lastDayCounted = row.lastDayCounted;
   let lastDayRank = row.lastDayRank;
+  let previousDayRank = row.previousDayRank;
 
   if (row.lastDayCounted == null) {
     lastDayCounted = dayKey;
@@ -199,6 +200,10 @@ export async function applySnapshotStats(
     consecMedian = wasAboveMedian ? consecMedian + 1 : 0;
     consecLast = wasLast ? consecLast + 1 : 0;
 
+    // Capture yesterday's final rank BEFORE overwriting lastDayRank, so
+    // day-over-day delta achievements can read it from the post-commit
+    // event handler.
+    previousDayRank = row.lastDayRank;
     lastDayCounted = dayKey;
     lastDayRank = params.rank;
   } else {
@@ -224,6 +229,7 @@ export async function applySnapshotStats(
       consecutiveDaysInLastPlace: consecLast,
       lastDayCounted,
       lastDayRank,
+      previousDayRank,
       updatedAt: now,
     })
     .where(eq(schema.gamePlayerStats.gamePlayerId, params.gamePlayerId));

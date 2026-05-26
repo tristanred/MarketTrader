@@ -318,6 +318,55 @@ describe('applySnapshotStats', () => {
     expect(soloRow!.consecutiveDaysInLastPlace).toBe(0);
   });
 
+  it('captures previousDayRank on day rollover (and leaves null on first snapshot / same day)', async () => {
+    const db = await createTestDb();
+    const gpId = await seedGamePlayer(db as unknown as Db);
+    // First snapshot ever — seeds lastDayRank only, previousDayRank stays null.
+    await applySnapshotStats(db as unknown as Db, {
+      gamePlayerId: gpId, totalValue: 100, rank: 4, totalPlayers: 5,
+      capturedAt: '2026-05-25T10:00:00.000Z',
+    });
+    let [row] = await db.select().from(schema.gamePlayerStats).where(eq(schema.gamePlayerStats.gamePlayerId, gpId));
+    expect(row!.previousDayRank).toBeNull();
+    expect(row!.lastDayRank).toBe(4);
+
+    // Same-day second snapshot — previousDayRank still null.
+    await applySnapshotStats(db as unknown as Db, {
+      gamePlayerId: gpId, totalValue: 100, rank: 2, totalPlayers: 5,
+      capturedAt: '2026-05-25T18:00:00.000Z',
+    });
+    [row] = await db.select().from(schema.gamePlayerStats).where(eq(schema.gamePlayerStats.gamePlayerId, gpId));
+    expect(row!.previousDayRank).toBeNull();
+    expect(row!.lastDayRank).toBe(2);
+
+    // Day rollover — captures the prior day's final rank (2) into previousDayRank.
+    await applySnapshotStats(db as unknown as Db, {
+      gamePlayerId: gpId, totalValue: 100, rank: 1, totalPlayers: 5,
+      capturedAt: '2026-05-26T10:00:00.000Z',
+    });
+    [row] = await db.select().from(schema.gamePlayerStats).where(eq(schema.gamePlayerStats.gamePlayerId, gpId));
+    expect(row!.previousDayRank).toBe(2);
+    expect(row!.lastDayRank).toBe(1);
+
+    // Same-day snapshot on the new day — previousDayRank unchanged.
+    await applySnapshotStats(db as unknown as Db, {
+      gamePlayerId: gpId, totalValue: 100, rank: 3, totalPlayers: 5,
+      capturedAt: '2026-05-26T20:00:00.000Z',
+    });
+    [row] = await db.select().from(schema.gamePlayerStats).where(eq(schema.gamePlayerStats.gamePlayerId, gpId));
+    expect(row!.previousDayRank).toBe(2);
+    expect(row!.lastDayRank).toBe(3);
+
+    // Second rollover — previousDayRank now becomes the final rank of the prior day (3).
+    await applySnapshotStats(db as unknown as Db, {
+      gamePlayerId: gpId, totalValue: 100, rank: 5, totalPlayers: 5,
+      capturedAt: '2026-05-27T10:00:00.000Z',
+    });
+    [row] = await db.select().from(schema.gamePlayerStats).where(eq(schema.gamePlayerStats.gamePlayerId, gpId));
+    expect(row!.previousDayRank).toBe(3);
+    expect(row!.lastDayRank).toBe(5);
+  });
+
   it('resets consecutive counters when standing breaks', async () => {
     const db = await createTestDb();
     const gpId = await seedGamePlayer(db as unknown as Db);

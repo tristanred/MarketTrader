@@ -399,6 +399,13 @@ export const gamePlayerStats = pgTable('game_player_stats', {
   lastDayCounted: text('last_day_counted'),
   /** Rank at the most recent snapshot of `lastDayCounted`; consumed at the next day rollover. */
   lastDayRank: integer('last_day_rank'),
+  /**
+   * Rank at the final snapshot of the prior UTC day, captured during the
+   * rollover branch of `applySnapshotStats`. Lets day-over-day delta
+   * achievements (comeback-kid, free-fall) compare today's rank to
+   * yesterday's once `lastDayRank` has already been overwritten.
+   */
+  previousDayRank: integer('previous_day_rank'),
 
   totalTrades: integer('total_trades').notNull().default(0),
   buyTrades: integer('buy_trades').notNull().default(0),

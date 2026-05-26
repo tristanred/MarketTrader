@@ -10,6 +10,7 @@ import type { MarketStatusProvider } from '../providers/market-status/index.js';
 import type { MarketState } from '@markettrader/shared';
 import { recomputeGameStatus } from '../services/game-status.js';
 import { executeTrade } from '../services/trade.js';
+import { emitTradeEvents } from '../services/trade-emit.js';
 import { loadPlayerPortfolio } from '../services/portfolio.js';
 import {
   reservePendingTrade,
@@ -339,18 +340,19 @@ export function tradingRoutes(
         }
 
         let trade;
-        // `_result` holds the full ExecuteTradeResult so Task 9 can wire
-        // derived metrics (realizedPnl, distinctSymbols, ...) into emits.
-        let _result;
+        // `result` carries the full ExecuteTradeResult so the follow-on
+        // emit (holdings.changed / position.closed) can use derived metrics
+        // (realizedPnl, distinctSymbols, ...).
+        let result;
         try {
-          _result = await executeTrade(db, {
+          result = await executeTrade(db, {
             gamePlayerId: gamePlayer.id,
             symbol,
             direction: direction as TradeDirection,
             quantity,
             price: quote.price,
           });
-          trade = _result.trade;
+          trade = result.trade;
         } catch (err) {
           if (err instanceof TradeError) {
             return reply.status(422).send({ code: err.code, message: err.message });
@@ -378,6 +380,21 @@ export function tradingRoutes(
             price: Number(trade.price),
             tradeId: trade.id,
             executedAt: trade.executedAt!,
+          });
+          void emitTradeEvents({
+            bus,
+            db,
+            provider,
+            gameId,
+            gamePlayerId: gamePlayer.id,
+            cashAfter: Number(updatedPlayer?.cashBalance ?? 0),
+            symbol: trade.symbol,
+            direction: trade.direction as 'buy' | 'sell',
+            quantity: trade.quantity,
+            result,
+            executedAt: trade.executedAt!,
+          }).catch((err) => {
+            request.log?.error({ err }, 'failed to emit trade follow-on events');
           });
         }
 

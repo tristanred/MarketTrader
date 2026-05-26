@@ -10,7 +10,9 @@ export type DomainEvent =
   | GameStartedEvent
   | GameEndedEvent
   | PlayerJoinedEvent
-  | EngineTickEvent;
+  | EngineTickEvent
+  | PositionClosedEvent
+  | HoldingsChangedEvent;
 
 export type DomainEventType = DomainEvent['type'];
 
@@ -71,3 +73,42 @@ export interface EngineTickEvent {
 
 /** Helper: narrow a DomainEvent by its `type` tag. */
 export type DomainEventOf<T extends DomainEventType> = Extract<DomainEvent, { type: T }>;
+
+/**
+ * Fired after a sell trade commits. Carries realized P&L and hold duration so
+ * achievement handlers don't need to look up cost basis themselves.
+ */
+export interface PositionClosedEvent {
+  type: 'position.closed';
+  gameId: string;
+  gamePlayerId: string;
+  symbol: string;
+  /** Quantity sold in the closing trade. */
+  quantity: number;
+  /** Realized P&L for this sell slice: (sellPrice − avgCostBasis) × quantity. */
+  realizedPnl: number;
+  /** Realized P&L as a fraction of cost basis: (sellPrice / avgCostBasis) − 1. */
+  realizedPnlPct: number;
+  /** Milliseconds between the most recent position open (qty 0 → positive) and this sell. */
+  holdDurationMs: number;
+  /** True when this sell brought the holding to 0. */
+  fullyClosed: boolean;
+  closedAt: string;
+}
+
+/**
+ * Fired after any trade commits. Carries derived holdings metrics so portfolio-
+ * shape achievements stay O(1).
+ */
+export interface HoldingsChangedEvent {
+  type: 'holdings.changed';
+  gameId: string;
+  gamePlayerId: string;
+  /** Count of portfolio rows with quantity > 0 after the trade. */
+  distinctSymbols: number;
+  /** Largest single-symbol value ÷ total portfolio value (0 if no holdings). */
+  topConcentrationRatio: number;
+  /** Cash ÷ total portfolio value. */
+  cashRatio: number;
+  changedAt: string;
+}

@@ -12,6 +12,8 @@ import {
 import { executeTrade } from '../../services/trade.js';
 import type { StockProvider } from '../../providers/index.js';
 import type { EventBus } from '../../events/bus.js';
+import type { GameClientRegistry } from '../../ws/registry.js';
+import type { TradeDirection } from '@markettrader/shared';
 
 const idParams = z.object({ id: z.string() });
 const forceExecBody = z.object({ price: z.number().positive().optional() });
@@ -27,7 +29,12 @@ const priceBody = z.object({ price: z.number().positive() });
  *                                        delta is applied, holdings unchanged.
  *                                        Refuses if it would push cash < 0.
  */
-export function adminTradesRoutes(db: Db, provider: StockProvider, bus?: EventBus) {
+export function adminTradesRoutes(
+  db: Db,
+  provider: StockProvider,
+  bus?: EventBus,
+  registry?: GameClientRegistry,
+) {
   return async function (rawApp: FastifyInstance): Promise<void> {
     const app = rawApp.withTypeProvider<ZodTypeProvider>();
     const { trades, gamePlayers, portfolios } = schema;
@@ -125,28 +132,45 @@ export function adminTradesRoutes(db: Db, provider: StockProvider, bus?: EventBu
 
         // Emit on the in-process bus so the achievement engine (and any
         // other domain-event consumer) treats an admin-driven force-execute
-        // the same as a normal fill. Without this, achievements like
-        // first-trade and ten-buys would silently skip admin-resolved
-        // orders. Mirrors the emit in routes/trading.ts.
-        if (bus) {
-          // The trades table has no gameId column; resolve via gamePlayers.
+        // the same as a normal fill. Also broadcast `trade_executed` over
+        // the per-game WebSocket so connected clients refresh their
+        // portfolio / activity panels without waiting for a manual refresh.
+        // Mirrors the emit + broadcast pair in routes/trading.ts.
+        if (bus || registry) {
+          // The trades table has no gameId/userId columns; resolve both
+          // via gamePlayers in one lookup so we don't issue two queries.
           const [player] = await db
-            .select({ gameId: gamePlayers.gameId })
+            .select({ gameId: gamePlayers.gameId, userId: gamePlayers.userId })
             .from(gamePlayers)
             .where(eq(gamePlayers.id, trade.gamePlayerId))
             .limit(1);
           if (player) {
-            void bus.emit({
-              type: 'trade.executed',
-              gameId: player.gameId,
-              gamePlayerId: trade.gamePlayerId,
-              symbol: trade.symbol,
-              direction: trade.direction as 'buy' | 'sell',
-              quantity: trade.quantity,
-              price: Number(executed.price),
-              tradeId: id,
-              executedAt: executed.executedAt!,
-            });
+            if (bus) {
+              void bus.emit({
+                type: 'trade.executed',
+                gameId: player.gameId,
+                gamePlayerId: trade.gamePlayerId,
+                symbol: trade.symbol,
+                direction: trade.direction as TradeDirection,
+                quantity: trade.quantity,
+                price: Number(executed.price),
+                tradeId: id,
+                executedAt: executed.executedAt!,
+              });
+            }
+            if (registry) {
+              registry.broadcast(player.gameId, {
+                event: 'trade_executed',
+                data: {
+                  playerId: player.userId,
+                  symbol: trade.symbol,
+                  direction: trade.direction as TradeDirection,
+                  quantity: trade.quantity,
+                  price: Number(executed.price),
+                  executedAt: executed.executedAt!,
+                },
+              });
+            }
           }
         }
 

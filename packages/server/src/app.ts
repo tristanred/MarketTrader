@@ -137,7 +137,7 @@ export async function buildApp(
   await app.register(systemSettingsRoutes(systemSettings));
   await app.register(achievementsRoutes(db, achievementEngine));
   await registerAdminGuard(app, db);
-  await app.register(adminRoutes(db, provider, systemSettings, bus));
+  await app.register(adminRoutes(db, provider, systemSettings, bus, registry));
   await app.register(adminAchievementsRoutes(db, achievementEngine, systemSettings));
   await app.register(liveRoute(db, registry, achievementEngine));
   await app.register(globalLiveRoute(globalRegistry));

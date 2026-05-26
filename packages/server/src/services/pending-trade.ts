@@ -4,6 +4,7 @@ import { schema } from '../db/index.js';
 import type { PendingTrade, TradeDirection, Trade } from '@markettrader/shared';
 import type { StockProvider } from '../providers/index.js';
 import { validateBuy, validateSell, computeNewAvgCostBasis } from './trade.js';
+import { applyTradeStats } from './game-player-stats.js';
 
 /** Parameters for queueing a trade that will settle at next market open. */
 export interface ReservePendingParams {
@@ -270,6 +271,9 @@ export async function settlePendingTrades(
           .limit(1);
         if (!player) throw new Error('GamePlayer disappeared mid-settle');
         const cashBalance = Number(player.cashBalance);
+        // Hoisted so it's available to both the new-position openedAt stamp
+        // (below, in the buy branch) and the trades-row flip at the end.
+        const executedAt = new Date().toISOString();
 
         if (direction === 'buy') {
           const actualCost = quantity * price;
@@ -330,6 +334,7 @@ export async function settlePendingTrades(
               symbol: row.symbol,
               quantity,
               avgCostBasis: price,
+              openedAt: executedAt,
             });
           }
         } else {
@@ -341,7 +346,19 @@ export async function settlePendingTrades(
             .where(eq(gamePlayers.id, row.gamePlayerId));
         }
 
-        const executedAt = new Date().toISOString();
+        // Stats writer must run before the trade row flips to `executed` —
+        // applyTradeStats counts only `status='executed'` rows when deciding
+        // the distinct-symbols delta, and the pending row in front of us
+        // would otherwise (after flip) be its own "prior" trade. Same tx so
+        // a later failure rolls the stats update back with everything else.
+        await applyTradeStats(tx as unknown as Db, {
+          gamePlayerId: row.gamePlayerId,
+          direction,
+          symbol: row.symbol,
+          quantity,
+          price,
+        });
+
         const [updated] = await tx
           .update(trades)
           .set({

@@ -36,11 +36,15 @@ export interface ApplyTradeStatsParams {
 /**
  * Updates trade-driven stats columns for one executed trade. Must be called
  * inside the same transaction that wrote the trade row, and BEFORE that new
- * trade row is inserted — the `distinctSymbolsTradedEver` delta is computed
- * by checking for any prior `trades` row on the same `(gamePlayerId, symbol)`.
- * Idempotency is the caller's concern — never call twice for the same trade.
- * Assumes single-writer-per-player ordering (the trade route already serializes
- * per-player trades inside one transaction).
+ * trade row is inserted (or flipped to `executed`) — the
+ * `distinctSymbolsTradedEver` delta is computed by checking for any prior
+ * `trades` row with `status='executed'` on the same `(gamePlayerId, symbol)`.
+ * Pending/working/cancelled rows are intentionally excluded so a placed-but-
+ * never-filled order doesn't count as having "traded" the symbol, and so the
+ * pending-trade settle path (which mutates an existing pending row in place)
+ * still sees the delta correctly. Idempotency is the caller's concern — never
+ * call twice for the same trade. Assumes single-writer-per-player ordering
+ * (the trade route already serializes per-player trades inside one transaction).
  */
 export async function applyTradeStats(db: Db, params: ApplyTradeStatsParams): Promise<void> {
   await ensureStatsRow(db, params.gamePlayerId);
@@ -52,6 +56,7 @@ export async function applyTradeStats(db: Db, params: ApplyTradeStatsParams): Pr
       and(
         eq(schema.trades.gamePlayerId, params.gamePlayerId),
         eq(schema.trades.symbol, params.symbol),
+        eq(schema.trades.status, 'executed'),
       ),
     )
     .limit(1);

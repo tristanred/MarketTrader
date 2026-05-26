@@ -120,6 +120,43 @@ describe('applyTradeStats', () => {
       .where(eq(schema.gamePlayerStats.gamePlayerId, gamePlayerId));
     expect(row!.distinctSymbolsTradedEver).toBe(1);
   });
+
+  it('treats prior pending/working trade rows as if absent for distinctSymbolsTradedEver', async () => {
+    // A pending (not yet executed) order on AAPL exists — e.g. a pending-market
+    // buy placed during closed-market hours, or a working limit order.
+    await db.insert(schema.trades).values({
+      gamePlayerId,
+      symbol: 'AAPL',
+      direction: 'buy',
+      quantity: 1,
+      status: 'pending',
+      reservedPrice: 1,
+      reservedCash: 1,
+    });
+    await db.insert(schema.trades).values({
+      gamePlayerId,
+      symbol: 'AAPL',
+      direction: 'buy',
+      quantity: 1,
+      status: 'working',
+      reservedPrice: 1,
+      reservedCash: 1,
+    });
+    // The very first executed trade on the symbol must still get +1 even
+    // though pending/working rows already exist — those are not "trades".
+    await applyTradeStats(db as unknown as Db, {
+      gamePlayerId,
+      direction: 'buy',
+      symbol: 'AAPL',
+      quantity: 1,
+      price: 1,
+    });
+    const [row] = await db
+      .select()
+      .from(schema.gamePlayerStats)
+      .where(eq(schema.gamePlayerStats.gamePlayerId, gamePlayerId));
+    expect(row!.distinctSymbolsTradedEver).toBe(1);
+  });
 });
 
 describe('applyPositionCloseStats', () => {

@@ -18,6 +18,17 @@ export interface AchievementGridProps {
 
 type StateFilter = 'all' | 'unlocked' | 'locked';
 
+const CATEGORY_OPTIONS = [
+  { value: 'trading', label: 'Trading' },
+  { value: 'pnl', label: 'P&L' },
+  { value: 'portfolio', label: 'Portfolio' },
+  { value: 'standing', label: 'Standing' },
+  { value: 'behavior', label: 'Behavior' },
+  { value: 'finale', label: 'Finale' },
+] as const;
+type Category = (typeof CATEGORY_OPTIONS)[number]['value'];
+const ALL_CATEGORIES: readonly Category[] = CATEGORY_OPTIONS.map((c) => c.value);
+
 function parseRarityFilter(raw: string | null): Set<AchievementRarity> {
   if (!raw) return new Set();
   return new Set(
@@ -29,6 +40,15 @@ function parseRarityFilter(raw: string | null): Set<AchievementRarity> {
   );
 }
 
+function parseCategoryFilter(raw: string | null): Set<Category> {
+  if (!raw) return new Set();
+  return new Set(
+    raw
+      .split(',')
+      .filter((v): v is Category => ALL_CATEGORIES.includes(v as Category)),
+  );
+}
+
 /**
  * Filterable, sorted grid of achievement cards. Rarity + state filters
  * sync to URL search params (`?rarity=epic,legendary&state=unlocked`).
@@ -37,6 +57,7 @@ function parseRarityFilter(raw: string | null): Set<AchievementRarity> {
 export function AchievementGrid({ definitions, progress, className }: AchievementGridProps) {
   const [params, setParams] = useSearchParams();
   const rarityFilter = parseRarityFilter(params.get('rarity'));
+  const categoryFilter = parseCategoryFilter(params.get('category'));
   const stateFilter = (params.get('state') as StateFilter | null) ?? 'all';
 
   const progressByKey = useMemo(() => {
@@ -49,6 +70,7 @@ export function AchievementGrid({ definitions, progress, className }: Achievemen
     return definitions
       .filter((d) => {
         if (rarityFilter.size > 0 && !rarityFilter.has(d.rarity)) return false;
+        if (categoryFilter.size > 0 && (!d.category || !categoryFilter.has(d.category as Category))) return false;
         const p = progressByKey.get(d.key);
         const unlocked = Boolean(p?.unlockedAt);
         if (stateFilter === 'unlocked' && !unlocked) return false;
@@ -63,7 +85,7 @@ export function AchievementGrid({ definitions, progress, className }: Achievemen
         if (ua !== ub) return ua ? -1 : 1;
         return a.key.localeCompare(b.key);
       });
-  }, [definitions, progressByKey, rarityFilter, stateFilter]);
+  }, [definitions, progressByKey, rarityFilter, categoryFilter, stateFilter]);
 
   const toggleRarity = (r: AchievementRarity) => {
     const next = new Set(rarityFilter);
@@ -83,6 +105,20 @@ export function AchievementGrid({ definitions, progress, className }: Achievemen
   const clearRarity = () => {
     const newParams = new URLSearchParams(params);
     newParams.delete('rarity');
+    setParams(newParams, { replace: true });
+  };
+  const toggleCategory = (c: Category) => {
+    const next = new Set(categoryFilter);
+    if (next.has(c)) next.delete(c);
+    else next.add(c);
+    const newParams = new URLSearchParams(params);
+    if (next.size === 0) newParams.delete('category');
+    else newParams.set('category', [...next].join(','));
+    setParams(newParams, { replace: true });
+  };
+  const clearCategory = () => {
+    const newParams = new URLSearchParams(params);
+    newParams.delete('category');
     setParams(newParams, { replace: true });
   };
 
@@ -105,6 +141,17 @@ export function AchievementGrid({ definitions, progress, className }: Achievemen
             Locked
           </Chip>
         </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-1.5">
+        <Chip active={categoryFilter.size === 0} onClick={clearCategory}>
+          All
+        </Chip>
+        {CATEGORY_OPTIONS.map((c) => (
+          <Chip key={c.value} active={categoryFilter.has(c.value)} onClick={() => toggleCategory(c.value)}>
+            {c.label}
+          </Chip>
+        ))}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-2">

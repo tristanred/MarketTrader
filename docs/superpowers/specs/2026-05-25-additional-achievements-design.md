@@ -172,7 +172,7 @@ All trade-volume thresholds count *executed* trades (any direction unless noted)
 | 7 | `first-blood` | First Blood | Close your first profitable position. | common | `position.closed` |
 | 8 | `green-streak` | Green Streak | Close 5 winning positions in a row. | uncommon | `position.closed` (reads `stats.consecutiveWins`) |
 | 9 | `moonshot` | Moonshot | Close a single position with ≥50% gain. | rare | `position.closed` |
-| 10 | `ten-bagger` | Ten-Bagger | Close a single position with ≥10× return (+900% gain, `realizedPnlPct >= 9.0`). | legendary | `position.closed` |
+| 10 | `ten-bagger` | Ten-Bagger | Close a single position with ≥10× return (1000% gain). | legendary | `position.closed` |
 | 11 | `bag-holder` | Bag Holder | Close a single position with ≥50% loss. | uncommon | `position.closed` |
 | 12 | `catastrophe` | Catastrophe | Close a single position with ≥90% loss. | rare | `position.closed` |
 | 13 | `double-up` | Double Up | Portfolio reaches 2× starting balance. | epic | `snapshot.recorded` |
@@ -212,7 +212,7 @@ All trade-volume thresholds count *executed* trades (any direction unless noted)
 |---|---|---|---|---|---|
 | 32 | `paper-hands` | Paper Hands | Close a position less than 5 minutes after opening it. | common | `position.closed` |
 | 33 | `diamond-hands` | Diamond Hands | Close a position after holding ≥7 days. | rare | `position.closed` |
-| 34 | `revenge-trade` | Revenge Trade | Re-buy a symbol within 1 hour of selling it. | uncommon | `trade.executed` (queries recent executed sell on the same symbol via `ctx.db`; v1 omits the "at a loss" filter — reliably attributing realized P&L to a specific prior sell requires schema we don't have yet) |
+| 34 | `revenge-trade` | Revenge Trade | Re-buy a symbol within 1 hour of closing it at a loss. | uncommon | `trade.executed` (queries recent losing `position.closed` for symbol via `ctx.db`) |
 | 35 | `fomo` | FOMO | Buy a symbol within 5 minutes of it first appearing on another player's portfolio in this game. | rare | `trade.executed` (queries `portfolios` rows in this game with this symbol, ordered by `openedAt`; flagged as the costliest handler) |
 
 ### 3.6 Category: `finale` (5)

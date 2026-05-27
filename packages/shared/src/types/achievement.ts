@@ -43,6 +43,29 @@ export interface AchievementProgressDTO {
 }
 
 /**
+ * Admin-facing variant of {@link AchievementProgressDTO}. The `orphaned`
+ * flag marks rows whose key is no longer registered with the engine, so
+ * the admin UI can surface them for cleanup.
+ */
+export interface AdminAchievementProgressRow extends AchievementProgressDTO {
+  orphaned: boolean;
+}
+
+/**
+ * Shape of `GET /admin/games/:id/achievements`. Includes the full registry
+ * (no hiding) plus every progress row in the game — orphans included.
+ */
+export interface AdminGameAchievementsView {
+  definitions: AchievementDefinitionDTO[];
+  rows: AdminAchievementProgressRow[];
+}
+
+/** Shape of `GET /admin/achievements` — definitions with their global enabled state. */
+export interface AdminGlobalAchievementsView {
+  definitions: AchievementDefinitionDTO[];
+}
+
+/**
  * Pushed to all players in a game the moment another player unlocks an
  * achievement. Fields are denormalised so clients can render a toast without
  * a follow-up fetch. `replayed` distinguishes connect-time catch-up frames

@@ -23,6 +23,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from '@/components/ui/toast';
 import { ConfirmDialog } from '@/components/admin/ConfirmDialog';
+import { AdminGameAchievementsCard } from '@/components/admin/AdminGameAchievementsCard';
 import { toastApiError } from '@/lib/toastApiError';
 
 const editSchema = z.object({
@@ -364,6 +365,8 @@ export function AdminGameDetailPage() {
           </Button>
         </CardContent>
       </Card>
+
+      <AdminGameAchievementsCard gameId={gameId} />
 
       <Card>
         <CardHeader>

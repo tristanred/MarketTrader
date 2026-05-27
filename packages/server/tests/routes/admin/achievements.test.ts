@@ -112,6 +112,44 @@ describe('admin achievement routes', () => {
     );
   });
 
+  it('GET /admin/achievements returns every definition with global enabled state; requires admin', async () => {
+    // Non-admin → 403.
+    const { token: nonAdmin } = await registerUser(app, `non-${Math.random().toString(36).slice(2)}`);
+    const forbidden = await app.inject({
+      method: 'GET',
+      url: '/admin/achievements',
+      headers: { Authorization: `Bearer ${nonAdmin}` },
+    });
+    expect(forbidden.statusCode).toBe(403);
+
+    // Disable a known key globally.
+    await app.inject({
+      method: 'PATCH',
+      url: '/admin/achievements/ten-buys',
+      headers: { Authorization: `Bearer ${adminToken}` },
+      payload: { enabled: false },
+    });
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/admin/achievements',
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json<{ definitions: Array<{ key: string; enabled: boolean; name: string }> }>();
+    expect(body.definitions.length).toBeGreaterThan(0);
+    const tenBuys = body.definitions.find((d) => d.key === 'ten-buys');
+    expect(tenBuys).toBeDefined();
+    expect(tenBuys!.enabled).toBe(false);
+    // Re-enable so other tests are unaffected.
+    await app.inject({
+      method: 'PATCH',
+      url: '/admin/achievements/ten-buys',
+      headers: { Authorization: `Bearer ${adminToken}` },
+      payload: { enabled: true },
+    });
+  });
+
   it('global toggle silences an achievement; per-game override restores it for one game', async () => {
     const game = await createGame(app, adminToken);
 

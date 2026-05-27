@@ -104,6 +104,35 @@ export class AchievementEngine {
     return [...this.defsByKey.values()];
   }
 
+  /**
+   * Broadcasts an `achievement_unlocked` event for an unlock that occurred
+   * outside the natural progress path (e.g. admin force-unlock). The payload
+   * mirrors what the natural unlock path emits from {@link dispatch} so
+   * clients can't tell the two apart. Callers are responsible for ensuring
+   * the DB row was actually updated to `unlockedAt = unlockedAt` first.
+   */
+  broadcastAchievementUnlock(
+    gameId: string,
+    gamePlayerId: string,
+    achievementKey: string,
+    unlockedAt: string,
+  ): void {
+    const def = this.defsByKey.get(achievementKey);
+    if (!def) return;
+    this.registry.broadcast(gameId, {
+      event: 'achievement_unlocked',
+      data: {
+        gamePlayerId,
+        achievementKey: def.key,
+        name: def.name,
+        description: def.description,
+        rarity: def.rarity,
+        icon: def.icon,
+        unlockedAt,
+      },
+    });
+  }
+
   /** Look up a single definition by key, or undefined if not registered. */
   getDefinition(key: string): AnyAchievementDefinition | undefined {
     return this.defsByKey.get(key);

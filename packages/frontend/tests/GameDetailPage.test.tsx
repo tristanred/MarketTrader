@@ -96,6 +96,18 @@ vi.mock('@/hooks/useGameSocket', () => ({
   useGameSocket: () => undefined,
 }));
 
+vi.mock('@/api/achievements', () => ({
+  useAchievements: () => ({ data: undefined, isLoading: false }),
+  getGameAchievements: vi.fn(),
+  getPlayerAchievements: vi.fn(),
+  ackAchievementUnlock: vi.fn(),
+  achievementKeys: {
+    all: ['achievements'],
+    game: (g: string) => ['achievements', g, 'all'],
+    player: (g: string, p: string) => ['achievements', g, p],
+  },
+}));
+
 vi.mock('@/components/StockChart', () => ({
   StockChart: ({ symbols }: { symbols: string[] }) => (
     <div data-testid="stockchart">chart-{symbols.join(',') || 'none'}</div>

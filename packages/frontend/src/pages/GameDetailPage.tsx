@@ -33,6 +33,15 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { ApiError } from '@/lib/api';
 import type { ActivityEvent } from '@/components/game/arena';
 import type { TradeDirection } from '@markettrader/shared';
+import {
+  useActivityFeedStore,
+  type AchievementActivityEvent,
+} from '@/stores/activityFeedStore';
+import { useAchievements, type GameAchievementsResponse } from '@/api/achievements';
+
+// Stable reference for the empty selector return so subscribers don't
+// re-render every tick when the store has no entries for this game.
+const EMPTY_UNLOCKS: readonly AchievementActivityEvent[] = [];
 
 /**
  * Game-detail "arena" page: three-pane grid composed of nine panels with a
@@ -212,19 +221,69 @@ function ArenaBody({
         }
       : undefined;
 
-  // Trade history → activity feed events. The GET /games/:id/trades endpoint
-  // returns only executed Trade rows, so no status filtering is needed.
-  const activityEvents: ActivityEvent[] = tradeHistory
-    .slice(0, 25)
-    .map((t) => ({
+  const achievementsView = useAchievements(gameId);
+
+  // Seed persisted unlock history into the activity store. The store is
+  // idempotent on (gamePlayerId, achievementKey), so this composes cleanly
+  // with live WS unlocks that may have already arrived.
+  useEffect(() => {
+    const data = achievementsView.data as GameAchievementsResponse | undefined;
+    if (!data) return;
+    const seed: AchievementActivityEvent[] = [];
+    for (const [gpid, rows] of Object.entries(data.progress)) {
+      for (const r of rows) {
+        if (!r.unlockedAt) continue;
+        const def = data.definitions.find((d) => d.key === r.achievementKey);
+        if (!def) continue;
+        seed.push({
+          gamePlayerId: gpid,
+          achievementKey: r.achievementKey,
+          name: def.name,
+          rarity: def.rarity,
+          icon: def.icon,
+          unlockedAt: r.unlockedAt,
+        });
+      }
+    }
+    useActivityFeedStore.getState().seedUnlocks(gameId, seed);
+  }, [achievementsView.data, gameId]);
+
+  const usernamesByGamePlayer = useMemo(() => {
+    const m: Record<string, string> = {};
+    for (const e of gameData.leaderboard ?? []) m[e.gamePlayerId] = e.username;
+    return m;
+  }, [gameData.leaderboard]);
+
+  const achievementUnlocksMap = useActivityFeedStore((s) => s.unlocks);
+  const achievementUnlocks = achievementUnlocksMap[gameId] ?? EMPTY_UNLOCKS;
+
+  // Merge trades + achievement unlocks into a single chronological feed,
+  // capped at 25 rows. Trade history is viewer-scoped (server only returns
+  // the viewer's trades for now); achievement rows cover every player.
+  const activityEvents: ActivityEvent[] = useMemo(() => {
+    const tradeEvents: ActivityEvent[] = tradeHistory.map((t) => ({
+      kind: 'trade',
       at: t.executedAt,
-      // History endpoint returns this user's trades only for now.
       player: user?.username ?? '—',
       direction: t.direction,
       quantity: t.quantity,
       symbol: t.symbol,
       price: t.price,
     }));
+    const achEvents: ActivityEvent[] = achievementUnlocks.map((u) => ({
+      kind: 'achievement',
+      id: `${u.gamePlayerId}:${u.achievementKey}`,
+      at: u.unlockedAt,
+      player: usernamesByGamePlayer[u.gamePlayerId] ?? 'player',
+      achievementKey: u.achievementKey,
+      name: u.name,
+      rarity: u.rarity,
+      icon: u.icon,
+    }));
+    return [...tradeEvents, ...achEvents]
+      .sort((a, b) => b.at.localeCompare(a.at))
+      .slice(0, 25);
+  }, [tradeHistory, achievementUnlocks, usernamesByGamePlayer, user?.username]);
 
   const myPortfolioValue = portfolioData?.totalValue ?? gameData.startingBalance;
   const myCash = portfolioData?.cashBalance ?? 0;

@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { HelpCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { AchievementCard } from './AchievementCard';
 import { ALL_RARITIES, compareRarity, rarityLabel } from './rarity';
@@ -13,10 +14,12 @@ export interface AchievementGridProps {
   definitions: AchievementDefinitionDTO[];
   /** Progress entries for the viewer (one optional row per definition). */
   progress: AchievementProgressDTO[];
+  /** Game's total enabled achievement count — drives the "N more locked" tile. */
+  totalEnabledCount: number;
   className?: string;
 }
 
-type StateFilter = 'all' | 'unlocked' | 'locked';
+type StateFilter = 'all' | 'unlocked';
 
 const CATEGORY_OPTIONS = [
   { value: 'trading', label: 'Trading' },
@@ -54,7 +57,7 @@ function parseCategoryFilter(raw: string | null): Set<Category> {
  * sync to URL search params (`?rarity=epic,legendary&state=unlocked`).
  * Legendary unlocked cards span both columns to breathe.
  */
-export function AchievementGrid({ definitions, progress, className }: AchievementGridProps) {
+export function AchievementGrid({ definitions, progress, totalEnabledCount, className }: AchievementGridProps) {
   const [params, setParams] = useSearchParams();
   const rarityFilter = parseRarityFilter(params.get('rarity'));
   const categoryFilter = parseCategoryFilter(params.get('category'));
@@ -74,7 +77,6 @@ export function AchievementGrid({ definitions, progress, className }: Achievemen
         const p = progressByKey.get(d.key);
         const unlocked = Boolean(p?.unlockedAt);
         if (stateFilter === 'unlocked' && !unlocked) return false;
-        if (stateFilter === 'locked' && unlocked) return false;
         return true;
       })
       .sort((a, b) => {
@@ -86,6 +88,12 @@ export function AchievementGrid({ definitions, progress, className }: Achievemen
         return a.key.localeCompare(b.key);
       });
   }, [definitions, progressByKey, rarityFilter, categoryFilter, stateFilter]);
+
+  // Locked-tile count is computed off the raw definitions array (visible
+  // unlocked cards) vs the game total — independent of the rarity/category
+  // filters so the user always sees the full undiscovered count.
+  const lockedRemaining = Math.max(0, totalEnabledCount - definitions.length);
+  const showLockedTile = stateFilter !== 'unlocked' && lockedRemaining > 0;
 
   const toggleRarity = (r: AchievementRarity) => {
     const next = new Set(rarityFilter);
@@ -137,9 +145,6 @@ export function AchievementGrid({ definitions, progress, className }: Achievemen
           <Chip active={stateFilter === 'unlocked'} onClick={() => setState(stateFilter === 'unlocked' ? 'all' : 'unlocked')}>
             Unlocked
           </Chip>
-          <Chip active={stateFilter === 'locked'} onClick={() => setState(stateFilter === 'locked' ? 'all' : 'locked')}>
-            Locked
-          </Chip>
         </div>
       </div>
 
@@ -167,6 +172,42 @@ export function AchievementGrid({ definitions, progress, className }: Achievemen
             />
           );
         })}
+        {showLockedTile && <LockedSlotTile count={lockedRemaining} />}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Placeholder tile shown after the unlocked cards. Reveals only the count
+ * of locked achievements — never their names, descriptions, or icons.
+ */
+function LockedSlotTile({ count }: { count: number }) {
+  return (
+    <div
+      className={cn(
+        'relative overflow-hidden rounded-panel border border-hairline-strong bg-panel',
+        'grid items-start gap-3 px-4 py-3 grid-cols-[28px_1fr] opacity-55',
+      )}
+    >
+      <span
+        aria-hidden
+        className="absolute inset-y-0 left-0 w-[3px]"
+        style={{ background: 'var(--hairline-strong)' }}
+      />
+      <span className="relative z-[1] flex items-center justify-center text-muted">
+        <HelpCircle width={22} height={22} strokeWidth={1.6} />
+      </span>
+      <div className="relative z-[1] min-w-0">
+        <div className="font-mono text-[9px] uppercase tracking-[0.22em] mb-1 text-muted">
+          Locked
+        </div>
+        <div className="font-semibold text-text-strong leading-tight text-[13px]">
+          {count} more locked
+        </div>
+        <div className="text-[11px] text-muted leading-[1.3] mt-0.5">
+          Keep playing to discover what's left.
+        </div>
       </div>
     </div>
   );

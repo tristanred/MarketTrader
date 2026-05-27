@@ -1,0 +1,528 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>MarketTrader · Logo exploration</title>
+  <link rel="preconnect" href="https://rsms.me/" />
+  <link rel="stylesheet" href="https://rsms.me/inter/inter.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0a0b0d;
+      --panel: #0c0d10;
+      --hairline: #161719;
+      --hairline-strong: #1d1f23;
+      --text: #e8e9ea;
+      --text-strong: #f4f4f5;
+      --muted: #6b7280;
+      --accent: #67e8f9;
+      --accent-bg: rgba(103, 232, 249, 0.10);
+      --gain: #10b981;
+      --loss: #ef4444;
+      --r-legendary: #f59e0b;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0; padding: 0; min-height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'JetBrains Mono', ui-monospace, monospace;
+      font-feature-settings: 'tnum' 1, 'zero' 1;
+    }
+    .page {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 48px 32px 96px;
+    }
+    h1 {
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 800;
+      font-size: 13px;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin: 0 0 8px;
+    }
+    .lede {
+      color: var(--muted);
+      font-size: 13px;
+      margin: 0 0 48px;
+      max-width: 60ch;
+      line-height: 1.55;
+    }
+    section { margin: 0 0 64px; }
+    .label {
+      display: flex;
+      align-items: baseline;
+      gap: 12px;
+      margin: 0 0 16px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px;
+      letter-spacing: 0.24em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .label .tag {
+      color: var(--accent);
+    }
+    .label .rule {
+      flex: 1;
+      height: 1px;
+      background: var(--hairline-strong);
+    }
+    .frame {
+      border: 1px solid var(--hairline-strong);
+      background: var(--panel);
+      padding: 56px 48px;
+      position: relative;
+      overflow: hidden;
+    }
+    .frame::before, .frame::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+    }
+    /* faint grid */
+    .frame::before {
+      background-image:
+        linear-gradient(var(--hairline) 1px, transparent 1px),
+        linear-gradient(90deg, var(--hairline) 1px, transparent 1px);
+      background-size: 32px 32px;
+      opacity: 0.45;
+    }
+    .frame.compact { padding: 24px 28px; }
+    .frame.tight { padding: 12px 16px; }
+    .swatches {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 18px;
+    }
+    .swatch {
+      border: 1px solid var(--hairline-strong);
+      background: var(--panel);
+      padding: 14px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 72px;
+    }
+
+    /* ─── README hero variants ────────────────────────────────── */
+    .hero {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      align-items: center;
+      gap: 28px;
+      position: relative;
+      z-index: 1;
+    }
+    .hero .mark { display: flex; }
+    .hero .word {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .hero .word .title {
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 800;
+      font-size: 56px;
+      line-height: 0.95;
+      letter-spacing: -0.04em;
+      color: var(--text-strong);
+    }
+    .hero .word .title .dot {
+      color: var(--accent);
+      margin: 0 -2px;
+    }
+    .hero .word .tagline {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .hero .meta {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      text-align: right;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .hero .meta .row { display: flex; gap: 10px; justify-content: flex-end; }
+    .hero .meta .gain { color: var(--gain); }
+    .hero .meta .loss { color: var(--loss); }
+    .hero .meta .accent { color: var(--accent); }
+
+    /* Variant B: ticker tape */
+    .hero-b {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      grid-template-rows: 1fr auto;
+      gap: 28px;
+    }
+    .hero-b .top {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      align-items: center;
+      gap: 32px;
+    }
+    .hero-b .top .title {
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 800;
+      font-size: 76px;
+      line-height: 0.9;
+      letter-spacing: -0.05em;
+      color: var(--text-strong);
+    }
+    .hero-b .top .sub {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      letter-spacing: 0.24em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-top: 12px;
+    }
+    .hero-b .top .accent { color: var(--accent); }
+    .tape {
+      display: flex;
+      gap: 18px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      border-top: 1px solid var(--hairline-strong);
+      padding-top: 14px;
+      overflow: hidden;
+      white-space: nowrap;
+    }
+    .tape .item { display: inline-flex; gap: 6px; }
+    .tape .item .sym { color: var(--text-strong); }
+    .tape .item .pct.gain { color: var(--gain); }
+    .tape .item .pct.loss { color: var(--loss); }
+    .tape .sep { color: var(--hairline-strong); }
+
+    /* Variant C: brutalist split */
+    .hero-c {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0;
+      border: 1px solid var(--hairline-strong);
+      background: var(--bg);
+    }
+    .hero-c > div { padding: 36px 32px; }
+    .hero-c .left {
+      border-right: 1px solid var(--hairline-strong);
+      display: flex;
+      align-items: center;
+      gap: 24px;
+    }
+    .hero-c .left .title-stack {
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 800;
+      font-size: 44px;
+      line-height: 0.95;
+      letter-spacing: -0.04em;
+      color: var(--text-strong);
+    }
+    .hero-c .left .title-stack .row-2 { color: var(--accent); }
+    .hero-c .right {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 14px;
+    }
+    .hero-c .right .row {
+      display: grid;
+      grid-template-columns: 88px 1fr;
+      gap: 12px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+    }
+    .hero-c .right .row .k { color: var(--muted); }
+    .hero-c .right .row .v { color: var(--text-strong); }
+    .hero-c .right .row .v.gain { color: var(--gain); }
+
+    /* ─── Header bar replacement ────────────────────────────── */
+    .topbar {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 10px 16px;
+      border: 1px solid var(--hairline-strong);
+      background: var(--bg);
+    }
+    .topbar .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 800;
+      font-size: 13px;
+      letter-spacing: -0.02em;
+      color: var(--text-strong);
+    }
+    .topbar .brand .dot { color: var(--accent); }
+    .topbar nav {
+      display: flex;
+      gap: 4px;
+      margin-left: 16px;
+    }
+    .topbar nav a {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--muted);
+      text-decoration: none;
+      padding: 4px 8px;
+      border-radius: 3px;
+    }
+    .topbar nav a:hover { color: var(--text-strong); background: var(--hairline); }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <h1>MarketTrader · Logo exploration</h1>
+    <p class="lede">
+      Three mark concepts plus header sizes. Pick the one that feels most "trading desk" — they all live in the existing terminal aesthetic (Geist Mono swapped for JetBrains Mono here because Geist isn't loaded; the final assets ship as SVG with the project's real Geist font).
+    </p>
+
+    <!-- ───────────────────────────── variant A ───────────────────────────── -->
+    <section>
+      <div class="label">
+        <span class="tag">[A]</span>
+        <span>candlestick monogram + serif-ish mono wordmark</span>
+        <span class="rule"></span>
+        <span>readme hero · ~1280 × 320</span>
+      </div>
+      <div class="frame">
+        <div class="hero">
+          <div class="mark">
+            <!-- Two opposing candlesticks: green up + red down, locked into a tight monogram -->
+            <svg width="120" height="120" viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg" aria-label="MarketTrader mark">
+              <!-- subtle frame -->
+              <rect x="0.5" y="0.5" width="119" height="119" fill="none" stroke="#1d1f23" />
+              <!-- gridlines -->
+              <g stroke="#161719" stroke-width="1">
+                <line x1="30" y1="0" x2="30" y2="120"/>
+                <line x1="60" y1="0" x2="60" y2="120"/>
+                <line x1="90" y1="0" x2="90" y2="120"/>
+                <line x1="0" y1="30" x2="120" y2="30"/>
+                <line x1="0" y1="60" x2="120" y2="60"/>
+                <line x1="0" y1="90" x2="120" y2="90"/>
+              </g>
+              <!-- left candle (green up) -->
+              <line x1="40" y1="18" x2="40" y2="102" stroke="#10b981" stroke-width="2"/>
+              <rect x="32" y="34" width="16" height="48" fill="#10b981"/>
+              <!-- right candle (red down) -->
+              <line x1="80" y1="22" x2="80" y2="106" stroke="#ef4444" stroke-width="2"/>
+              <rect x="72" y="42" width="16" height="44" fill="#ef4444"/>
+              <!-- center accent: cyan crosshair connector -->
+              <line x1="40" y1="60" x2="80" y2="60" stroke="#67e8f9" stroke-width="1.5"/>
+              <circle cx="60" cy="60" r="2.5" fill="#67e8f9"/>
+            </svg>
+          </div>
+          <div class="word">
+            <div class="title">MARKET<span class="dot">·</span>TRADER</div>
+            <div class="tagline">Real prices · virtual stakes · friends competing live</div>
+          </div>
+          <div class="meta">
+            <div class="row"><span>v0.0.1</span><span>·</span><span class="accent">live</span></div>
+            <div class="row"><span class="gain">+7.10%</span><span class="loss">−1.12%</span></div>
+            <div class="row"><span>OPEN ↗</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ───────────────────────────── variant B ───────────────────────────── -->
+    <section>
+      <div class="label">
+        <span class="tag">[B]</span>
+        <span>oversized wordmark + ticker-tape footer</span>
+        <span class="rule"></span>
+        <span>readme hero · ~1280 × 320</span>
+      </div>
+      <div class="frame">
+        <div class="hero-b">
+          <div class="top">
+            <!-- Mark variant: single tall candle wick acting as an exclamation -->
+            <svg width="84" height="160" viewBox="0 0 84 160" xmlns="http://www.w3.org/2000/svg" aria-label="MarketTrader mark">
+              <rect x="0.5" y="0.5" width="83" height="159" fill="none" stroke="#1d1f23"/>
+              <g stroke="#161719" stroke-width="1">
+                <line x1="0" y1="40" x2="84" y2="40"/>
+                <line x1="0" y1="80" x2="84" y2="80"/>
+                <line x1="0" y1="120" x2="84" y2="120"/>
+              </g>
+              <!-- candle wick top -->
+              <line x1="42" y1="12" x2="42" y2="148" stroke="#67e8f9" stroke-width="2"/>
+              <!-- two stacked bodies: green over red -->
+              <rect x="28" y="28" width="28" height="48" fill="#10b981"/>
+              <rect x="28" y="84" width="28" height="48" fill="#ef4444"/>
+              <!-- divider hairline (volume) -->
+              <line x1="28" y1="80" x2="56" y2="80" stroke="#0a0b0d" stroke-width="2"/>
+            </svg>
+            <div>
+              <div class="title">Market<span class="accent">Trader</span></div>
+              <div class="sub">Tournament stock-trading · real prices, virtual stakes</div>
+            </div>
+          </div>
+          <div class="tape">
+            <span class="item"><span class="sym">^GSPC</span><span class="pct gain">+0.61%</span></span>
+            <span class="sep">·</span>
+            <span class="item"><span class="sym">AAPL</span><span class="pct gain">+0.82%</span></span>
+            <span class="sep">·</span>
+            <span class="item"><span class="sym">MSFT</span><span class="pct loss">−0.81%</span></span>
+            <span class="sep">·</span>
+            <span class="item"><span class="sym">NVDA</span><span class="pct loss">−1.05%</span></span>
+            <span class="sep">·</span>
+            <span class="item"><span class="sym">TSLA</span><span class="pct gain">+1.78%</span></span>
+            <span class="sep">·</span>
+            <span class="item"><span class="sym">META</span><span class="pct gain">+3.74%</span></span>
+            <span class="sep">·</span>
+            <span class="item"><span class="sym">GOOGL</span><span class="pct loss">−0.01%</span></span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ───────────────────────────── variant C ───────────────────────────── -->
+    <section>
+      <div class="label">
+        <span class="tag">[C]</span>
+        <span>split-pane brutalist · stacked wordmark + data card</span>
+        <span class="rule"></span>
+        <span>readme hero · ~1280 × 280</span>
+      </div>
+      <div class="frame" style="padding: 0; background: transparent;">
+        <div class="hero-c">
+          <div class="left">
+            <svg width="100" height="180" viewBox="0 0 100 180" xmlns="http://www.w3.org/2000/svg" aria-label="MarketTrader mark">
+              <!-- a tall "candlestick scale" mark: 4 candles, last one in cyan -->
+              <g stroke="#161719" stroke-width="1">
+                <line x1="0" y1="45" x2="100" y2="45"/>
+                <line x1="0" y1="90" x2="100" y2="90"/>
+                <line x1="0" y1="135" x2="100" y2="135"/>
+              </g>
+              <!-- candle 1 -->
+              <line x1="18" y1="20" x2="18" y2="86" stroke="#10b981" stroke-width="2"/>
+              <rect x="12" y="32" width="12" height="42" fill="#10b981"/>
+              <!-- candle 2 -->
+              <line x1="42" y1="40" x2="42" y2="120" stroke="#ef4444" stroke-width="2"/>
+              <rect x="36" y="52" width="12" height="58" fill="#ef4444"/>
+              <!-- candle 3 -->
+              <line x1="66" y1="58" x2="66" y2="140" stroke="#10b981" stroke-width="2"/>
+              <rect x="60" y="70" width="12" height="58" fill="#10b981"/>
+              <!-- candle 4: cyan accent -->
+              <line x1="90" y1="14" x2="90" y2="166" stroke="#67e8f9" stroke-width="2"/>
+              <rect x="84" y="24" width="12" height="130" fill="#67e8f9"/>
+            </svg>
+            <div class="title-stack">
+              MARKET<br/><span class="row-2">TRADER</span>
+            </div>
+          </div>
+          <div class="right">
+            <div class="row"><span class="k">Mode</span><span class="v">tournament</span></div>
+            <div class="row"><span class="k">Prices</span><span class="v">live · yahoo finance</span></div>
+            <div class="row"><span class="k">Stakes</span><span class="v">virtual cash</span></div>
+            <div class="row"><span class="k">Players</span><span class="v">2–12 per game</span></div>
+            <div class="row"><span class="k">Status</span><span class="v gain">active</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ───────────────────────────── header bar sizes ───────────────────────────── -->
+    <section>
+      <div class="label">
+        <span class="tag">app</span>
+        <span>topbar derivative — chooses one mark scaled to 18px</span>
+        <span class="rule"></span>
+      </div>
+      <div class="frame compact" style="padding: 14px; background: transparent;">
+        <div class="topbar">
+          <div class="brand">
+            <svg width="20" height="20" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" aria-label="MarketTrader mark">
+              <rect x="0.5" y="0.5" width="19" height="19" fill="none" stroke="#1d1f23"/>
+              <rect x="4" y="5" width="4" height="10" fill="#10b981"/>
+              <line x1="6" y1="3" x2="6" y2="17" stroke="#10b981" stroke-width="1"/>
+              <rect x="12" y="7" width="4" height="8" fill="#ef4444"/>
+              <line x1="14" y1="5" x2="14" y2="17" stroke="#ef4444" stroke-width="1"/>
+              <line x1="6" y1="10" x2="14" y2="10" stroke="#67e8f9" stroke-width="1"/>
+            </svg>
+            <span>Market<span class="dot">·</span>Trader</span>
+          </div>
+          <nav>
+            <a href="#">Games</a>
+            <a href="#">Achievements</a>
+            <a href="#">Admin</a>
+          </nav>
+        </div>
+      </div>
+    </section>
+
+    <!-- ───────────────────────────── favicon / square ───────────────────────────── -->
+    <section>
+      <div class="label">
+        <span class="tag">favicon</span>
+        <span>square icon — 32, 64, 128, 256px renderings of the same mark</span>
+        <span class="rule"></span>
+      </div>
+      <div class="swatches">
+        <div class="swatch">
+          <svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+            <rect x="0.5" y="0.5" width="31" height="31" fill="#0c0d10" stroke="#1d1f23"/>
+            <rect x="7" y="8" width="6" height="16" fill="#10b981"/>
+            <line x1="10" y1="4" x2="10" y2="28" stroke="#10b981" stroke-width="1.4"/>
+            <rect x="19" y="12" width="6" height="12" fill="#ef4444"/>
+            <line x1="22" y1="6" x2="22" y2="28" stroke="#ef4444" stroke-width="1.4"/>
+            <line x1="10" y1="16" x2="22" y2="16" stroke="#67e8f9" stroke-width="1.4"/>
+          </svg>
+        </div>
+        <div class="swatch">
+          <svg width="64" height="64" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+            <rect x="0.5" y="0.5" width="31" height="31" fill="#0c0d10" stroke="#1d1f23"/>
+            <rect x="7" y="8" width="6" height="16" fill="#10b981"/>
+            <line x1="10" y1="4" x2="10" y2="28" stroke="#10b981" stroke-width="1.4"/>
+            <rect x="19" y="12" width="6" height="12" fill="#ef4444"/>
+            <line x1="22" y1="6" x2="22" y2="28" stroke="#ef4444" stroke-width="1.4"/>
+            <line x1="10" y1="16" x2="22" y2="16" stroke="#67e8f9" stroke-width="1.4"/>
+          </svg>
+        </div>
+        <div class="swatch">
+          <svg width="128" height="128" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+            <rect x="0.5" y="0.5" width="31" height="31" fill="#0c0d10" stroke="#1d1f23"/>
+            <rect x="7" y="8" width="6" height="16" fill="#10b981"/>
+            <line x1="10" y1="4" x2="10" y2="28" stroke="#10b981" stroke-width="1.4"/>
+            <rect x="19" y="12" width="6" height="12" fill="#ef4444"/>
+            <line x1="22" y1="6" x2="22" y2="28" stroke="#ef4444" stroke-width="1.4"/>
+            <line x1="10" y1="16" x2="22" y2="16" stroke="#67e8f9" stroke-width="1.4"/>
+          </svg>
+        </div>
+        <div class="swatch">
+          <svg width="256" height="256" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+            <rect x="0.5" y="0.5" width="31" height="31" fill="#0c0d10" stroke="#1d1f23"/>
+            <rect x="7" y="8" width="6" height="16" fill="#10b981"/>
+            <line x1="10" y1="4" x2="10" y2="28" stroke="#10b981" stroke-width="1.4"/>
+            <rect x="19" y="12" width="6" height="12" fill="#ef4444"/>
+            <line x1="22" y1="6" x2="22" y2="28" stroke="#ef4444" stroke-width="1.4"/>
+            <line x1="10" y1="16" x2="22" y2="16" stroke="#67e8f9" stroke-width="1.4"/>
+          </svg>
+        </div>
+      </div>
+    </section>
+  </div>
+</body>
+</html>

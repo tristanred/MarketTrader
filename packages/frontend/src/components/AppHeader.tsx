@@ -1,6 +1,7 @@
 import { NavLink, useNavigate, useParams } from 'react-router-dom';
 import { Moon, Sun } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { BrandMark } from '@/components/BrandMark';
 import { useAuthStore, useIsAdmin } from '@/stores/authStore';
 import { useLogout } from '@/api/auth';
 import { useTheme } from '@/stores/themeStore';
@@ -34,7 +35,7 @@ export function AppHeader() {
           end
           className="flex items-center gap-2 text-sm font-bold tracking-[-0.02em] text-text-strong"
         >
-          <span className="inline-block h-2 w-2 rounded-[2px] bg-accent" aria-hidden />
+          <BrandMark size={18} />
           MarketTrader
         </NavLink>
         <nav className="flex items-center gap-1">

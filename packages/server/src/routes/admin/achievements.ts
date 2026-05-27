@@ -8,6 +8,7 @@ import { recordAdminAction } from '../../services/admin-audit.js';
 import type { AchievementEngine } from '../../achievements/engine.js';
 import type { SystemSettingsService } from '../../services/system-settings.js';
 import { getAdminAchievementsForGame } from '../../services/achievement.js';
+import type { AchievementDefinitionDTO } from '@markettrader/shared';
 
 const enabledBody = z.object({ enabled: z.boolean() });
 const progressBody = z.object({ progress: z.number().int().nonnegative() });
@@ -33,6 +34,35 @@ export function adminAchievementsRoutes(
   return async function (rawApp: FastifyInstance): Promise<void> {
     const app = rawApp.withTypeProvider<ZodTypeProvider>();
     const { achievementProgress, gameAchievementOverrides, gamePlayers } = schema;
+
+    // ── Global definitions list (system-page view) ────────────────────────────
+    app.get(
+      '/admin/achievements',
+      {
+        onRequest: rawApp.requireAdmin,
+        schema: {
+          tags: ['Admin'],
+          summary: 'List every achievement definition with its global enabled state.',
+          security: [{ bearerAuth: [] }],
+        },
+      },
+      async (_request, reply) => {
+        const disabled = await settings.getDisabledAchievements();
+        const definitions: AchievementDefinitionDTO[] = engine
+          .listDefinitions()
+          .map((d) => ({
+            key: d.key,
+            name: d.name,
+            description: d.description,
+            ...(d.category !== undefined && { category: d.category }),
+            rarity: d.rarity,
+            icon: d.icon,
+            target: d.target,
+            enabled: !disabled.has(d.key),
+          }));
+        return reply.status(200).send({ definitions });
+      },
+    );
 
     // ── List ──────────────────────────────────────────────────────────────────
     app.get(
@@ -79,9 +109,13 @@ export function adminAchievementsRoutes(
         await ensureRow(db, gameId, gamePlayerId, key, def.target);
         const before = await readRow(db, gamePlayerId, key);
         const now = new Date().toISOString();
+        // Preserve original unlock timestamp when re-unlocking an already-
+        // unlocked row, so the audit trail and player-visible time match the
+        // first unlock event.
+        const unlockedAt = before?.unlockedAt ?? now;
         await db
           .update(achievementProgress)
-          .set({ progress: def.target, unlockedAt: now, updatedAt: now })
+          .set({ progress: def.target, unlockedAt, updatedAt: now })
           .where(
             and(
               eq(achievementProgress.gamePlayerId, gamePlayerId),
@@ -89,6 +123,9 @@ export function adminAchievementsRoutes(
             ),
           );
         const after = await readRow(db, gamePlayerId, key);
+        if (before?.unlockedAt == null && after?.unlockedAt != null) {
+          engine.broadcastAchievementUnlock(gameId, gamePlayerId, key, after.unlockedAt);
+        }
         await recordAdminAction(db, {
           adminUserId: request.user.id,
           action: 'achievement.unlock',
@@ -166,11 +203,14 @@ export function adminAchievementsRoutes(
         const before = await readRow(db, gamePlayerId, key);
         const shouldUnlock = progress >= def.target;
         const now = new Date().toISOString();
+        // Preserve original unlock timestamp on a re-unlock; null when the
+        // new progress falls below target.
+        const unlockedAt = shouldUnlock ? (before?.unlockedAt ?? now) : null;
         await db
           .update(achievementProgress)
           .set({
             progress,
-            unlockedAt: shouldUnlock ? now : null,
+            unlockedAt,
             updatedAt: now,
           })
           .where(
@@ -180,6 +220,9 @@ export function adminAchievementsRoutes(
             ),
           );
         const after = await readRow(db, gamePlayerId, key);
+        if (before?.unlockedAt == null && after?.unlockedAt != null) {
+          engine.broadcastAchievementUnlock(gameId, gamePlayerId, key, after.unlockedAt);
+        }
         await recordAdminAction(db, {
           adminUserId: request.user.id,
           action: 'achievement.set_progress',

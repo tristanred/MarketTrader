@@ -13,6 +13,10 @@ import { toast } from '@/components/ui/toast';
 import { ConfirmDialog } from '@/components/admin/ConfirmDialog';
 import { toastApiError } from '@/lib/toastApiError';
 import { TickerTapeEditor } from '@/components/admin/TickerTapeEditor';
+import {
+  useAdminGlobalAchievements,
+  useAdminSetGlobalAchievementEnabled,
+} from '@/api/admin/achievements';
 
 export function AdminSystemPage() {
   const stats = useAdminStats();
@@ -139,6 +143,8 @@ export function AdminSystemPage() {
         </CardContent>
       </Card>
 
+      <GlobalAchievementsCard />
+
       <TickerTapeEditor />
 
       <ConfirmDialog
@@ -160,5 +166,51 @@ function Stat({ label, value }: { label: string; value: number }) {
       <div className="text-xs text-muted-foreground">{label}</div>
       <div className="text-lg font-medium">{value}</div>
     </div>
+  );
+}
+
+function GlobalAchievementsCard() {
+  const list = useAdminGlobalAchievements();
+  const setEnabled = useAdminSetGlobalAchievementEnabled();
+
+  async function toggle(key: string, enabled: boolean) {
+    try {
+      await setEnabled.mutateAsync({ key, enabled });
+      toast({
+        title: `${enabled ? 'Enabled' : 'Disabled'} globally`,
+        variant: 'success',
+      });
+    } catch (err) {
+      toastApiError(err, 'Toggle failed');
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Achievement availability (global)</CardTitle>
+      </CardHeader>
+      <CardContent>
+        {list.isLoading && <Skeleton className="h-24 w-full" />}
+        {list.data && (
+          <div className="grid grid-cols-1 gap-1 sm:grid-cols-2">
+            {list.data.definitions
+              .slice()
+              .sort((a, b) => a.name.localeCompare(b.name))
+              .map((d) => (
+                <label key={d.key} className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={d.enabled}
+                    disabled={setEnabled.isPending}
+                    onChange={(e) => void toggle(d.key, e.target.checked)}
+                  />
+                  <span>{d.name}</span>
+                </label>
+              ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }

@@ -2,15 +2,95 @@
 
 A virtual stock trading tournament platform. Groups of friends create a **game**, start with equal virtual cash, and compete to build the most valuable portfolio by trading real stocks at real market prices. A real-time leaderboard tracks rankings throughout the game.
 
+![MarketTrader arena view](docs/screenshots/hero.png)
+
 ---
 
 ## What It Does
 
-- **Create a game** — set a start/end date and a starting cash balance for all players
-- **Join and compete** — invite friends; everyone starts with the same amount of virtual money
-- **Trade real stocks** — buy and sell shares at live market prices (via Yahoo Finance by default)
-- **Live leaderboard** — real-time WebSocket updates show who's winning as prices move
-- **Fair rules** — no short selling, no fractional shares, trades only execute when the game is active
+Create a game, invite friends, and trade real stocks at live market prices with virtual cash. The platform tracks portfolio value continuously, broadcasts every leaderboard change over WebSocket, and rewards consistent (or chaotic) play with [43 unlockable achievements](docs/achievements.md) across six categories.
+
+Behind the trading desk: market / limit / stop / stop-limit / bracket orders, GTC time-in-force, watchlists, historical sparklines, light/dark themes, and a full admin panel for operators.
+
+---
+
+## Features
+
+**Authentication & users**
+- Registration and login with JWT access tokens + HttpOnly refresh cookies
+- Admin role with elevated permissions across users, games, trades, and audits
+
+**Games**
+- Create, join, and list tournaments; status auto-recomputed (`pending` / `active` / `ended`)
+- Per-game configurable rules: short selling, allowed order types, starting balance, achievements on/off
+- Public "featured games" leaderboards visible without an account
+
+**Trading**
+- Five order types: market, limit, stop, stop-limit, bracket (take-profit + stop-loss legs)
+- Day or GTC time-in-force; working-order queue with cancel
+- Pending-trade and trade-history endpoints; portfolio snapshots updated in real time
+
+**Market data**
+- Pluggable `StockProvider` interface (Yahoo Finance default; swap to Alpaca or Polygon via `STOCK_PROVIDER`)
+- Live quotes (price, change, change %), OHLC bars, market status (open / closed / pre / after)
+- Symbol search and a per-symbol detail page
+
+**Real-time arena**
+- Three-pane responsive grid: portfolio, ticker tape, quote header, TradingView chart, holdings, watchlist, activity, leaderboard, symbol search
+- Live WebSocket updates for prices, leaderboard ranks, and trade fills
+- Collapses to single column on narrow viewports
+
+**Leaderboard**
+- Live ranking by total portfolio value
+- Per-player sparklines with 1D / 5D / 10D / ALL ranges
+- Full leaderboard page with race chart, podium, and detailed standings
+
+**Achievements**
+- 43 unlockable badges across six categories (Trading, P&L, Portfolio, Standing, Behavior, Finale) with five rarity tiers from common to legendary
+- Two-beat unlock toast with rarity-colored glow, ring pulse, icon flare
+- Locked achievements are hidden from the player so unlocks stay surprising — only an "N more locked" tile reveals the count
+- See [docs/achievements.md](docs/achievements.md) for the full catalogue with preview images
+
+**Activity feed**
+- Merged chronological view of trades and peer achievement unlocks in the arena's right rail
+- Persists across reloads via WebSocket connect-time replay
+- Idempotent merge so REST seeds and live broadcasts never duplicate
+
+**Admin panel**
+- User and game CRUD; portfolio snapshot inspection; trade audit log
+- Per-game and platform-wide enable/disable per achievement
+- Force-unlock, reset, and set-progress per player + achievement (broadcasts a live toast to the target)
+- System view with WebSocket connection count, row counts per table, and price-cache controls
+
+**Resilient transport**
+- WebSocket auto-reconnect with exponential backoff and full unacked-unlock replay
+- REST seeds dedupe against live WebSocket broadcasts via composite keys
+
+**UX polish**
+- Light and dark theme (toggle persisted to localStorage)
+- `prefers-reduced-motion` honored across every animation
+- Geist Sans + Geist Mono with tabular numerals so currency columns line up
+
+---
+
+## Tour
+
+> Screenshots may lag behind the latest UI — `pnpm dev` and click around to see the live version.
+
+### Arena
+![Arena: portfolio, chart, holdings, watchlist, leaderboard, activity](docs/screenshots/arena.png)
+
+*The main trading view. Portfolio on the left, TradingView chart and holdings down the middle, watchlist and activity feed on the right, live leaderboard underneath.*
+
+### Leaderboard
+![Leaderboard: race chart, podium, standings, sparklines](docs/screenshots/leaderboard.png)
+
+*Race chart traces every player's portfolio value over the game's history. The podium pins the top three; the standings table below carries inline sparklines per player.*
+
+### Achievements
+![Achievements page: rarity-colored cards plus a locked-count placeholder](docs/screenshots/achievements.png)
+
+*Unlocked cards only — locked achievements stay hidden. The trailing "N more locked" tile tells the player there's more to discover without spoiling the surprise.*
 
 ---
 
@@ -102,6 +182,15 @@ pnpm lint        # All packages
 pnpm build       # Full production build
 ```
 
+### Regenerating achievement docs
+
+```bash
+# Requires `pnpm dev` running and an admin account (defaults: tristan / abcd1234).
+pnpm docs:achievements
+```
+
+Re-captures one preview PNG per achievement and rewrites `docs/achievements.md`.
+
 ---
 
 ## Environment Variables
@@ -118,14 +207,8 @@ pnpm build       # Full production build
 
 ---
 
-## Project Status
+## Where to Learn More
 
-**Current:** Scaffolding complete — monorepo structure, shared types, server skeleton, DB schema, frontend skeleton, Docker, CI.
-
-**Up next:**
-- Auth API (`POST /auth/register`, `POST /auth/login`, JWT middleware)
-- Game & trading API (create game, join, place trades, portfolio)
-- WebSocket server (real-time price broadcasting, leaderboard push)
-- Frontend features (auth pages, game lobby, trading UI, TradingView charts)
-
-See `docs/design.md` for the full feature roadmap and `docs/technical-decisions.md` for ADR entries.
+- [`docs/achievements.md`](docs/achievements.md) — every achievement with a preview image, rarity, and target
+- [`docs/design.md`](docs/design.md) — feature roadmap and data-model design
+- [`docs/technical-decisions.md`](docs/technical-decisions.md) — ADR log; read before swapping a library or pattern

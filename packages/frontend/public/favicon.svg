@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  MarketTrader brand mark — candlestick monogram.
+  Used at every size (favicon → README hero → app topbar). Inline this SVG
+  or reference it; colors are hard-coded so it survives outside CSS-variable
+  contexts. See tools/logo-assets/README.md to regenerate.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="MarketTrader">
+  <title>MarketTrader</title>
+  <!-- subtle terminal frame -->
+  <rect x="1" y="1" width="62" height="62" rx="3" fill="#0c0d10" stroke="#1d1f23" stroke-width="1"/>
+  <!-- gridlines -->
+  <g stroke="#161719" stroke-width="1">
+    <line x1="0" y1="22" x2="64" y2="22"/>
+    <line x1="0" y1="42" x2="64" y2="42"/>
+  </g>
+  <!-- left candle (green / up) -->
+  <line x1="21" y1="10" x2="21" y2="54" stroke="#10b981" stroke-width="2"/>
+  <rect x="16" y="18" width="10" height="28" fill="#10b981"/>
+  <!-- right candle (red / down) -->
+  <line x1="43" y1="14" x2="43" y2="56" stroke="#ef4444" stroke-width="2"/>
+  <rect x="38" y="22" width="10" height="24" fill="#ef4444"/>
+  <!-- cyan crosshair connector -->
+  <line x1="21" y1="32" x2="43" y2="32" stroke="#67e8f9" stroke-width="2"/>
+  <circle cx="32" cy="32" r="2.4" fill="#67e8f9"/>
+</svg>

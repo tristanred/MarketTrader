@@ -179,12 +179,20 @@
     animation: pulse-dot 1.6s ease-in-out infinite;
   }
 
-  .rar-common    { --rarity: var(--r-common);    --rarity-glow: var(--r-common-glow); }
-  .rar-uncommon  { --rarity: var(--r-uncommon);  --rarity-glow: var(--r-uncommon-glow); }
-  .rar-rare      { --rarity: var(--r-rare);      --rarity-glow: var(--r-rare-glow); }
-  .rar-epic      { --rarity: var(--r-epic);      --rarity-glow: var(--r-epic-glow); }
-  .rar-legendary { --rarity: var(--r-legendary); --rarity-glow: var(--r-legendary-glow); }
 }
+
+/*
+ * Rarity helper classes: bind the `--rarity` / `--rarity-glow` custom
+ * properties for downstream component styles. Built dynamically via
+ * `rarityClass(rarity) → \`rar-${rarity}\`` so Tailwind's content scanner
+ * never sees the literal class names; placing them OUTSIDE any
+ * `@layer utilities` block prevents the JIT from purging them.
+ */
+.rar-common    { --rarity: var(--r-common);    --rarity-glow: var(--r-common-glow); }
+.rar-uncommon  { --rarity: var(--r-uncommon);  --rarity-glow: var(--r-uncommon-glow); }
+.rar-rare      { --rarity: var(--r-rare);      --rarity-glow: var(--r-rare-glow); }
+.rar-epic      { --rarity: var(--r-epic);      --rarity-glow: var(--r-epic-glow); }
+.rar-legendary { --rarity: var(--r-legendary); --rarity-glow: var(--r-legendary-glow); }
 
 @layer components {
   /*

@@ -78,6 +78,13 @@ const AdminAuditPage = lazy(() =>
   import('@/pages/admin/AdminAuditPage').then((m) => ({ default: m.AdminAuditPage })),
 );
 
+// Public visual sandbox for the achievement toast. Used by the docs
+// generation script to capture per-achievement preview images; not linked
+// from any UI surface.
+const AchievementToastPreviewPage = lazy(() =>
+  import('@/pages/AchievementToastPreviewPage').then((m) => ({ default: m.AchievementToastPreviewPage })),
+);
+
 function RouteLoader() {
   return (
     <main className="mx-auto max-w-6xl p-6">
@@ -114,6 +121,7 @@ function App() {
                 </PublicOnly>
               }
             />
+            <Route path="/__toast-preview" element={<AchievementToastPreviewPage />} />
             <Route
               element={
                 <ProtectedRoute>

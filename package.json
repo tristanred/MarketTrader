@@ -11,7 +11,8 @@
     "typecheck": "pnpm -r typecheck",
     "lint": "pnpm -r lint",
     "e2e": "pnpm --filter frontend e2e",
-    "seed:history": "pnpm --filter @markettrader/tools-seed-game-history start"
+    "seed:history": "pnpm --filter @markettrader/tools-seed-game-history start",
+    "docs:achievements": "pnpm --filter @markettrader/frontend exec node ./scripts/generate-achievement-docs.mjs"
   },
   "pnpm": {
     "overrides": {

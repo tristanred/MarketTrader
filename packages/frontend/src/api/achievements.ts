@@ -2,17 +2,24 @@ import { useQuery } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
 import type { AchievementDefinitionDTO, AchievementProgressDTO } from '@markettrader/shared';
 
-/** Server payload for `GET /games/:gameId/achievements`. */
+/**
+ * Server payload for `GET /games/:gameId/achievements`. `definitions`
+ * only includes definitions that at least one player has unlocked
+ * (locked metadata is never sent). `totalEnabledCount` is the game's
+ * full enabled denominator for the `X / Y unlocked` UI.
+ */
 export interface GameAchievementsResponse {
   definitions: AchievementDefinitionDTO[];
-  /** Keyed by gamePlayerId. Each player has one entry per definition they've touched. */
+  /** Keyed by gamePlayerId. Only carries unlock rows for visible definitions. */
   progress: Record<string, AchievementProgressDTO[]>;
+  totalEnabledCount: number;
 }
 
 /** Server payload for the per-player variant. */
 export interface PlayerAchievementsResponse {
   definitions: AchievementDefinitionDTO[];
   progress: AchievementProgressDTO[];
+  totalEnabledCount: number;
 }
 
 export const achievementKeys = {

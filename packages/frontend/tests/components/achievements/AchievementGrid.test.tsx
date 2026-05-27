@@ -15,7 +15,7 @@ const defs: AchievementDefinitionDTO[] = [
 function renderGrid() {
   return render(
     <MemoryRouter>
-      <AchievementGrid definitions={defs} progress={[]} />
+      <AchievementGrid definitions={defs} progress={[]} totalEnabledCount={defs.length} />
     </MemoryRouter>,
   );
 }

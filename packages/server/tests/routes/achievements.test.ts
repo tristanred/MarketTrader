@@ -54,16 +54,22 @@ describe('GET /games/:id/achievements', () => {
     });
     expect(res.statusCode).toBe(200);
     const body = res.json<{
-      definitions: Array<{ key: string }>;
+      definitions: Array<{ key: string; rarity: string; icon: string }>;
       progress: Record<string, Array<{ achievementKey: string; unlockedAt: string | null }>>;
+      totalEnabledCount: number;
     }>();
-    expect(body.definitions.map((d) => d.key)).toEqual(
-      expect.arrayContaining(['first-trade', 'ten-buys', 'rock-bottom']),
-    );
+    // The player view only exposes definitions someone has actually unlocked
+    // (locked-and-untouched ones are hidden from the wire), so we assert
+    // first-trade is present and that locked definitions are NOT leaked.
+    const keys = body.definitions.map((d) => d.key);
+    expect(keys).toContain('first-trade');
+    expect(keys).not.toContain('ten-buys');
+    expect(keys).not.toContain('rock-bottom');
     expect(body.definitions[0]).toMatchObject({
       rarity: expect.stringMatching(/^(common|uncommon|rare|epic|legendary)$/),
       icon: expect.any(String),
     });
+    expect(body.totalEnabledCount).toBeGreaterThan(0);
     const flat = Object.values(body.progress).flat();
     const firstTrade = flat.find((p) => p.achievementKey === 'first-trade');
     expect(firstTrade?.unlockedAt).not.toBeNull();

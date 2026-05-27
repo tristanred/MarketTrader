@@ -156,7 +156,9 @@ describe('GameDetailPage', () => {
     expect(screen.getByRole('button', { name: /tech/i })).toBeInTheDocument();
     // getAllByText because the panel also shows "No activity yet."
     expect(screen.getAllByText(/activity/i).length).toBeGreaterThan(0);
-    expect(screen.getByRole('searchbox')).toBeInTheDocument();
+    // Two SymbolSearchPanel instances render (`lg:hidden` and `hidden lg:block`);
+    // jsdom ignores responsive utilities so both show up. Either is acceptable.
+    expect(screen.getAllByRole('searchbox').length).toBeGreaterThan(0);
   });
 
   it('seeds the SelectedSymbolContext with the first holding', () => {

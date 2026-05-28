@@ -4,6 +4,7 @@ import { schema } from '../db/index.js';
 import type { EventBus } from '../events/bus.js';
 import { computeLeaderboard, type LeaderboardEntry } from './leaderboard.js';
 import { applySnapshotStats } from './game-player-stats.js';
+import { updateMarks } from './position-high-water.js';
 
 /**
  * Persists one `portfolio_snapshots` row per player for the given game,
@@ -82,6 +83,38 @@ export async function recordSnapshot(
       totalPlayers,
       capturedAt,
     });
+  }
+
+  // Refresh per-holding peak/trough marks for every player in the batch.
+  // Uses the same cached prices as the leaderboard (no extra provider calls).
+  for (const r of rows) {
+    try {
+      const holdings = await db
+        .select({
+          symbol: schema.portfolios.symbol,
+          quantity: schema.portfolios.quantity,
+          avgCostBasis: schema.portfolios.avgCostBasis,
+          price: schema.stockPriceCache.price,
+        })
+        .from(schema.portfolios)
+        .leftJoin(schema.stockPriceCache, eq(schema.stockPriceCache.symbol, schema.portfolios.symbol))
+        .where(eq(schema.portfolios.gamePlayerId, r.gamePlayerId));
+      const markRows = holdings
+        .filter((h): h is typeof h & { price: number } => h.price != null)
+        .map((h) => ({
+          symbol: h.symbol,
+          currentPrice: Number(h.price),
+          quantity: h.quantity,
+          avgCostBasis: Number(h.avgCostBasis),
+        }));
+      if (markRows.length > 0) {
+        await updateMarks(db, r.gamePlayerId, markRows);
+      }
+    } catch {
+      // Marks are best-effort; a failure for one player must not block the
+      // snapshot.recorded broadcast or stop processing other players. Next
+      // tick will self-heal the missed update.
+    }
   }
 
   if (bus) {

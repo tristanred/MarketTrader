@@ -52,6 +52,7 @@ import hodl from './hodl.js';
 import roundTripper from './round-tripper.js';
 import diamondPlatedHands from './diamond-plated-hands.js';
 import buyHighSellLow from './buy-high-sell-low.js';
+import dollarMenu from './dollar-menu.js';
 
 /**
  * The full registry of code-defined achievements. Adding a new achievement is:
@@ -104,6 +105,7 @@ export const achievements: readonly AnyAchievementDefinition[] = [
   comebackKid,
   freeFall,
   // Behavior category
+  dollarMenu,
   paperHands,
   diamondHands,
   revengeTrade,

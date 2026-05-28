@@ -42,6 +42,8 @@ import podiumFinish from './podium-finish.js';
 import honourableMention from './honourable-mention.js';
 import woodenSpoon from './wooden-spoon.js';
 import wireToWire from './wire-to-wire.js';
+import achievementHorse from './achievement-horse.js';
+import sixSeven from './six-seven.js';
 
 /**
  * The full registry of code-defined achievements. Adding a new achievement is:
@@ -55,6 +57,7 @@ export const achievements: readonly AnyAchievementDefinition[] = [
   apprentice,
   dayTrader,
   marketMaker,
+  sixSeven,
   firstSale,
   sampler,
   globeTrotter,
@@ -98,4 +101,6 @@ export const achievements: readonly AnyAchievementDefinition[] = [
   honourableMention,
   woodenSpoon,
   wireToWire,
+  // Meta category
+  achievementHorse,
 ];

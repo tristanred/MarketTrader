@@ -12,7 +12,8 @@ export type DomainEvent =
   | PlayerJoinedEvent
   | EngineTickEvent
   | PositionClosedEvent
-  | HoldingsChangedEvent;
+  | HoldingsChangedEvent
+  | AchievementUnlockedEvent;
 
 export type DomainEventType = DomainEvent['type'];
 
@@ -111,4 +112,19 @@ export interface HoldingsChangedEvent {
   /** Cash ÷ total portfolio value. */
   cashRatio: number;
   changedAt: string;
+}
+
+/**
+ * Fired after an achievement transitions from locked to unlocked for a
+ * player. Emitted from the engine's unlock path (both natural progress
+ * completion and explicit `unlock()` calls) so meta-achievements can react
+ * to other unlocks. Handlers that respond to this event must guard against
+ * self-referential loops (e.g. skip when `achievementKey` is their own key).
+ */
+export interface AchievementUnlockedEvent {
+  type: 'achievement.unlocked';
+  gameId: string;
+  gamePlayerId: string;
+  achievementKey: string;
+  unlockedAt: string;
 }

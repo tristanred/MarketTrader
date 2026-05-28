@@ -47,6 +47,7 @@ import sixSeven from './six-seven.js';
 import sirThisIsAWendys from './sir-this-is-a-wendys.js';
 import taxLossHarvester from './tax-loss-harvester.js';
 import stonks from './stonks.js';
+import thisIsFine from './this-is-fine.js';
 
 /**
  * The full registry of code-defined achievements. Adding a new achievement is:
@@ -101,6 +102,7 @@ export const achievements: readonly AnyAchievementDefinition[] = [
   revengeTrade,
   fomo,
   stonks,
+  thisIsFine,
   // Finale category
   champion,
   podiumFinish,

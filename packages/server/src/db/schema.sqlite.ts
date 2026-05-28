@@ -465,6 +465,13 @@ export const gamePlayerStats = sqliteTable('game_player_stats', {
   shortestHoldMs: integer('shortest_hold_ms'),
   longestHoldMs: integer('longest_hold_ms'),
 
+  /** UTC calendar day (`YYYY-MM-DD`) the per-day trade counters apply to. Null until first trade. */
+  tradesUtcDate: text('trades_utc_date'),
+  /** Number of trades executed on `tradesUtcDate`. Resets at UTC day rollover. */
+  tradesToday: integer('trades_today').notNull().default(0),
+  /** Number of losing closed positions on `tradesUtcDate`. Resets at UTC day rollover. */
+  losingSellsToday: integer('losing_sells_today').notNull().default(0),
+
   updatedAt: text('updated_at')
     .default(sql`(datetime('now'))`)
     .notNull(),

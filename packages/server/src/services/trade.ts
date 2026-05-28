@@ -4,6 +4,7 @@ import { schema } from '../db/index.js';
 import type { TradeDirection, Trade } from '@markettrader/shared';
 import { TradeError } from '../providers/index.js';
 import { applyTradeStats, applyPositionCloseStats } from './game-player-stats.js';
+import { onPositionOpened } from './position-high-water.js';
 
 /**
  * Validates that a buy order can be filled given the player's current cash.
@@ -221,6 +222,14 @@ export async function executeTrade(db: Db, params: ExecuteTradeParams): Promise<
       } else {
         // Brand-new position — stamp openedAt so hold-duration metrics work.
         await tx.insert(portfolios).values({ gamePlayerId, symbol, quantity: newQty, avgCostBasis: newAvg, openedAt: executedAt });
+        await onPositionOpened(tx as unknown as Db, {
+          gamePlayerId,
+          symbol,
+          openedAt: executedAt,
+          currentPrice: price,
+          quantity: newQty,
+          avgCostBasis: newAvg,
+        });
       }
     } else if (!isResting) {
       if (newQty === 0) {
@@ -240,6 +249,7 @@ export async function executeTrade(db: Db, params: ExecuteTradeParams): Promise<
       symbol,
       quantity,
       price,
+      executedAt,
     });
 
     let trade: typeof trades.$inferSelect | undefined;
@@ -296,6 +306,7 @@ export async function executeTrade(db: Db, params: ExecuteTradeParams): Promise<
         realizedPnl,
         realizedPnlPct,
         holdDurationMs,
+        closedAt: trade.executedAt,
       });
     }
 

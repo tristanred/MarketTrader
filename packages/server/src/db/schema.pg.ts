@@ -2,6 +2,7 @@ import {
   pgTable,
   text,
   decimal,
+  real,
   integer,
   timestamp,
   pgEnum,
@@ -429,5 +430,34 @@ export const gamePlayerStats = pgTable('game_player_stats', {
   shortestHoldMs: integer('shortest_hold_ms'),
   longestHoldMs: integer('longest_hold_ms'),
 
+  /** UTC calendar day (`YYYY-MM-DD`) the per-day trade counters apply to. Null until first trade. */
+  tradesUtcDate: text('trades_utc_date'),
+  /** Number of trades executed on `tradesUtcDate`. Resets at UTC day rollover. */
+  tradesToday: integer('trades_today').notNull().default(0),
+  /** Number of losing closed positions on `tradesUtcDate`. Resets at UTC day rollover. */
+  losingSellsToday: integer('losing_sells_today').notNull().default(0),
+
   updatedAt: timestamp('updated_at', { mode: 'string' }).defaultNow().notNull(),
 });
+
+/**
+ * Per-(gamePlayerId, symbol) high-water marks since the most recent
+ * 0→positive open. Maintained by the snapshot pipeline with a
+ * skip-when-unchanged write. Consumed by behaviour/P&L achievements
+ * that need peak/trough observation while a position is open.
+ */
+export const positionHighWater = pgTable(
+  'position_high_water',
+  {
+    gamePlayerId: text('game_player_id')
+      .notNull()
+      .references(() => gamePlayers.id, { onDelete: 'cascade' }),
+    symbol: text('symbol').notNull(),
+    openedAt: timestamp('opened_at', { mode: 'string' }).notNull(),
+    peakValue: real('peak_value').notNull(),
+    peakPnlPct: real('peak_pnl_pct').notNull(),
+    troughPnlPct: real('trough_pnl_pct').notNull(),
+    updatedAt: timestamp('updated_at', { mode: 'string' }).defaultNow().notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.gamePlayerId, t.symbol] })],
+);

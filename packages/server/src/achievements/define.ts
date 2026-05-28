@@ -32,6 +32,10 @@ export interface AchievementContext {
   setProgress(gamePlayerId: string, value: number): Promise<void>;
   /** Reads the current row, creating a zeroed row if none exists yet. */
   getProgress(gamePlayerId: string): Promise<{ progress: number; target: number; unlockedAt: string | null }>;
+  /** All achievement keys registered in the engine. Order is registration order. */
+  allAchievementKeys(): readonly string[];
+  /** Effective per-game enable check for a single achievement key. */
+  isAchievementEnabled(gameId: string, key: string): Promise<boolean>;
 }
 
 /**

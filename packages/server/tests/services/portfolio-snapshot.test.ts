@@ -1,8 +1,10 @@
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
+import { and, eq } from 'drizzle-orm';
 import { createTestDb } from '../helpers/app.js';
 import { recordSnapshot, recordSnapshotsForActiveGames } from '../../src/services/portfolio-snapshot.js';
 import { schema } from '../../src/db/index.js';
-import { eq } from 'drizzle-orm';
+import type { Db } from '../../src/db/index.js';
+import { EventBus } from '../../src/events/bus.js';
 
 describe('recordSnapshot', () => {
   let db: Awaited<ReturnType<typeof createTestDb>>;
@@ -109,6 +111,69 @@ describe('recordSnapshot', () => {
       .from(schema.portfolioSnapshots)
       .where(eq(schema.portfolioSnapshots.gameId, emptyGame.id));
     expect(rows).toHaveLength(0);
+  });
+});
+
+describe('recordSnapshot – position_high_water integration', () => {
+  let db: Db;
+  beforeEach(async () => {
+    db = (await createTestDb()) as unknown as Db;
+  });
+
+  it('refreshes position_high_water marks for every player with holdings', async () => {
+    const [u] = await db
+      .insert(schema.users)
+      .values({ username: `u-${Math.random().toString(36).slice(2)}`, passwordHash: 'x' })
+      .returning();
+    const [g] = await db
+      .insert(schema.games)
+      .values({
+        name: 'g',
+        startDate: '2020-01-01T00:00:00.000Z',
+        endDate: '2099-01-01T00:00:00.000Z',
+        startingBalance: 10000,
+        createdBy: u!.id,
+        status: 'active',
+      })
+      .returning();
+    const [gp] = await db
+      .insert(schema.gamePlayers)
+      .values({ gameId: g!.id, userId: u!.id, cashBalance: 10000 })
+      .returning();
+    await db.insert(schema.portfolios).values({
+      gamePlayerId: gp!.id,
+      symbol: 'AAPL',
+      quantity: 5,
+      avgCostBasis: 100,
+      openedAt: '2026-05-27T00:00:00.000Z',
+    });
+    await db.insert(schema.stockPriceCache).values({
+      symbol: 'AAPL',
+      price: 120,
+      change: 0,
+      changePercent: 0,
+      fetchedAt: '2026-05-27T00:00:00.000Z',
+    });
+
+    await recordSnapshot(db, g!.id, new EventBus());
+
+    const [marks] = await db
+      .select({
+        peakPnlPct: schema.positionHighWater.peakPnlPct,
+        peakValue: schema.positionHighWater.peakValue,
+      })
+      .from(schema.positionHighWater)
+      .where(
+        and(
+          eq(schema.positionHighWater.gamePlayerId, gp!.id),
+          eq(schema.positionHighWater.symbol, 'AAPL'),
+        ),
+      );
+    expect(marks).toBeDefined();
+    // price 120, avgCostBasis 100 → pnlPct = 120/100 - 1 = 0.2
+    expect(marks!.peakPnlPct).toBeCloseTo(0.2);
+    // peak value = 120 × 5 = 600
+    expect(marks!.peakValue).toBe(600);
   });
 });
 

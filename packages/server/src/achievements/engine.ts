@@ -25,6 +25,7 @@ function gameIdOf(event: DomainEvent): string | null {
     case 'trade.executed':
     case 'position.closed':
     case 'holdings.changed':
+    case 'achievement.unlocked':
       return event.gameId;
   }
 }
@@ -131,6 +132,13 @@ export class AchievementEngine {
         unlockedAt,
       },
     });
+    void this.bus.emit({
+      type: 'achievement.unlocked',
+      gameId,
+      gamePlayerId,
+      achievementKey: def.key,
+      unlockedAt,
+    });
   }
 
   /** Look up a single definition by key, or undefined if not registered. */
@@ -224,6 +232,8 @@ export class AchievementEngine {
         const row = await this.ensureRow(def, scopedGameId, gamePlayerId);
         return { progress: row.progress, target: row.target, unlockedAt: row.unlockedAt };
       },
+      allAchievementKeys: () => [...this.defsByKey.keys()],
+      isAchievementEnabled: (gameId, key) => this.isEnabled(gameId, key),
     };
   }
 
@@ -322,6 +332,15 @@ export class AchievementEngine {
           icon: def.icon,
           unlockedAt: now,
         },
+      });
+      // Emit a domain event so meta-achievements (e.g. achievement-horse)
+      // can react. Fire-and-forget — the bus logs handler errors.
+      void this.bus.emit({
+        type: 'achievement.unlocked',
+        gameId,
+        gamePlayerId,
+        achievementKey: def.key,
+        unlockedAt: now,
       });
     }
   }

@@ -42,6 +42,21 @@ import podiumFinish from './podium-finish.js';
 import honourableMention from './honourable-mention.js';
 import woodenSpoon from './wooden-spoon.js';
 import wireToWire from './wire-to-wire.js';
+import achievementHorse from './achievement-horse.js';
+import sixSeven from './six-seven.js';
+import sirThisIsAWendys from './sir-this-is-a-wendys.js';
+import taxLossHarvester from './tax-loss-harvester.js';
+import stonks from './stonks.js';
+import thisIsFine from './this-is-fine.js';
+import hodl from './hodl.js';
+import roundTripper from './round-tripper.js';
+import diamondPlatedHands from './diamond-plated-hands.js';
+import buyHighSellLow from './buy-high-sell-low.js';
+import dollarMenu from './dollar-menu.js';
+import oneShareWonder from './one-share-wonder.js';
+import whale from './whale.js';
+import pennyStockEnjoyer from './penny-stock-enjoyer.js';
+import speedrunAnyPercent from './speedrun-any-percent.js';
 
 /**
  * The full registry of code-defined achievements. Adding a new achievement is:
@@ -55,6 +70,9 @@ export const achievements: readonly AnyAchievementDefinition[] = [
   apprentice,
   dayTrader,
   marketMaker,
+  sixSeven,
+  sirThisIsAWendys,
+  taxLossHarvester,
   firstSale,
   sampler,
   globeTrotter,
@@ -71,6 +89,10 @@ export const achievements: readonly AnyAchievementDefinition[] = [
   tripleThreat,
   underwater,
   phoenix,
+  roundTripper,
+  diamondPlatedHands,
+  buyHighSellLow,
+  speedrunAnyPercent,
   // Portfolio category
   diversified,
   indexFund,
@@ -88,14 +110,23 @@ export const achievements: readonly AnyAchievementDefinition[] = [
   comebackKid,
   freeFall,
   // Behavior category
+  dollarMenu,
+  oneShareWonder,
+  whale,
+  pennyStockEnjoyer,
   paperHands,
   diamondHands,
   revengeTrade,
   fomo,
+  stonks,
+  thisIsFine,
+  hodl,
   // Finale category
   champion,
   podiumFinish,
   honourableMention,
   woodenSpoon,
   wireToWire,
+  // Meta category
+  achievementHorse,
 ];

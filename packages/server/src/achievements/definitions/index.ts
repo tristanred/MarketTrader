@@ -53,6 +53,7 @@ import roundTripper from './round-tripper.js';
 import diamondPlatedHands from './diamond-plated-hands.js';
 import buyHighSellLow from './buy-high-sell-low.js';
 import dollarMenu from './dollar-menu.js';
+import oneShareWonder from './one-share-wonder.js';
 
 /**
  * The full registry of code-defined achievements. Adding a new achievement is:
@@ -106,6 +107,7 @@ export const achievements: readonly AnyAchievementDefinition[] = [
   freeFall,
   // Behavior category
   dollarMenu,
+  oneShareWonder,
   paperHands,
   diamondHands,
   revengeTrade,

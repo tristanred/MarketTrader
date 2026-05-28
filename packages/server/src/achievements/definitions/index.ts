@@ -51,6 +51,7 @@ import thisIsFine from './this-is-fine.js';
 import hodl from './hodl.js';
 import roundTripper from './round-tripper.js';
 import diamondPlatedHands from './diamond-plated-hands.js';
+import buyHighSellLow from './buy-high-sell-low.js';
 
 /**
  * The full registry of code-defined achievements. Adding a new achievement is:
@@ -85,6 +86,7 @@ export const achievements: readonly AnyAchievementDefinition[] = [
   phoenix,
   roundTripper,
   diamondPlatedHands,
+  buyHighSellLow,
   // Portfolio category
   diversified,
   indexFund,

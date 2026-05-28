@@ -297,6 +297,7 @@ export async function executeTrade(db: Db, params: ExecuteTradeParams): Promise<
         realizedPnl,
         realizedPnlPct,
         holdDurationMs,
+        closedAt: trade.executedAt,
       });
     }
 

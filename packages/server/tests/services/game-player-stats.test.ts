@@ -223,6 +223,7 @@ describe('applyPositionCloseStats', () => {
       realizedPnl: 50,
       realizedPnlPct: 0.5,
       holdDurationMs: 1000,
+      closedAt: '2026-05-27T01:00:00.000Z',
     });
     const [row] = await db
       .select()
@@ -246,12 +247,14 @@ describe('applyPositionCloseStats', () => {
       realizedPnl: 10,
       realizedPnlPct: 0.1,
       holdDurationMs: 500,
+      closedAt: '2026-05-27T01:00:00.000Z',
     });
     await applyPositionCloseStats(db as unknown as Db, {
       gamePlayerId: gpId,
       realizedPnl: -30,
       realizedPnlPct: -0.3,
       holdDurationMs: 2000,
+      closedAt: '2026-05-27T02:00:00.000Z',
     });
     const [row] = await db
       .select()
@@ -459,6 +462,36 @@ describe('applySnapshotStats', () => {
       .where(eq(schema.gamePlayerStats.gamePlayerId, gpId));
     expect(row!.consecutiveDaysAtRankOne).toBe(0);
     expect(row!.daysAtRankOne).toBe(2);
+  });
+});
+
+describe('applyPositionCloseStats per-day losing sells', () => {
+  it('increments losingSellsToday only for losing closes', async () => {
+    const db = await createTestDb();
+    const gpId = await seedGamePlayer(db as unknown as Db);
+    await applyPositionCloseStats(db as unknown as Db, { gamePlayerId: gpId, realizedPnl: -50, realizedPnlPct: -0.5, holdDurationMs: 60_000, closedAt: '2026-05-27T01:00:00.000Z' });
+    await applyPositionCloseStats(db as unknown as Db, { gamePlayerId: gpId, realizedPnl: 0, realizedPnlPct: 0, holdDurationMs: 60_000, closedAt: '2026-05-27T01:30:00.000Z' });
+    await applyPositionCloseStats(db as unknown as Db, { gamePlayerId: gpId, realizedPnl: 30, realizedPnlPct: 0.3, holdDurationMs: 60_000, closedAt: '2026-05-27T02:00:00.000Z' });
+    await applyPositionCloseStats(db as unknown as Db, { gamePlayerId: gpId, realizedPnl: -10, realizedPnlPct: -0.1, holdDurationMs: 60_000, closedAt: '2026-05-27T03:00:00.000Z' });
+    const [row] = await db
+      .select()
+      .from(schema.gamePlayerStats)
+      .where(eq(schema.gamePlayerStats.gamePlayerId, gpId));
+    expect(row!.tradesUtcDate).toBe('2026-05-27');
+    expect(row!.losingSellsToday).toBe(2);
+  });
+
+  it('rolls over losingSellsToday across UTC days', async () => {
+    const db = await createTestDb();
+    const gpId = await seedGamePlayer(db as unknown as Db);
+    await applyPositionCloseStats(db as unknown as Db, { gamePlayerId: gpId, realizedPnl: -10, realizedPnlPct: -0.1, holdDurationMs: 60_000, closedAt: '2026-05-27T01:00:00.000Z' });
+    await applyPositionCloseStats(db as unknown as Db, { gamePlayerId: gpId, realizedPnl: -10, realizedPnlPct: -0.1, holdDurationMs: 60_000, closedAt: '2026-05-28T01:00:00.000Z' });
+    const [row] = await db
+      .select()
+      .from(schema.gamePlayerStats)
+      .where(eq(schema.gamePlayerStats.gamePlayerId, gpId));
+    expect(row!.tradesUtcDate).toBe('2026-05-28');
+    expect(row!.losingSellsToday).toBe(1);
   });
 });
 

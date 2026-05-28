@@ -56,6 +56,7 @@ import dollarMenu from './dollar-menu.js';
 import oneShareWonder from './one-share-wonder.js';
 import whale from './whale.js';
 import pennyStockEnjoyer from './penny-stock-enjoyer.js';
+import speedrunAnyPercent from './speedrun-any-percent.js';
 
 /**
  * The full registry of code-defined achievements. Adding a new achievement is:
@@ -91,6 +92,7 @@ export const achievements: readonly AnyAchievementDefinition[] = [
   roundTripper,
   diamondPlatedHands,
   buyHighSellLow,
+  speedrunAnyPercent,
   // Portfolio category
   diversified,
   indexFund,

@@ -3,6 +3,7 @@ import type { EventBus } from '../events/bus.js';
 import type { StockProvider } from '../providers/index.js';
 import type { ExecuteTradeResult } from './trade.js';
 import { loadPlayerPortfolio } from './portfolio.js';
+import { onPositionClosed } from './position-high-water.js';
 
 /** Inputs needed to emit the follow-on domain events after a committed trade. */
 export interface EmitTradeEventsParams {
@@ -70,7 +71,10 @@ export async function emitTradeEvents(p: EmitTradeEventsParams): Promise<void> {
     changedAt: p.executedAt,
   });
   if (p.direction === 'sell' && !p.isResting) {
-    void p.bus.emit({
+    // Await this emit (not the usual void fire-and-forget) so that all
+    // achievement handlers reading position_high_water (e.g. Diamond-Plated
+    // Hands) complete before the row is deleted below.
+    await p.bus.emit({
       type: 'position.closed',
       gameId: p.gameId,
       gamePlayerId: p.gamePlayerId,
@@ -82,5 +86,8 @@ export async function emitTradeEvents(p: EmitTradeEventsParams): Promise<void> {
       fullyClosed: p.result.fullyClosed,
       closedAt: p.executedAt,
     });
+    if (p.result.fullyClosed) {
+      await onPositionClosed(p.db, p.gamePlayerId, p.symbol);
+    }
   }
 }

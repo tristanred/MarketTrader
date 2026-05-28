@@ -45,6 +45,7 @@ import wireToWire from './wire-to-wire.js';
 import achievementHorse from './achievement-horse.js';
 import sixSeven from './six-seven.js';
 import sirThisIsAWendys from './sir-this-is-a-wendys.js';
+import taxLossHarvester from './tax-loss-harvester.js';
 
 /**
  * The full registry of code-defined achievements. Adding a new achievement is:
@@ -60,6 +61,7 @@ export const achievements: readonly AnyAchievementDefinition[] = [
   marketMaker,
   sixSeven,
   sirThisIsAWendys,
+  taxLossHarvester,
   firstSale,
   sampler,
   globeTrotter,

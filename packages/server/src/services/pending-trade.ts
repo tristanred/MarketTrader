@@ -5,6 +5,7 @@ import type { PendingTrade, TradeDirection, Trade } from '@markettrader/shared';
 import type { StockProvider } from '../providers/index.js';
 import { validateBuy, validateSell, computeNewAvgCostBasis } from './trade.js';
 import { applyTradeStats } from './game-player-stats.js';
+import { onPositionOpened } from './position-high-water.js';
 
 /** Parameters for queueing a trade that will settle at next market open. */
 export interface ReservePendingParams {
@@ -335,6 +336,14 @@ export async function settlePendingTrades(
               quantity,
               avgCostBasis: price,
               openedAt: executedAt,
+            });
+            await onPositionOpened(tx as unknown as Db, {
+              gamePlayerId: row.gamePlayerId,
+              symbol: row.symbol,
+              openedAt: executedAt,
+              currentPrice: price,
+              quantity,
+              avgCostBasis: price,
             });
           }
         } else {

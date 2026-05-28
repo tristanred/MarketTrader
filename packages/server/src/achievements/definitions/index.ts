@@ -50,6 +50,7 @@ import stonks from './stonks.js';
 import thisIsFine from './this-is-fine.js';
 import hodl from './hodl.js';
 import roundTripper from './round-tripper.js';
+import diamondPlatedHands from './diamond-plated-hands.js';
 
 /**
  * The full registry of code-defined achievements. Adding a new achievement is:
@@ -83,6 +84,7 @@ export const achievements: readonly AnyAchievementDefinition[] = [
   underwater,
   phoenix,
   roundTripper,
+  diamondPlatedHands,
   // Portfolio category
   diversified,
   indexFund,

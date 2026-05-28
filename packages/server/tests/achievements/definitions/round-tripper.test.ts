@@ -3,7 +3,6 @@ import { makeAchievementHarness } from '../../helpers/achievement-harness.js';
 import { onPositionOpened, updateMarks } from '../../../src/services/position-high-water.js';
 import roundTripper from '../../../src/achievements/definitions/round-tripper.js';
 import * as schema from '../../../src/db/schema.sqlite.js';
-import { eq } from 'drizzle-orm';
 
 describe('achievement: round-tripper', () => {
   it('unlocks when a position peaked at +60% then fell back to -15%', async () => {

@@ -49,6 +49,7 @@ import taxLossHarvester from './tax-loss-harvester.js';
 import stonks from './stonks.js';
 import thisIsFine from './this-is-fine.js';
 import hodl from './hodl.js';
+import roundTripper from './round-tripper.js';
 
 /**
  * The full registry of code-defined achievements. Adding a new achievement is:
@@ -81,6 +82,7 @@ export const achievements: readonly AnyAchievementDefinition[] = [
   tripleThreat,
   underwater,
   phoenix,
+  roundTripper,
   // Portfolio category
   diversified,
   indexFund,

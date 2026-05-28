@@ -54,6 +54,7 @@ import diamondPlatedHands from './diamond-plated-hands.js';
 import buyHighSellLow from './buy-high-sell-low.js';
 import dollarMenu from './dollar-menu.js';
 import oneShareWonder from './one-share-wonder.js';
+import whale from './whale.js';
 
 /**
  * The full registry of code-defined achievements. Adding a new achievement is:
@@ -108,6 +109,7 @@ export const achievements: readonly AnyAchievementDefinition[] = [
   // Behavior category
   dollarMenu,
   oneShareWonder,
+  whale,
   paperHands,
   diamondHands,
   revengeTrade,

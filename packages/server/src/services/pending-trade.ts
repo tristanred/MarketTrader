@@ -357,6 +357,7 @@ export async function settlePendingTrades(
           symbol: row.symbol,
           quantity,
           price,
+          executedAt,
         });
 
         const [updated] = await tx

@@ -240,6 +240,7 @@ export async function executeTrade(db: Db, params: ExecuteTradeParams): Promise<
       symbol,
       quantity,
       price,
+      executedAt,
     });
 
     let trade: typeof trades.$inferSelect | undefined;

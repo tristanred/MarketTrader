@@ -60,6 +60,7 @@ describe('applyTradeStats', () => {
       symbol: 'AAPL',
       quantity: 10,
       price: 100,
+      executedAt: '2026-05-25T10:00:00.000Z',
     });
     const [row] = await db
       .select()
@@ -79,6 +80,7 @@ describe('applyTradeStats', () => {
       symbol: 'AAPL',
       quantity: 5,
       price: 200,
+      executedAt: '2026-05-25T10:00:00.000Z',
     });
     const [row] = await db
       .select()
@@ -97,6 +99,7 @@ describe('applyTradeStats', () => {
       symbol: 'AAPL',
       quantity: 1,
       price: 1,
+      executedAt: '2026-05-25T10:00:00.000Z',
     });
     // Simulate the caller having inserted the first trade row before the second call.
     await db.insert(schema.trades).values({
@@ -113,6 +116,7 @@ describe('applyTradeStats', () => {
       symbol: 'AAPL',
       quantity: 1,
       price: 1,
+      executedAt: '2026-05-25T10:00:00.000Z',
     });
     const [row] = await db
       .select()
@@ -150,12 +154,63 @@ describe('applyTradeStats', () => {
       symbol: 'AAPL',
       quantity: 1,
       price: 1,
+      executedAt: '2026-05-25T10:00:00.000Z',
     });
     const [row] = await db
       .select()
       .from(schema.gamePlayerStats)
       .where(eq(schema.gamePlayerStats.gamePlayerId, gamePlayerId));
     expect(row!.distinctSymbolsTradedEver).toBe(1);
+  });
+
+  it('increments tradesToday for trades on the same UTC day', async () => {
+    await applyTradeStats(db as unknown as Db, {
+      gamePlayerId,
+      direction: 'buy',
+      symbol: 'AAPL',
+      quantity: 1,
+      price: 100,
+      executedAt: '2026-05-27T01:00:00.000Z',
+    });
+    await applyTradeStats(db as unknown as Db, {
+      gamePlayerId,
+      direction: 'buy',
+      symbol: 'AAPL',
+      quantity: 1,
+      price: 100,
+      executedAt: '2026-05-27T22:00:00.000Z',
+    });
+    const [row] = await db
+      .select()
+      .from(schema.gamePlayerStats)
+      .where(eq(schema.gamePlayerStats.gamePlayerId, gamePlayerId));
+    expect(row!.tradesUtcDate).toBe('2026-05-27');
+    expect(row!.tradesToday).toBe(2);
+  });
+
+  it('resets tradesToday on UTC day rollover', async () => {
+    await applyTradeStats(db as unknown as Db, {
+      gamePlayerId,
+      direction: 'buy',
+      symbol: 'AAPL',
+      quantity: 1,
+      price: 100,
+      executedAt: '2026-05-27T22:00:00.000Z',
+    });
+    await applyTradeStats(db as unknown as Db, {
+      gamePlayerId,
+      direction: 'buy',
+      symbol: 'AAPL',
+      quantity: 1,
+      price: 100,
+      executedAt: '2026-05-28T01:00:00.000Z',
+    });
+    const [row] = await db
+      .select()
+      .from(schema.gamePlayerStats)
+      .where(eq(schema.gamePlayerStats.gamePlayerId, gamePlayerId));
+    expect(row!.tradesUtcDate).toBe('2026-05-28');
+    expect(row!.tradesToday).toBe(1);
   });
 });
 

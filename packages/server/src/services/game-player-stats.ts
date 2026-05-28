@@ -31,6 +31,8 @@ export interface ApplyTradeStatsParams {
   symbol: string;
   quantity: number;
   price: number;
+  /** ISO 8601 timestamp of the trade execution, used to maintain per-day counters. */
+  executedAt: string;
 }
 
 /**
@@ -75,6 +77,29 @@ export async function applyTradeStats(db: Db, params: ApplyTradeStatsParams): Pr
       updatedAt: now,
     })
     .where(eq(schema.gamePlayerStats.gamePlayerId, params.gamePlayerId));
+
+  const utcDay = params.executedAt.slice(0, 10);
+
+  // Step 1: same-day increment if the stored date already matches.
+  const updated = await db
+    .update(schema.gamePlayerStats)
+    .set({ tradesToday: sql`${schema.gamePlayerStats.tradesToday} + 1` })
+    .where(
+      and(
+        eq(schema.gamePlayerStats.gamePlayerId, params.gamePlayerId),
+        eq(schema.gamePlayerStats.tradesUtcDate, utcDay),
+      ),
+    )
+    .returning({ id: schema.gamePlayerStats.gamePlayerId });
+
+  // Step 2: rollover (or first-ever trade) — overwrite the date and reset
+  // the counter to 1. Runs only when step 1 matched nothing.
+  if (updated.length === 0) {
+    await db
+      .update(schema.gamePlayerStats)
+      .set({ tradesUtcDate: utcDay, tradesToday: 1, losingSellsToday: 0 })
+      .where(eq(schema.gamePlayerStats.gamePlayerId, params.gamePlayerId));
+  }
 }
 
 export interface ApplyPositionCloseStatsParams {

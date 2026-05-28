@@ -48,6 +48,7 @@ import sirThisIsAWendys from './sir-this-is-a-wendys.js';
 import taxLossHarvester from './tax-loss-harvester.js';
 import stonks from './stonks.js';
 import thisIsFine from './this-is-fine.js';
+import hodl from './hodl.js';
 
 /**
  * The full registry of code-defined achievements. Adding a new achievement is:
@@ -103,6 +104,7 @@ export const achievements: readonly AnyAchievementDefinition[] = [
   fomo,
   stonks,
   thisIsFine,
+  hodl,
   // Finale category
   champion,
   podiumFinish,

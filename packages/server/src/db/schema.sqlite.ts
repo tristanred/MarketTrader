@@ -476,3 +476,27 @@ export const gamePlayerStats = sqliteTable('game_player_stats', {
     .default(sql`(datetime('now'))`)
     .notNull(),
 });
+
+/**
+ * Per-(gamePlayerId, symbol) high-water marks since the most recent
+ * 0→positive open. Maintained by the snapshot pipeline with a
+ * skip-when-unchanged write. Consumed by behaviour/P&L achievements
+ * that need peak/trough observation while a position is open.
+ */
+export const positionHighWater = sqliteTable(
+  'position_high_water',
+  {
+    gamePlayerId: text('game_player_id')
+      .notNull()
+      .references(() => gamePlayers.id, { onDelete: 'cascade' }),
+    symbol: text('symbol').notNull(),
+    openedAt: text('opened_at').notNull(),
+    peakValue: real('peak_value').notNull(),
+    peakPnlPct: real('peak_pnl_pct').notNull(),
+    troughPnlPct: real('trough_pnl_pct').notNull(),
+    updatedAt: text('updated_at')
+      .default(sql`(datetime('now'))`)
+      .notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.gamePlayerId, t.symbol] })],
+);

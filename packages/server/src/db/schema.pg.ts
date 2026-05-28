@@ -2,6 +2,7 @@ import {
   pgTable,
   text,
   decimal,
+  real,
   integer,
   timestamp,
   pgEnum,
@@ -438,3 +439,25 @@ export const gamePlayerStats = pgTable('game_player_stats', {
 
   updatedAt: timestamp('updated_at', { mode: 'string' }).defaultNow().notNull(),
 });
+
+/**
+ * Per-(gamePlayerId, symbol) high-water marks since the most recent
+ * 0→positive open. Maintained by the snapshot pipeline with a
+ * skip-when-unchanged write. Consumed by behaviour/P&L achievements
+ * that need peak/trough observation while a position is open.
+ */
+export const positionHighWater = pgTable(
+  'position_high_water',
+  {
+    gamePlayerId: text('game_player_id')
+      .notNull()
+      .references(() => gamePlayers.id, { onDelete: 'cascade' }),
+    symbol: text('symbol').notNull(),
+    openedAt: timestamp('opened_at', { mode: 'string' }).notNull(),
+    peakValue: real('peak_value').notNull(),
+    peakPnlPct: real('peak_pnl_pct').notNull(),
+    troughPnlPct: real('trough_pnl_pct').notNull(),
+    updatedAt: timestamp('updated_at', { mode: 'string' }).defaultNow().notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.gamePlayerId, t.symbol] })],
+);

@@ -1,4 +1,4 @@
-import { test, expect } from '../fixtures/base';
+import { test, expect, uniqueName } from '../fixtures/base';
 
 /**
  * E2E: placing the first trade unlocks the 'first-trade' achievement and
@@ -17,7 +17,7 @@ test('first-trade unlock shows toast for the trader', async ({
   // through the UI doesn't get promoted to admin.
   void adminUser;
 
-  const username = `e2e_ach_${Date.now()}_${Math.floor(Math.random() * 1e6)}`;
+  const username = uniqueName('e2e_ach');
   const password = 'correct-horse-battery';
 
   // Register via the UI (proves auth round-trip).

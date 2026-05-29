@@ -14,11 +14,6 @@
     "seed:history": "pnpm --filter @markettrader/tools-seed-game-history start",
     "docs:achievements": "pnpm --filter @markettrader/frontend exec node ./scripts/generate-achievement-docs.mjs"
   },
-  "pnpm": {
-    "overrides": {
-      "vite": "6.4.2"
-    }
-  },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^8.0.0",
     "@typescript-eslint/parser": "^8.0.0",

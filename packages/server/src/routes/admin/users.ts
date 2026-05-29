@@ -5,6 +5,7 @@ import { and, asc, count, desc, eq, like, sql } from 'drizzle-orm';
 import { hash } from '@node-rs/argon2';
 import type { Db } from '../../db/index.js';
 import { schema } from '../../db/index.js';
+import { isUniqueConstraintError } from '../../db/errors.js';
 import { ADMIN_GROUP_NAME } from '../../constants/groups.js';
 import { recordAdminAction } from '../../services/admin-audit.js';
 
@@ -216,8 +217,7 @@ export function adminUsersRoutes(db: Db) {
           });
         });
       } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
-        if (msg.includes('UNIQUE constraint failed') || msg.includes('unique constraint')) {
+        if (isUniqueConstraintError(err)) {
           return reply.status(409).send({ error: 'Username already taken' });
         }
         throw err;

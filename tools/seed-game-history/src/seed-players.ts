@@ -1,7 +1,7 @@
+import { randomBytes } from 'node:crypto';
 import { hash } from '@node-rs/argon2';
 import { faker } from '@faker-js/faker';
 import { db, schema } from '../../../packages/server/src/db/index.js';
-import { randInt } from './rng.js';
 
 /** Throwaway password assigned to every seeded user. Argon2 needs min 8 chars. */
 export const SEED_USER_PASSWORD = 'seedseed';
@@ -44,7 +44,7 @@ export async function seedPlayers(
   for (let i = 0; i < playerCount; i++) {
     const first = slugify(faker.person.firstName());
     const last = slugify(faker.person.lastName());
-    const rand4 = randInt(0, 0xffff).toString(16).padStart(4, '0');
+    const rand4 = randomBytes(2).toString('hex');
     const username = `${first}_${last}_${rand4}`;
 
     const result = await db.transaction(async (tx) => {

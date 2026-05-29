@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
 import { createTestDb } from './app.js';
 import * as schema from '../../src/db/schema.sqlite.js';
@@ -65,7 +66,7 @@ export async function makeAchievementHarness(
 
   const [user0] = await db
     .insert(schema.users)
-    .values({ username: `u0-${Math.random().toString(36).slice(2)}`, passwordHash: 'x' })
+    .values({ username: `u0-${randomUUID()}`, passwordHash: 'x' })
     .returning();
   const [game] = await db
     .insert(schema.games)
@@ -83,7 +84,7 @@ export async function makeAchievementHarness(
   for (let i = 0; i < numPlayers; i++) {
     const u = i === 0
       ? user0!
-      : (await db.insert(schema.users).values({ username: `u${i}-${Math.random().toString(36).slice(2)}`, passwordHash: 'x' }).returning())[0]!;
+      : (await db.insert(schema.users).values({ username: `u${i}-${randomUUID()}`, passwordHash: 'x' }).returning())[0]!;
     const [gp] = await db
       .insert(schema.gamePlayers)
       .values({ gameId: game!.id, userId: u.id, cashBalance: startingBalance })

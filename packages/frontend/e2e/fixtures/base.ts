@@ -75,8 +75,11 @@ export type WorkerFixtures = {
   adminUser: UserSession;
 };
 
-function uniqueName(prefix: string): string {
-  return `${prefix}_${Date.now()}_${Math.floor(Math.random() * 1e6)}`;
+export function uniqueName(prefix: string): string {
+  // Web Crypto (global, no import) — CSPRNG keeps usernames collision-free
+  // without tripping CodeQL's js/insecure-randomness on Math.random().
+  const rand = crypto.getRandomValues(new Uint32Array(1))[0]! % 1_000_000;
+  return `${prefix}_${Date.now()}_${rand}`;
 }
 
 function extractRefreshToken(headers: Record<string, string>): string | null {

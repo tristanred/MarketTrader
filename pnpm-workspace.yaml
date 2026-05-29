@@ -1,6 +1,14 @@
 packages:
   - 'packages/*'
   - 'tools/*'
+overrides:
+  vite: '6.4.2'
+  ws: '^8.20.1'
+  # @esbuild-kit/core-utils (deprecated, pulled transitively by drizzle-kit)
+  # pins esbuild ~0.18.20, which carries GHSA-67mh-4wv8-2f99. Force the safe,
+  # already-resolved 0.25.x only within that subtree (a global esbuild override
+  # is impossible: tsx/tsup require ~0.27 while vite requires ^0.25).
+  '@esbuild-kit/core-utils>esbuild': '0.25.12'
 allowBuilds:
   better-sqlite3: true
   esbuild: true

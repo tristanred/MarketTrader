@@ -5,6 +5,7 @@ import { hash, verify } from '@node-rs/argon2';
 import { eq } from 'drizzle-orm';
 import type { Db } from '../db/index.js';
 import { schema } from '../db/index.js';
+import { isUniqueConstraintError } from '../db/errors.js';
 import { env } from '../env.js';
 import { ADMIN_GROUP_ID } from '../constants/groups.js';
 
@@ -112,8 +113,7 @@ export function authRoutes(db: Db) {
           return inserted;
         });
       } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
-        if (msg.includes('UNIQUE constraint failed') || msg.includes('unique constraint')) {
+        if (isUniqueConstraintError(err)) {
           return reply.status(409).send({ error: 'Username already taken' });
         }
         throw err;

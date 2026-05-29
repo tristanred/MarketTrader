@@ -1,11 +1,11 @@
-import { test, expect } from '../fixtures/base';
+import { test, expect, uniqueName } from '../fixtures/base';
 
 test.describe('Authentication', () => {
   test('register → land on games list', async ({ page, adminUser }) => {
     // Touch adminUser so the worker-scoped first-registered-admin user is
     // materialised before this test creates a fresh account via the UI.
     void adminUser;
-    const username = `u_${Date.now()}_${Math.floor(Math.random() * 1e6)}`;
+    const username = uniqueName('u');
     await page.goto('/register');
     await page.getByLabel(/username/i).fill(username);
     await page.getByLabel(/password/i).fill('correct-horse-battery');

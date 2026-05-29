@@ -4,6 +4,7 @@ import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { eq, and } from 'drizzle-orm';
 import type { Db } from '../db/index.js';
 import { schema } from '../db/index.js';
+import { isUniqueConstraintError } from '../db/errors.js';
 import { recomputeGameStatus, recomputeMany } from '../services/game-status.js';
 import { computeLeaderboard } from '../services/leaderboard.js';
 import { getLeaderboardHistory } from '../services/leaderboard-history.js';
@@ -175,8 +176,7 @@ export function gameRoutes(db: Db, bus?: EventBus) {
           .returning();
         player = inserted;
       } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
-        if (msg.includes('UNIQUE constraint failed') || msg.includes('unique constraint')) {
+        if (isUniqueConstraintError(err)) {
           return reply.status(409).send({ error: 'Already joined this game' });
         }
         throw err;

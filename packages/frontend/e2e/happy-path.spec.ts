@@ -1,4 +1,4 @@
-import { test, expect } from './fixtures/base';
+import { test, expect, uniqueName } from './fixtures/base';
 import { priceOf } from './fixtures/mock-prices';
 
 /**
@@ -24,7 +24,7 @@ test('happy path: register → create game → buy AAPL → portfolio reflects h
   // the UI doesn't get promoted to admin as the first registered user.
   void adminUser;
 
-  const username = `e2e_${Date.now()}_${Math.floor(Math.random() * 1e6)}`;
+  const username = uniqueName('e2e');
   const password = 'correct-horse-battery';
 
   // 1. Register through the UI — proves the auth round-trip.

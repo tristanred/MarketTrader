@@ -49,6 +49,29 @@ function is429(err: unknown): boolean {
 }
 
 /**
+ * yahoo-finance2 throws `FailedYahooValidationError` when Yahoo's response drifts
+ * from the library's bundled JSON schema even though the payload is otherwise
+ * intact (e.g. search now returns `typeDisp: "Equity"` where the schema pins the
+ * `"equity"` enum). The error carries the parsed response in `.result`, so return
+ * it to keep benign schema drift from failing the call. Returns `undefined` for
+ * any other error so the caller maps it through the normal error path.
+ *
+ * Scoped to `searchSymbols` deliberately: recovering an unvalidated `getQuote`
+ * payload could feed a subtly-wrong price into trade execution (business rule #1).
+ */
+function recoverYahooValidationResult(err: unknown): unknown {
+  if (
+    err instanceof Error &&
+    err.name === 'FailedYahooValidationError' &&
+    'result' in err &&
+    (err as { result?: unknown }).result != null
+  ) {
+    return (err as { result?: unknown }).result;
+  }
+  return undefined;
+}
+
+/**
  * {@link StockProvider} backed by Yahoo Finance via the `yahoo-finance2` package (v3).
  * Requires no API key and is the default provider (`STOCK_PROVIDER=yahoo`).
  *
@@ -218,12 +241,16 @@ export class YahooProvider implements StockProvider {
   async searchSymbols(query: string): Promise<StockSearchResult[]> {
     this.throwIfRateLimited();
 
-    let result;
+    let result: { quotes?: unknown };
     try {
       result = await this.client.search(query);
     } catch (err) {
       if (is429(err)) this.trip429();
-      throw new StockProviderError('PROVIDER_ERROR', `Yahoo Finance search failed for "${query}"`);
+      const recovered = recoverYahooValidationResult(err);
+      if (recovered === undefined) {
+        throw new StockProviderError('PROVIDER_ERROR', `Yahoo Finance search failed for "${query}"`);
+      }
+      result = recovered as { quotes?: unknown };
     }
 
     interface EquityQuote {

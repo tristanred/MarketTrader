@@ -77,4 +77,32 @@ describe('YahooProvider rate-limit handling', () => {
       code: 'SYMBOL_NOT_FOUND',
     });
   });
+
+  it('recovers search results from FailedYahooValidationError (benign schema drift)', async () => {
+    const validationErr = Object.assign(new Error('Failed Yahoo Schema validation'), {
+      name: 'FailedYahooValidationError',
+      result: {
+        quotes: [
+          { isYahooFinance: true, quoteType: 'EQUITY', symbol: 'AAPL', shortname: 'Apple Inc.' },
+          { isYahooFinance: true, quoteType: 'ETF', symbol: 'SPY', shortname: 'SPDR S&P 500' },
+        ],
+      },
+    });
+    stubClient(provider, { search: vi.fn().mockRejectedValue(validationErr) });
+
+    const results = await provider.searchSymbols('AAPL');
+    expect(results).toEqual([{ symbol: 'AAPL', name: 'Apple Inc.' }]);
+  });
+
+  it('maps a validation error without a recoverable result to PROVIDER_ERROR', async () => {
+    const validationErr = Object.assign(new Error('Failed Yahoo Schema validation'), {
+      name: 'FailedYahooValidationError',
+      result: null,
+    });
+    stubClient(provider, { search: vi.fn().mockRejectedValue(validationErr) });
+
+    await expect(provider.searchSymbols('AAPL')).rejects.toMatchObject({
+      code: 'PROVIDER_ERROR',
+    });
+  });
 });

@@ -192,6 +192,7 @@ async function buildDefinitionDTOs(
       rarity: d.rarity,
       icon: d.icon,
       target: d.target,
+      secret: d.secret ?? false,
       enabled: await engine.isEnabled(gameId, d.key),
     })),
   );

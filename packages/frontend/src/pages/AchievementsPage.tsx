@@ -1,41 +1,29 @@
 import { useParams } from 'react-router-dom';
 import { Panel, PanelHeader, PanelBody } from '@/components/panel';
 import { AchievementGrid } from '@/components/achievements/AchievementGrid';
-import { useAchievements, type GameAchievementsResponse } from '@/api/achievements';
+import { useAchievements, type PlayerAchievementsResponse } from '@/api/achievements';
 import { useGame } from '@/api/games';
 import type { AchievementProgressDTO } from '@markettrader/shared';
 
 /**
- * Game-scoped achievements page at `/games/:gameId/achievements`. Renders
- * only the viewer's own unlocked achievements plus a count of how many
- * remain locked. Peers' achievements never appear here — the only place
- * peer unlocks surface is the Activity panel on the arena page.
+ * Game-scoped achievements page at `/games/:gameId/achievements`. Shows the
+ * full catalog of enabled achievements — locked and unlocked — with the
+ * viewer's own progress. Secret achievements appear only after the viewer
+ * unlocks them. Peers' progress never appears here.
  */
 export function AchievementsPage() {
   const { gameId = '' } = useParams<{ gameId: string }>();
   const game = useGame(gameId);
   const myGamePlayerId = game.data?.viewerGamePlayerId ?? null;
-  const view = useAchievements(gameId);
+  const view = useAchievements(gameId, myGamePlayerId ?? undefined);
 
-  const gameData = view.data as GameAchievementsResponse | undefined;
-  const allProgress = (gameData?.progress ?? {}) as Record<string, AchievementProgressDTO[]>;
-  const totalEnabledCount = gameData?.totalEnabledCount ?? 0;
-
+  const data = view.data as PlayerAchievementsResponse | undefined;
+  const definitions = data?.definitions ?? [];
+  const totalEnabledCount = data?.totalEnabledCount ?? 0;
   const viewerProgress: AchievementProgressDTO[] = myGamePlayerId
-    ? allProgress[myGamePlayerId] ?? []
+    ? data?.progress[myGamePlayerId] ?? []
     : [];
-  const viewerUnlockedKeys = new Set(
-    viewerProgress.filter((p) => p.unlockedAt).map((p) => p.achievementKey),
-  );
-  // Scope definitions to the viewer's unlocked set — the server payload
-  // carries the union across all players (so the arena Activity panel
-  // can render peer unlocks), but the viewer's own page must not show
-  // peer-only achievements as cards.
-  const viewerDefinitions = (gameData?.definitions ?? []).filter((d) =>
-    viewerUnlockedKeys.has(d.key),
-  );
-
-  const unlockedCount = viewerUnlockedKeys.size;
+  const unlockedCount = viewerProgress.filter((p) => p.unlockedAt).length;
 
   return (
     <main className="mx-auto max-w-5xl p-4">
@@ -44,11 +32,17 @@ export function AchievementsPage() {
           Achievements
         </PanelHeader>
         <PanelBody className="flex flex-col gap-4">
-          <AchievementGrid
-            definitions={viewerDefinitions}
-            progress={viewerProgress}
-            totalEnabledCount={totalEnabledCount}
-          />
+          {!myGamePlayerId ? (
+            <p className="py-6 text-center text-sm text-muted">
+              {game.isLoading ? 'Loading…' : 'Join this game to track achievements.'}
+            </p>
+          ) : (
+            <AchievementGrid
+              definitions={definitions}
+              progress={viewerProgress}
+              totalEnabledCount={totalEnabledCount}
+            />
+          )}
         </PanelBody>
       </Panel>
     </main>

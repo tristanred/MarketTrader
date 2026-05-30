@@ -179,8 +179,9 @@ export function AchievementGrid({ definitions, progress, totalEnabledCount, clas
 }
 
 /**
- * Placeholder tile shown after the unlocked cards. Reveals only the count
- * of locked achievements — never their names, descriptions, or icons.
+ * Placeholder tile shown after the cards when the game has secret achievements
+ * the viewer has not yet unlocked. Reveals only the count — never their names,
+ * descriptions, or icons.
  */
 function LockedSlotTile({ count }: { count: number }) {
   return (
@@ -200,13 +201,13 @@ function LockedSlotTile({ count }: { count: number }) {
       </span>
       <div className="relative z-[1] min-w-0">
         <div className="font-mono text-[9px] uppercase tracking-[0.22em] mb-1 text-muted">
-          Locked
+          Secret
         </div>
         <div className="font-semibold text-text-strong leading-tight text-[13px]">
-          {count} more locked
+          {count} secret
         </div>
         <div className="text-[11px] text-muted leading-[1.3] mt-0.5">
-          Keep playing to discover what's left.
+          Hidden until you unlock them.
         </div>
       </div>
     </div>

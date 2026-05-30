@@ -14,7 +14,7 @@ export interface AchievementGridProps {
   definitions: AchievementDefinitionDTO[];
   /** Progress entries for the viewer (one optional row per definition). */
   progress: AchievementProgressDTO[];
-  /** Game's total enabled achievement count — drives the "N more locked" tile. */
+  /** Game's total enabled count (including secret achievements) — drives the residual "N secret" tile. */
   totalEnabledCount: number;
   className?: string;
 }
@@ -89,9 +89,11 @@ export function AchievementGrid({ definitions, progress, totalEnabledCount, clas
       });
   }, [definitions, progressByKey, rarityFilter, categoryFilter, stateFilter]);
 
-  // Locked-tile count is computed off the raw definitions array (visible
-  // unlocked cards) vs the game total — independent of the rarity/category
-  // filters so the user always sees the full undiscovered count.
+  // `definitions` already contains every achievement shown as a card (all
+  // non-secret defs plus any secret ones the viewer unlocked), so the gap to
+  // the game total is exactly the number of enabled secret achievements the
+  // viewer hasn't discovered yet. Computed off the raw arrays (not the filtered
+  // list) so rarity/category filters never change the secret count.
   const lockedRemaining = Math.max(0, totalEnabledCount - definitions.length);
   const showLockedTile = stateFilter !== 'unlocked' && lockedRemaining > 0;
 

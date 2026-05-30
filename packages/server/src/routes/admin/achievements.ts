@@ -58,6 +58,7 @@ export function adminAchievementsRoutes(
             rarity: d.rarity,
             icon: d.icon,
             target: d.target,
+            secret: d.secret ?? false,
             enabled: !disabled.has(d.key),
           }));
         return reply.status(200).send({ definitions });

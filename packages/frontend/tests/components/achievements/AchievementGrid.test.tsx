@@ -6,10 +6,10 @@ import { AchievementGrid } from '@/components/achievements/AchievementGrid';
 import type { AchievementDefinitionDTO } from '@markettrader/shared';
 
 const defs: AchievementDefinitionDTO[] = [
-  { key: 't1', name: 'Trader One', description: 't1', rarity: 'common', icon: 'x', target: 1, enabled: true, category: 'trading' },
-  { key: 't2', name: 'Trader Two', description: 't2', rarity: 'common', icon: 'x', target: 1, enabled: true, category: 'trading' },
-  { key: 'p1', name: 'Pnl One',    description: 'p1', rarity: 'common', icon: 'x', target: 1, enabled: true, category: 'pnl' },
-  { key: 'f1', name: 'Finale One', description: 'f1', rarity: 'common', icon: 'x', target: 1, enabled: true, category: 'finale' },
+  { key: 't1', name: 'Trader One', description: 't1', rarity: 'common', icon: 'x', target: 1, enabled: true, secret: false, category: 'trading' },
+  { key: 't2', name: 'Trader Two', description: 't2', rarity: 'common', icon: 'x', target: 1, enabled: true, secret: false, category: 'trading' },
+  { key: 'p1', name: 'Pnl One',    description: 'p1', rarity: 'common', icon: 'x', target: 1, enabled: true, secret: false, category: 'pnl' },
+  { key: 'f1', name: 'Finale One', description: 'f1', rarity: 'common', icon: 'x', target: 1, enabled: true, secret: false, category: 'finale' },
 ];
 
 function renderGrid() {

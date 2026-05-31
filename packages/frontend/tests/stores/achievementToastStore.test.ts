@@ -41,14 +41,57 @@ describe('achievementToastStore', () => {
     expect(queue).toHaveLength(0);
   });
 
-  it('dismiss promotes the next queued toast into current', () => {
+  it('dismiss clears current to null, leaving the next queued for promotion', () => {
     useAchievementToastStore.getState().enqueue(unlockA);
     useAchievementToastStore.getState().enqueue(unlockB);
     const firstId = useAchievementToastStore.getState().current!.id;
     useAchievementToastStore.getState().dismiss(firstId);
     const { current, queue } = useAchievementToastStore.getState();
+    expect(current).toBeNull();
+    expect(queue).toHaveLength(1);
+    expect(queue[0]?.unlock.achievementKey).toBe('ten-buys');
+  });
+
+  it('promoteNext pulls the queue head into an empty current slot', () => {
+    useAchievementToastStore.getState().enqueue(unlockA);
+    useAchievementToastStore.getState().enqueue(unlockB);
+    const firstId = useAchievementToastStore.getState().current!.id;
+    useAchievementToastStore.getState().dismiss(firstId);
+    useAchievementToastStore.getState().promoteNext();
+    const { current, queue } = useAchievementToastStore.getState();
     expect(current?.unlock.achievementKey).toBe('ten-buys');
     expect(queue).toHaveLength(0);
+  });
+
+  it('promoteNext is a no-op while a toast is still showing', () => {
+    useAchievementToastStore.getState().enqueue(unlockA);
+    useAchievementToastStore.getState().enqueue(unlockB);
+    useAchievementToastStore.getState().promoteNext();
+    const { current, queue } = useAchievementToastStore.getState();
+    expect(current?.unlock.achievementKey).toBe('first-trade');
+    expect(queue).toHaveLength(1);
+  });
+
+  it('an unlock arriving mid-gap (current null, queue non-empty) appends, never jumps the line', () => {
+    useAchievementToastStore.getState().enqueue(unlockA);
+    useAchievementToastStore.getState().enqueue(unlockB);
+    const firstId = useAchievementToastStore.getState().current!.id;
+    useAchievementToastStore.getState().dismiss(firstId); // current → null, queue = [B]
+
+    const unlockC = { ...unlockA, achievementKey: 'whale', unlockedAt: '2026-05-23T12:02:00.000Z' };
+    useAchievementToastStore.getState().enqueue(unlockC);
+
+    const { current, queue } = useAchievementToastStore.getState();
+    expect(current).toBeNull();
+    expect(queue.map((t) => t.unlock.achievementKey)).toEqual(['ten-buys', 'whale']);
+  });
+
+  it('promoteNext is a no-op when the queue is empty', () => {
+    useAchievementToastStore.getState().enqueue(unlockA);
+    const firstId = useAchievementToastStore.getState().current!.id;
+    useAchievementToastStore.getState().dismiss(firstId);
+    useAchievementToastStore.getState().promoteNext();
+    expect(useAchievementToastStore.getState().current).toBeNull();
   });
 
   it('dismiss on an outdated id is a no-op', () => {

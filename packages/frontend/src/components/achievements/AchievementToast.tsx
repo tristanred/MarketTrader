@@ -34,10 +34,14 @@ function relativeAgo(iso: string): string {
  */
 export function AchievementToast({ gameId, toast }: AchievementToastProps) {
   const dismiss = useAchievementToastStore((s) => s.dismiss);
+  const promoteNext = useAchievementToastStore((s) => s.promoteNext);
   const [exiting, setExiting] = useState(false);
   const exitTimerRef = useRef<number | null>(null);
 
-  const finish = () => {
+  // `manual` is true for the × button: it skips the inter-toast gap and
+  // advances the stack immediately, per the design spec. The auto-dismiss
+  // path leaves `current` null so the host can hold the 1s beat.
+  const finish = (manual = false) => {
     if (exiting) return;
     setExiting(true);
     advanceSeenMarker(gameId, toast.unlock.gamePlayerId, toast.unlock.unlockedAt);
@@ -48,11 +52,14 @@ export function AchievementToast({ gameId, toast }: AchievementToastProps) {
       // replay-on-reconnect is the fallback if both attempts fail.
       console.warn('[AchievementToast] ack failed — replay on reconnect will cover it', err);
     });
-    exitTimerRef.current = window.setTimeout(() => dismiss(toast.id), EXIT_MS);
+    exitTimerRef.current = window.setTimeout(() => {
+      dismiss(toast.id);
+      if (manual) promoteNext();
+    }, EXIT_MS);
   };
 
   useEffect(() => {
-    const timer = window.setTimeout(finish, DISPLAY_MS);
+    const timer = window.setTimeout(() => finish(), DISPLAY_MS);
     return () => {
       window.clearTimeout(timer);
       if (exitTimerRef.current !== null) {
@@ -85,7 +92,7 @@ export function AchievementToast({ gameId, toast }: AchievementToastProps) {
       <button
         type="button"
         aria-label="Dismiss"
-        onClick={finish}
+        onClick={() => finish(true)}
         className="self-start text-muted hover:text-text p-1"
       >
         <X size={14} />

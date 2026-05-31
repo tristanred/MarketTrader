@@ -30,6 +30,8 @@ export interface AchievementDefinitionDTO {
   target: number;
   /** Effective enabled state for the queried game (after game flag + global setting + per-game override). */
   enabled: boolean;
+  /** When true, hidden from a player's catalog until that player unlocks it. */
+  secret: boolean;
 }
 
 /** Per-player progress on a single achievement, scoped to one game. */

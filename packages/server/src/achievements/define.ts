@@ -56,6 +56,8 @@ export interface AchievementDefinition<TEvents extends DomainEventType = DomainE
   icon: string;
   /** Numeric target. Boolean achievements use `1`. */
   target: number;
+  /** Optional. When true, hidden from the catalog until the player unlocks it. Defaults to false. */
+  secret?: boolean;
   /** Which event types the handler subscribes to. */
   events: readonly TEvents[];
   /** Handler invoked once per subscribed event after a successful DB commit. */

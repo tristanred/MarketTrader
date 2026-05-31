@@ -78,16 +78,20 @@ export async function getAchievementsForGame(
 }
 
 /**
- * Returns the achievement definitions and unlock rows for a single player.
- * `definitions` is scoped to enabled definitions unlocked by *that* player;
- * locked-but-in-progress rows are dropped. `totalEnabledCount` is the game's
- * full enabled count so the FE can show `X / Y unlocked`.
+ * Returns the achievement definitions and progress rows for a single player's
+ * own catalog view. `definitions` includes every enabled non-secret definition
+ * plus any secret definition this player has unlocked. `progress` carries the
+ * player's rows; in-progress (locked) rows are included only when
+ * `includeLocked` is true — callers pass the requester's ownership so a player
+ * cannot read a rival's in-progress counts. `totalEnabledCount` is the game's
+ * full enabled count for the `X / Y unlocked` summary.
  */
 export async function getProgressForPlayer(
   db: Db,
   engine: AchievementEngine,
   gameId: string,
   gamePlayerId: string,
+  includeLocked: boolean,
 ): Promise<GameAchievementsView> {
   const allDefs = await buildDefinitionDTOs(engine, gameId);
   const totalEnabledCount = allDefs.filter((d) => d.enabled).length;
@@ -114,14 +118,14 @@ export async function getProgressForPlayer(
   }
 
   const definitions = allDefs.filter(
-    (d) => d.enabled && unlockedKeys.has(d.key),
+    (d) => d.enabled && (!d.secret || unlockedKeys.has(d.key)),
   );
   const visibleKeys = new Set(definitions.map((d) => d.key));
 
   const list: AchievementProgressDTO[] = [];
   for (const row of rows) {
     if (!visibleKeys.has(row.achievementKey)) continue;
-    if (row.unlockedAt === null) continue;
+    if (row.unlockedAt === null && !includeLocked) continue;
     list.push({
       gamePlayerId: row.gamePlayerId,
       achievementKey: row.achievementKey,
@@ -192,6 +196,7 @@ async function buildDefinitionDTOs(
       rarity: d.rarity,
       icon: d.icon,
       target: d.target,
+      secret: d.secret ?? false,
       enabled: await engine.isEnabled(gameId, d.key),
     })),
   );

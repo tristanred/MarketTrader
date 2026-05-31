@@ -3,10 +3,11 @@ import { apiFetch } from '@/lib/api';
 import type { AchievementDefinitionDTO, AchievementProgressDTO } from '@markettrader/shared';
 
 /**
- * Server payload for `GET /games/:gameId/achievements`. `definitions`
- * only includes definitions that at least one player has unlocked
- * (locked metadata is never sent). `totalEnabledCount` is the game's
- * full enabled denominator for the `X / Y unlocked` UI.
+ * Server payload for `GET /games/:gameId/achievements` — the game-wide feed
+ * source consumed by the arena Activity panel. `definitions` only includes
+ * definitions unlocked by at least one player; `progress` carries the matching
+ * unlock rows keyed by gamePlayerId. `totalEnabledCount` is the game's full
+ * enabled denominator for the `X / Y unlocked` UI.
  */
 export interface GameAchievementsResponse {
   definitions: AchievementDefinitionDTO[];
@@ -15,10 +16,16 @@ export interface GameAchievementsResponse {
   totalEnabledCount: number;
 }
 
-/** Server payload for the per-player variant. */
+/**
+ * Server payload for `GET /games/:gameId/players/:gamePlayerId/achievements`.
+ * Same shape as {@link GameAchievementsResponse}: `progress` is keyed by the
+ * single requested gamePlayerId. For the owner it includes their in-progress
+ * (locked) rows; `definitions` includes all enabled non-secret definitions plus
+ * any secret ones that player has unlocked.
+ */
 export interface PlayerAchievementsResponse {
   definitions: AchievementDefinitionDTO[];
-  progress: AchievementProgressDTO[];
+  progress: Record<string, AchievementProgressDTO[]>;
   totalEnabledCount: number;
 }
 

@@ -80,14 +80,15 @@ export function achievementsRoutes(db: Db, engine: AchievementEngine) {
           .limit(1);
         if (!membership) return reply.status(404).send({ error: 'Game not found' });
 
-        const [target] = await db
-          .select({ id: gamePlayers.id })
+        const [targetPlayer] = await db
+          .select({ id: gamePlayers.id, userId: gamePlayers.userId })
           .from(gamePlayers)
           .where(and(eq(gamePlayers.id, gamePlayerId), eq(gamePlayers.gameId, gameId)))
           .limit(1);
-        if (!target) return reply.status(404).send({ error: 'Player not in this game' });
+        if (!targetPlayer) return reply.status(404).send({ error: 'Player not in this game' });
 
-        const view = await getProgressForPlayer(db, engine, gameId, gamePlayerId);
+        const includeLocked = targetPlayer.userId === userId;
+        const view = await getProgressForPlayer(db, engine, gameId, gamePlayerId, includeLocked);
         return reply.status(200).send(view);
       },
     );

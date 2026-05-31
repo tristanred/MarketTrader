@@ -54,39 +54,58 @@ function renderPage() {
 }
 
 describe('AchievementsPage', () => {
-  it('renders the viewer\'s unlocked cards and hides peer-only definitions', async () => {
+  function mockGame() {
+    mockedUseGame.mockReturnValue({
+      data: { id: 'g1', viewerGamePlayerId: 'gp1', leaderboard: [{ playerId: 'u1', gamePlayerId: 'gp1', username: 'alice', cashBalance: 1, totalValue: 1, rank: 1 }] },
+      isLoading: false,
+    } as unknown as ReturnType<typeof useGame>);
+  }
+
+  it('renders unlocked cards AND locked cards for not-yet-unlocked definitions', async () => {
     mockedUseAchievements.mockReturnValue({
       data: {
-        // Server payload carries the union across players (so the arena
-        // Activity panel can render peer unlocks); the page must filter
-        // to the viewer's own unlocked set.
         definitions: [
-          { key: 'a', name: 'A', description: '', rarity: 'common',    icon: 'circle-dot', target: 1, enabled: true },
-          { key: 'b', name: 'B', description: '', rarity: 'legendary', icon: 'gem',        target: 1, enabled: true },
+          { key: 'a', name: 'Aye', description: 'unlocked one', rarity: 'common',    icon: 'circle-dot', target: 1, enabled: true, secret: false },
+          { key: 'b', name: 'Bee', description: 'locked one',   rarity: 'legendary', icon: 'gem',        target: 1, enabled: true, secret: false },
         ],
         progress: {
           gp1: [{ achievementKey: 'a', gamePlayerId: 'gp1', progress: 1, target: 1, unlockedAt: '2026-05-23T12:00:00.000Z' }],
-          gp2: [{ achievementKey: 'b', gamePlayerId: 'gp2', progress: 1, target: 1, unlockedAt: '2026-05-24T12:00:00.000Z' }],
         },
         totalEnabledCount: 2,
       },
       isLoading: false,
     } as unknown as ReturnType<typeof useAchievements>);
-    mockedUseGame.mockReturnValue({
-      data: { id: 'g1', viewerGamePlayerId: 'gp1', leaderboard: [{ playerId: 'u1', gamePlayerId: 'gp1', username: 'alice', cashBalance: 1, totalValue: 1, rank: 1 }] },
-      isLoading: false,
-    } as unknown as ReturnType<typeof useGame>);
+    mockGame();
     renderPage();
-    await waitFor(() => expect(screen.getByText('A')).toBeInTheDocument());
-    // Peer's unlocked achievement must not appear as a card on the viewer's page.
-    expect(screen.queryByText('B')).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText('Aye')).toBeInTheDocument());
+    // Locked, non-secret definition is now shown (was hidden before this feature).
+    expect(screen.getByText('Bee')).toBeInTheDocument();
+  });
+
+  it('shows in-progress count on a locked-but-started card', async () => {
+    mockedUseAchievements.mockReturnValue({
+      data: {
+        definitions: [
+          { key: 'c', name: 'Cee', description: 'in progress', rarity: 'uncommon', icon: 'repeat-2', target: 5, enabled: true, secret: false },
+        ],
+        progress: {
+          gp1: [{ achievementKey: 'c', gamePlayerId: 'gp1', progress: 2, target: 5, unlockedAt: null }],
+        },
+        totalEnabledCount: 1,
+      },
+      isLoading: false,
+    } as unknown as ReturnType<typeof useAchievements>);
+    mockGame();
+    renderPage();
+    await waitFor(() => expect(screen.getByText('Cee')).toBeInTheDocument());
+    expect(screen.getByText(/2 \/ 5/)).toBeInTheDocument();
   });
 
   it('shows the unlock count over totalEnabledCount in the header', async () => {
     mockedUseAchievements.mockReturnValue({
       data: {
         definitions: [
-          { key: 'a', name: 'A', description: '', rarity: 'common', icon: 'circle-dot', target: 1, enabled: true },
+          { key: 'a', name: 'Aye', description: '', rarity: 'common', icon: 'circle-dot', target: 1, enabled: true, secret: false },
         ],
         progress: {
           gp1: [{ achievementKey: 'a', gamePlayerId: 'gp1', progress: 1, target: 1, unlockedAt: '2026-05-23T12:00:00.000Z' }],
@@ -95,32 +114,26 @@ describe('AchievementsPage', () => {
       },
       isLoading: false,
     } as unknown as ReturnType<typeof useAchievements>);
-    mockedUseGame.mockReturnValue({
-      data: { id: 'g1', viewerGamePlayerId: 'gp1', leaderboard: [{ playerId: 'u1', gamePlayerId: 'gp1', username: 'alice', cashBalance: 1, totalValue: 1, rank: 1 }] },
-      isLoading: false,
-    } as unknown as ReturnType<typeof useGame>);
+    mockGame();
     renderPage();
     await waitFor(() => expect(screen.getByText(/1 \/ 2 unlocked/i)).toBeInTheDocument());
   });
 
-  it('renders a "N more locked" tile when the viewer has unlocked fewer than the total', async () => {
+  it('shows a "N secret" tile when enabled count exceeds visible definitions', async () => {
     mockedUseAchievements.mockReturnValue({
       data: {
         definitions: [
-          { key: 'a', name: 'A', description: '', rarity: 'common', icon: 'circle-dot', target: 1, enabled: true },
+          { key: 'a', name: 'Aye', description: '', rarity: 'common', icon: 'circle-dot', target: 1, enabled: true, secret: false },
         ],
         progress: {
           gp1: [{ achievementKey: 'a', gamePlayerId: 'gp1', progress: 1, target: 1, unlockedAt: '2026-05-23T12:00:00.000Z' }],
         },
-        totalEnabledCount: 3,
+        totalEnabledCount: 3, // 2 secret achievements not surfaced
       },
       isLoading: false,
     } as unknown as ReturnType<typeof useAchievements>);
-    mockedUseGame.mockReturnValue({
-      data: { id: 'g1', viewerGamePlayerId: 'gp1', leaderboard: [{ playerId: 'u1', gamePlayerId: 'gp1', username: 'alice', cashBalance: 1, totalValue: 1, rank: 1 }] },
-      isLoading: false,
-    } as unknown as ReturnType<typeof useGame>);
+    mockGame();
     renderPage();
-    await waitFor(() => expect(screen.getByText(/2 more locked/i)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/2 secret/i)).toBeInTheDocument());
   });
 });

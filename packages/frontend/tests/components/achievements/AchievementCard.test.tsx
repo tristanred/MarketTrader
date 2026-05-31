@@ -11,6 +11,7 @@ const def: AchievementDefinitionDTO = {
   icon: 'circle-dot',
   target: 1,
   enabled: true,
+  secret: false,
 };
 
 describe('AchievementCard', () => {

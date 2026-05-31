@@ -75,6 +75,25 @@ describe('GET /games/:id/achievements', () => {
     expect(firstTrade?.unlockedAt).not.toBeNull();
   });
 
+  it('exposes a secret flag (false by default) on every definition', async () => {
+    const { token } = await registerUser(app, `u-${Math.random().toString(36).slice(2)}`);
+    const game = await createGame(app, token);
+    await app.inject({
+      method: 'POST',
+      url: `/games/${game.id}/trades`,
+      headers: { Authorization: `Bearer ${token}` },
+      payload: { symbol: 'AAPL', direction: 'buy', quantity: 1 },
+    });
+    const res = await app.inject({
+      method: 'GET',
+      url: `/games/${game.id}/achievements`,
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const body = res.json<{ definitions: Array<{ key: string; secret: boolean }> }>();
+    expect(body.definitions.length).toBeGreaterThan(0);
+    for (const d of body.definitions) expect(d.secret).toBe(false);
+  });
+
   it('respects achievementsEnabled: false at game creation', async () => {
     const { token } = await registerUser(app, `u-${Math.random().toString(36).slice(2)}`);
     const game = await createGame(app, token, { achievementsEnabled: false });
@@ -114,6 +133,75 @@ async function joinGame(app: FastifyInstance, token: string, gameId: string) {
   });
   return res.json<{ playerId: string }>();
 }
+
+describe('GET /games/:id/players/:gamePlayerId/achievements', () => {
+  let app: FastifyInstance;
+  beforeAll(async () => { app = await createTestApp(); });
+  afterAll(async () => { await app.close(); });
+
+  it('owner sees locked non-secret defs and their own in-progress rows', async () => {
+    const { token: owner } = await registerUser(app, `u-${Math.random().toString(36).slice(2)}`);
+    const game = await createGame(app, owner);
+    const { token: bob } = await registerUser(app, `u-${Math.random().toString(36).slice(2)}`);
+    const { playerId: bobId } = await joinGame(app, bob, game.id);
+
+    await app.inject({
+      method: 'POST',
+      url: `/games/${game.id}/trades`,
+      headers: { Authorization: `Bearer ${bob}` },
+      payload: { symbol: 'AAPL', direction: 'buy', quantity: 1 },
+    });
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/games/${game.id}/players/${bobId}/achievements`,
+      headers: { Authorization: `Bearer ${bob}` },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json<{
+      definitions: Array<{ key: string }>;
+      progress: Record<string, Array<{ achievementKey: string; unlockedAt: string | null; progress: number }>>;
+    }>();
+    const keys = body.definitions.map((d) => d.key);
+    expect(keys).toContain('first-trade');
+    expect(keys).toContain('ten-buys'); // locked, non-secret — now visible
+    expect(keys).toContain('champion'); // never-touched, non-secret — visible
+    const rows = body.progress[bobId] ?? [];
+    const tenBuys = rows.find((r) => r.achievementKey === 'ten-buys');
+    expect(tenBuys).toBeDefined();
+    expect(tenBuys!.unlockedAt).toBeNull();
+    expect(tenBuys!.progress).toBe(1);
+  });
+
+  it("does not leak another player's in-progress rows to a non-owner", async () => {
+    const { token: owner } = await registerUser(app, `u-${Math.random().toString(36).slice(2)}`);
+    const game = await createGame(app, owner);
+    const { token: bob } = await registerUser(app, `u-${Math.random().toString(36).slice(2)}`);
+    const { playerId: bobId } = await joinGame(app, bob, game.id);
+
+    await app.inject({
+      method: 'POST',
+      url: `/games/${game.id}/trades`,
+      headers: { Authorization: `Bearer ${bob}` },
+      payload: { symbol: 'AAPL', direction: 'buy', quantity: 1 },
+    });
+
+    // owner (a member, but NOT bob) requests bob's achievements
+    const res = await app.inject({
+      method: 'GET',
+      url: `/games/${game.id}/players/${bobId}/achievements`,
+      headers: { Authorization: `Bearer ${owner}` },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json<{
+      progress: Record<string, Array<{ achievementKey: string; unlockedAt: string | null }>>;
+    }>();
+    const rows = body.progress[bobId] ?? [];
+    expect(rows.length).toBeGreaterThan(0); // first-trade is unlocked
+    expect(rows.every((r) => r.unlockedAt !== null)).toBe(true); // no in-progress leaked
+    expect(rows.find((r) => r.achievementKey === 'ten-buys')).toBeUndefined();
+  });
+});
 
 describe('POST /games/:id/players/:gamePlayerId/achievements/ack', () => {
   let app: FastifyInstance;

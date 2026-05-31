@@ -12,6 +12,7 @@ interface AchievementToastStore {
   queue: AchievementToast[];
   enqueue(unlock: WsAchievementUnlockedEvent['data']): void;
   dismiss(id: string): void;
+  promoteNext(): void;
 }
 
 function dedupKey(u: WsAchievementUnlockedEvent['data']): string {
@@ -19,10 +20,13 @@ function dedupKey(u: WsAchievementUnlockedEvent['data']): string {
 }
 
 /**
- * Strict serial queue for own-unlock toasts. The host displays `current`;
- * `dismiss(id)` promotes the head of `queue` into `current`. Enqueues that
- * match an existing (key, unlockedAt) are dropped — protects against
- * StrictMode double-mounts, WS reconnect replays, and multi-tab races.
+ * Strict serial queue for own-unlock toasts. The host displays `current`.
+ * `dismiss(id)` clears `current` to null; the host then waits out the
+ * inter-toast gap and calls `promoteNext()` to pull the queue head in. The
+ * null gap doubles as the remount boundary for the toast component, so each
+ * unlock plays a fresh entrance animation. Enqueues that match an existing
+ * (key, unlockedAt) are dropped — protects against StrictMode double-mounts,
+ * WS reconnect replays, and multi-tab races.
  */
 export const useAchievementToastStore = create<AchievementToastStore>((set, get) => ({
   current: null,
@@ -37,16 +41,24 @@ export const useAchievementToastStore = create<AchievementToastStore>((set, get)
       unlock,
       enqueuedAt: Date.now(),
     };
-    if (current === null) {
+    // Only jump straight to `current` when nothing is in flight. A null
+    // `current` with a non-empty queue means we're mid inter-toast gap — a
+    // newcomer must wait its turn, not cut the line.
+    if (current === null && queue.length === 0) {
       set({ current: entry });
     } else {
       set({ queue: [...queue, entry] });
     }
   },
   dismiss(id) {
-    const { current, queue } = get();
+    const { current } = get();
     if (!current || current.id !== id) return;
-    const [next, ...rest] = queue;
-    set({ current: next ?? null, queue: rest });
+    set({ current: null });
+  },
+  promoteNext() {
+    const { current, queue } = get();
+    const next = queue[0];
+    if (current !== null || next === undefined) return;
+    set({ current: next, queue: queue.slice(1) });
   },
 }));

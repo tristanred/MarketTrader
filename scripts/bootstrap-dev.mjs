@@ -69,10 +69,17 @@ async function loadEnvFile() {
   }
 }
 
+// Resolve a libsql URL to the file the *server* will open. A relative file
+// path in DATABASE_URL is resolved against the server package, not bootstrap's
+// CWD (the repo root) — otherwise bootstrap migrates ./dev.db while the server
+// runs against packages/server/dev.db. Leaves :memory:, remote, and already-
+// absolute URLs untouched.
 function normalizeLibsqlUrl(url) {
-  if (url === ':memory:') return url;
-  if (/^(file|libsql|https?|wss?):/.test(url)) return url;
-  return `file:${url}`;
+  if (url === ':memory:' || url.startsWith('file::memory:')) return url;
+  if (/^(libsql|https?|wss?):/.test(url)) return url;
+  const filePath = url.startsWith('file:') ? url.slice('file:'.length) : url;
+  if (path.isAbsolute(filePath)) return `file:${filePath}`;
+  return `file:${path.resolve(serverRoot, filePath)}`;
 }
 
 async function runMigrations() {

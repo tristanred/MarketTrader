@@ -265,38 +265,12 @@ export async function placeWorkingOrder(
 
     // For non-bracket buys, deduct cash from the player.
     if (direction === 'buy' && orderType !== 'bracket') {
-      const [player] = await tx
-        .select({ cashBalance: gamePlayers.cashBalance })
-        .from(gamePlayers)
-        .where(eq(gamePlayers.id, gamePlayerId))
-        .limit(1);
-      if (!player) throw new Error(`GamePlayer disappeared: ${gamePlayerId}`);
-      const cash = Number(player.cashBalance);
-      if ((reservedCash ?? 0) > cash) {
-        throw new TradeError('INSUFFICIENT_FUNDS', 'Insufficient cash to reserve order');
-      }
-      await tx
-        .update(gamePlayers)
-        .set({ cashBalance: cash - (reservedCash ?? 0) })
-        .where(eq(gamePlayers.id, gamePlayerId));
+      await deductCashReservation(tx, reservedCash ?? 0, 'Insufficient cash to reserve order');
     }
 
     // For non-bracket sells, decrement portfolio quantity.
     if (direction === 'sell' && orderType !== 'bracket') {
-      const [holding] = await tx
-        .select({ id: portfolios.id, quantity: portfolios.quantity })
-        .from(portfolios)
-        .where(and(eq(portfolios.gamePlayerId, gamePlayerId), eq(portfolios.symbol, symbol)))
-        .limit(1);
-      if (!holding || holding.quantity < quantity) {
-        throw new TradeError('INSUFFICIENT_SHARES', 'Insufficient shares to reserve order');
-      }
-      const newQty = holding.quantity - quantity;
-      if (newQty === 0) {
-        await tx.delete(portfolios).where(eq(portfolios.id, holding.id));
-      } else {
-        await tx.update(portfolios).set({ quantity: newQty }).where(eq(portfolios.id, holding.id));
-      }
+      await decrementHolding(tx, 'Insufficient shares to reserve order');
     }
 
     if (orderType === 'bracket') {
@@ -334,41 +308,15 @@ export async function placeWorkingOrder(
       if (!parent) throw new Error('Failed to insert bracket parent');
 
       // Deduct cash for buy-entry / decrement portfolio for sell-entry
-      // (mirrors the non-bracket branches above).
+      // (same operations as the non-bracket branches, on the parent's reservation).
       if (direction === 'buy') {
-        const [player] = await tx
-          .select({ cashBalance: gamePlayers.cashBalance })
-          .from(gamePlayers)
-          .where(eq(gamePlayers.id, gamePlayerId))
-          .limit(1);
-        if (!player) throw new Error('GamePlayer disappeared');
-        const need = Number(parent.reservedCash ?? 0);
-        const cash = Number(player.cashBalance);
-        if (need > cash) {
-          throw new TradeError('INSUFFICIENT_FUNDS', 'Insufficient cash for bracket entry');
-        }
-        await tx
-          .update(gamePlayers)
-          .set({ cashBalance: cash - need })
-          .where(eq(gamePlayers.id, gamePlayerId));
+        await deductCashReservation(
+          tx,
+          Number(parent.reservedCash ?? 0),
+          'Insufficient cash for bracket entry',
+        );
       } else {
-        const [holding] = await tx
-          .select({ id: portfolios.id, quantity: portfolios.quantity })
-          .from(portfolios)
-          .where(and(eq(portfolios.gamePlayerId, gamePlayerId), eq(portfolios.symbol, symbol)))
-          .limit(1);
-        if (!holding || holding.quantity < quantity) {
-          throw new TradeError('INSUFFICIENT_SHARES', 'Insufficient shares for bracket entry');
-        }
-        const newQty = holding.quantity - quantity;
-        if (newQty === 0) {
-          await tx.delete(portfolios).where(eq(portfolios.id, holding.id));
-        } else {
-          await tx
-            .update(portfolios)
-            .set({ quantity: newQty })
-            .where(eq(portfolios.id, holding.id));
-        }
+        await decrementHolding(tx, 'Insufficient shares for bracket entry');
       }
 
       // Children: opposite direction. They become eligible only after parent fills.
@@ -431,6 +379,55 @@ export async function placeWorkingOrder(
       .returning();
     if (!row) throw new Error('Failed to insert working order');
     return [rowToWorkingOrder(row)];
+
+    /**
+     * Re-reads cash inside the txn and deducts `amount`, throwing
+     * `INSUFFICIENT_FUNDS` (with `errMsg`) if the player can't cover it. The
+     * re-read closes the race where two concurrent placements both pass the
+     * pre-txn preflight.
+     */
+    async function deductCashReservation(
+      txn: typeof tx,
+      amount: number,
+      errMsg: string,
+    ): Promise<void> {
+      const [player] = await txn
+        .select({ cashBalance: gamePlayers.cashBalance })
+        .from(gamePlayers)
+        .where(eq(gamePlayers.id, gamePlayerId))
+        .limit(1);
+      if (!player) throw new Error(`GamePlayer disappeared: ${gamePlayerId}`);
+      const cash = Number(player.cashBalance);
+      if (amount > cash) {
+        throw new TradeError('INSUFFICIENT_FUNDS', errMsg);
+      }
+      await txn
+        .update(gamePlayers)
+        .set({ cashBalance: cash - amount })
+        .where(eq(gamePlayers.id, gamePlayerId));
+    }
+
+    /**
+     * Re-reads the holding inside the txn and removes `quantity` shares
+     * (deleting the row at zero), throwing `INSUFFICIENT_SHARES` (with `errMsg`)
+     * if the player holds fewer than `quantity`.
+     */
+    async function decrementHolding(txn: typeof tx, errMsg: string): Promise<void> {
+      const [holding] = await txn
+        .select({ id: portfolios.id, quantity: portfolios.quantity })
+        .from(portfolios)
+        .where(and(eq(portfolios.gamePlayerId, gamePlayerId), eq(portfolios.symbol, symbol)))
+        .limit(1);
+      if (!holding || holding.quantity < quantity) {
+        throw new TradeError('INSUFFICIENT_SHARES', errMsg);
+      }
+      const newQty = holding.quantity - quantity;
+      if (newQty === 0) {
+        await txn.delete(portfolios).where(eq(portfolios.id, holding.id));
+      } else {
+        await txn.update(portfolios).set({ quantity: newQty }).where(eq(portfolios.id, holding.id));
+      }
+    }
   });
 }
 

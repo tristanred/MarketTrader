@@ -51,6 +51,16 @@ describe('StatusStrip', () => {
     expect(screen.getByText('−0.08%')).toBeInTheDocument(); // unicode minus
   });
 
+  it('normalizes a tiny negative change to 0.00% (no "−0.00%")', () => {
+    const { qc, ui } = wrap(<StatusStrip />);
+    qc.setQueryData<IndexQuote[]>(INDICES_QUERY_KEY, [
+      { symbol: '^GSPC', last: 5284.12, changeAbs: -0.01, changePct: -0.002 },
+    ]);
+    render(ui);
+    expect(screen.getByText('0.00%')).toBeInTheDocument();
+    expect(screen.queryByText('−0.00%')).not.toBeInTheDocument();
+  });
+
   it('renders INDICES UNAVAILABLE when the cache holds an unavailable payload', () => {
     const { qc, ui } = wrap(<StatusStrip />);
     qc.setQueryData(INDICES_QUERY_KEY, []);

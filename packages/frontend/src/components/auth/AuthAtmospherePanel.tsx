@@ -119,6 +119,8 @@ function formatUSD(n: number): string {
 }
 
 function formatPct(n: number): string {
-  const sign = n > 0 ? '+' : n < 0 ? '−' : '';
-  return `${sign}${Math.abs(n).toFixed(2)}%`;
+  // Normalize near-zero so a tiny negative doesn't render "−0.00%".
+  const v = Math.abs(n) < 0.005 ? 0 : n;
+  const sign = v > 0 ? '+' : v < 0 ? '−' : '';
+  return `${sign}${Math.abs(v).toFixed(2)}%`;
 }

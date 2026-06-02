@@ -8,7 +8,7 @@ import { MockProvider } from './mock.js';
  * Instantiates the correct {@link StockProvider} based on the `STOCK_PROVIDER`
  * environment variable. Wrapped by {@link CachedProvider} in `app.ts`.
  *
- * @throws {Error} if `STOCK_PROVIDER=alpaca` and `ALPACA_API_KEY` is missing.
+ * @throws {Error} if `STOCK_PROVIDER=alpaca` and the Alpaca key pair is missing.
  */
 export function createProvider(): StockProvider {
   switch (env.STOCK_PROVIDER) {
@@ -17,10 +17,12 @@ export function createProvider(): StockProvider {
       return new MockProvider(overrides);
     }
     case 'alpaca': {
-      if (!env.ALPACA_API_KEY) {
-        throw new Error('ALPACA_API_KEY is required when STOCK_PROVIDER=alpaca');
+      if (!env.ALPACA_API_KEY_ID || !env.ALPACA_API_SECRET_KEY) {
+        throw new Error(
+          'STOCK_PROVIDER=alpaca requires both ALPACA_API_KEY_ID and ALPACA_API_SECRET_KEY',
+        );
       }
-      return new AlpacaProvider(env.ALPACA_API_KEY);
+      return new AlpacaProvider(env.ALPACA_API_KEY_ID, env.ALPACA_API_SECRET_KEY);
     }
     default:
       return new YahooProvider();

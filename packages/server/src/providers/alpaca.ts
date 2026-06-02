@@ -9,8 +9,22 @@ import type { StockProvider } from './interface.js';
 import { StockProviderError } from './interface.js';
 
 /**
+ * Builds the Alpaca authentication headers. Alpaca requires BOTH the key ID
+ * and the secret on every authenticated request; sending only the ID gets a
+ * 401/403. Shared by {@link AlpacaProvider} and the market-status provider so
+ * the auth contract lives in exactly one place.
+ */
+export function alpacaAuthHeaders(apiKeyId: string, apiSecretKey: string): Record<string, string> {
+  return {
+    'APCA-API-KEY-ID': apiKeyId,
+    'APCA-API-SECRET-KEY': apiSecretKey,
+    Accept: 'application/json',
+  };
+}
+
+/**
  * {@link StockProvider} backed by the Alpaca Data API v2.
- * Requires `ALPACA_API_KEY` env var (`STOCK_PROVIDER=alpaca`).
+ * Requires `ALPACA_API_KEY_ID` + `ALPACA_API_SECRET_KEY` (`STOCK_PROVIDER=alpaca`).
  *
  * Known limitations:
  * - `getQuote` uses the `ask price` (ap) field from quotes/latest. Daily
@@ -21,16 +35,16 @@ import { StockProviderError } from './interface.js';
 export class AlpacaProvider implements StockProvider {
   private readonly baseUrl = 'https://data.alpaca.markets/v2';
   private readonly tradingBaseUrl = 'https://api.alpaca.markets/v2';
+  private readonly headers: Record<string, string>;
 
-  constructor(private readonly apiKey: string) {}
+  constructor(apiKeyId: string, apiSecretKey: string) {
+    this.headers = alpacaAuthHeaders(apiKeyId, apiSecretKey);
+  }
 
   async getQuote(symbol: string): Promise<StockQuote> {
     const url = `${this.baseUrl}/stocks/${encodeURIComponent(symbol)}/quotes/latest`;
     const res = await fetch(url, {
-      headers: {
-        'APCA-API-KEY-ID': this.apiKey,
-        Accept: 'application/json',
-      },
+      headers: this.headers,
     });
 
     if (res.status === 404) {
@@ -71,10 +85,7 @@ export class AlpacaProvider implements StockProvider {
   }
 
   async getDetails(symbol: string): Promise<StockDetails> {
-    const headers = {
-      'APCA-API-KEY-ID': this.apiKey,
-      Accept: 'application/json',
-    };
+    const headers = this.headers;
 
     const snapshotUrl = `${this.baseUrl}/stocks/${encodeURIComponent(symbol)}/snapshot`;
     const assetsUrl = `${this.tradingBaseUrl}/assets/${encodeURIComponent(symbol)}`;

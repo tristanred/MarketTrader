@@ -84,7 +84,18 @@ export const env = {
   PORT: parsePort(optional('PORT', '3000')),
   CORS_ORIGIN: optional('CORS_ORIGIN', 'http://localhost:5173'),
   STOCK_PROVIDER: stockProvider,
-  ALPACA_API_KEY: optional('ALPACA_API_KEY', ''),
+  /**
+   * Alpaca API key ID (the `APCA-API-KEY-ID` header). Falls back to the legacy
+   * `ALPACA_API_KEY` name so existing configs keep working — that variable only
+   * ever held the key ID. Pair with {@link env.ALPACA_API_SECRET_KEY}.
+   */
+  ALPACA_API_KEY_ID: optional('ALPACA_API_KEY_ID', optional('ALPACA_API_KEY', '')),
+  /**
+   * Alpaca API secret (the `APCA-API-SECRET-KEY` header). Required alongside the
+   * key ID for any authenticated Alpaca call; without it every request is
+   * rejected 401/403 by Alpaca.
+   */
+  ALPACA_API_SECRET_KEY: optional('ALPACA_API_SECRET_KEY', ''),
   MARKET_STATUS_PROVIDER: validatedMarketStatusProvider(stockProvider),
   MARKET_STATUS_CACHE_TTL_MS: parsePositiveInt(
     'MARKET_STATUS_CACHE_TTL_MS',
@@ -151,7 +162,9 @@ export interface ProductionEnvCheck {
   CORS_ORIGIN: string;
   DATABASE_URL: string;
   STOCK_PROVIDER: string;
-  ALPACA_API_KEY: string;
+  MARKET_STATUS_PROVIDER: string;
+  ALPACA_API_KEY_ID: string;
+  ALPACA_API_SECRET_KEY: string;
   SENTRY_DSN: string;
 }
 
@@ -183,8 +196,13 @@ export function validateProductionEnv(cfg: ProductionEnvCheck = env): void {
     errors.push('DATABASE_URL must be a postgres:// connection string in production.');
   }
 
-  if (cfg.STOCK_PROVIDER === 'alpaca' && !cfg.ALPACA_API_KEY) {
-    errors.push('STOCK_PROVIDER=alpaca requires ALPACA_API_KEY to be set.');
+  // Either provider being set to alpaca needs a full key pair — a missing
+  // secret silently 401s every upstream call.
+  const usesAlpaca = cfg.STOCK_PROVIDER === 'alpaca' || cfg.MARKET_STATUS_PROVIDER === 'alpaca';
+  if (usesAlpaca && (!cfg.ALPACA_API_KEY_ID || !cfg.ALPACA_API_SECRET_KEY)) {
+    errors.push(
+      'Alpaca (STOCK_PROVIDER or MARKET_STATUS_PROVIDER) requires both ALPACA_API_KEY_ID and ALPACA_API_SECRET_KEY.',
+    );
   }
 
   if (errors.length > 0) {

@@ -1,5 +1,6 @@
 import type { MarketStatusResult } from '@markettrader/shared';
 import { StockProviderError } from '../interface.js';
+import { alpacaAuthHeaders } from '../alpaca.js';
 import type { MarketStatusProvider } from './interface.js';
 
 interface ClockResponse {
@@ -17,17 +18,17 @@ interface ClockResponse {
  */
 export class AlpacaMarketStatus implements MarketStatusProvider {
   private readonly url = 'https://api.alpaca.markets/v2/clock';
+  private readonly headers: Record<string, string>;
 
-  constructor(private readonly apiKey: string) {}
+  constructor(apiKeyId: string, apiSecretKey: string) {
+    this.headers = alpacaAuthHeaders(apiKeyId, apiSecretKey);
+  }
 
   async getStatus(): Promise<MarketStatusResult> {
     let res: Response;
     try {
       res = await fetch(this.url, {
-        headers: {
-          'APCA-API-KEY-ID': this.apiKey,
-          Accept: 'application/json',
-        },
+        headers: this.headers,
       });
     } catch (err) {
       throw new StockProviderError('PROVIDER_ERROR', `Alpaca clock fetch failed: ${(err as Error).message}`);

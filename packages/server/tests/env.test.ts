@@ -6,7 +6,9 @@ const valid: ProductionEnvCheck = {
   CORS_ORIGIN: 'https://prod.example.com',
   DATABASE_URL: 'postgres://user:pw@db:5432/markettrader',
   STOCK_PROVIDER: 'yahoo',
-  ALPACA_API_KEY: '',
+  MARKET_STATUS_PROVIDER: 'yahoo',
+  ALPACA_API_KEY_ID: '',
+  ALPACA_API_SECRET_KEY: '',
   SENTRY_DSN: 'https://public@sentry.io/1',
 };
 
@@ -31,18 +33,34 @@ describe('validateProductionEnv', () => {
       .toThrow(/DATABASE_URL/);
   });
 
-  it('requires ALPACA_API_KEY when STOCK_PROVIDER=alpaca', () => {
+  it('requires the Alpaca key pair when STOCK_PROVIDER=alpaca', () => {
     expect(() =>
-      validateProductionEnv({ ...valid, STOCK_PROVIDER: 'alpaca', ALPACA_API_KEY: '' }),
-    ).toThrow(/ALPACA_API_KEY/);
+      validateProductionEnv({ ...valid, STOCK_PROVIDER: 'alpaca' }),
+    ).toThrow(/ALPACA_API_KEY_ID/);
   });
 
-  it('accepts alpaca provider when an API key is set', () => {
+  it('requires the Alpaca key pair when MARKET_STATUS_PROVIDER=alpaca', () => {
+    // Regression: the market-status factory used to skip this check, so a
+    // boot with MARKET_STATUS_PROVIDER=alpaca and no key only failed at request
+    // time with an opaque 502.
+    expect(() =>
+      validateProductionEnv({ ...valid, MARKET_STATUS_PROVIDER: 'alpaca' }),
+    ).toThrow(/ALPACA_API_SECRET_KEY/);
+  });
+
+  it('rejects alpaca with only the key id and no secret', () => {
+    expect(() =>
+      validateProductionEnv({ ...valid, STOCK_PROVIDER: 'alpaca', ALPACA_API_KEY_ID: 'k' }),
+    ).toThrow(/ALPACA_API_SECRET_KEY/);
+  });
+
+  it('accepts alpaca provider when the full key pair is set', () => {
     expect(() =>
       validateProductionEnv({
         ...valid,
         STOCK_PROVIDER: 'alpaca',
-        ALPACA_API_KEY: 'k',
+        ALPACA_API_KEY_ID: 'k',
+        ALPACA_API_SECRET_KEY: 's',
       }),
     ).not.toThrow();
   });
@@ -54,10 +72,12 @@ describe('validateProductionEnv', () => {
         CORS_ORIGIN: 'http://localhost:5173',
         DATABASE_URL: ':memory:',
         STOCK_PROVIDER: 'alpaca',
-        ALPACA_API_KEY: '',
+        MARKET_STATUS_PROVIDER: 'yahoo',
+        ALPACA_API_KEY_ID: '',
+        ALPACA_API_SECRET_KEY: '',
         SENTRY_DSN: '',
       }),
-    ).toThrow(/JWT_SECRET[\s\S]*CORS_ORIGIN[\s\S]*DATABASE_URL[\s\S]*ALPACA_API_KEY/);
+    ).toThrow(/JWT_SECRET[\s\S]*CORS_ORIGIN[\s\S]*DATABASE_URL[\s\S]*ALPACA/);
   });
 });
 

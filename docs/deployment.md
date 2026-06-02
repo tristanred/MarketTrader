@@ -50,10 +50,11 @@ STOCK_PROVIDER=yahoo
 # Optional:
 # SENTRY_DSN=https://...@sentry.io/...
 # STOCK_PROVIDER=alpaca
-# ALPACA_API_KEY=...
+# ALPACA_API_KEY_ID=...
+# ALPACA_API_SECRET_KEY=...
 ```
 
-Production env validation (`validateProductionEnv()` in `packages/server/src/env.ts`) refuses to start if `JWT_SECRET` is shorter than 32 chars, `CORS_ORIGIN` is the dev default, `DATABASE_URL` isn't Postgres, or `STOCK_PROVIDER=alpaca` without an API key.
+Production env validation (`validateProductionEnv()` in `packages/server/src/env.ts`) refuses to start if `JWT_SECRET` is shorter than 32 chars, `CORS_ORIGIN` is the dev default, `DATABASE_URL` isn't Postgres, or Alpaca is selected (via `STOCK_PROVIDER` or `MARKET_STATUS_PROVIDER`) without both `ALPACA_API_KEY_ID` and `ALPACA_API_SECRET_KEY`.
 
 ## 4. Bring up the stack
 

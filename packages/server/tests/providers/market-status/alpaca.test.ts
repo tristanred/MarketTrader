@@ -8,7 +8,7 @@ describe('AlpacaMarketStatus', () => {
 
   beforeEach(() => {
     originalFetch = globalThis.fetch;
-    provider = new AlpacaMarketStatus('test-key');
+    provider = new AlpacaMarketStatus('test-key-id', 'test-secret');
   });
 
   afterEach(() => {
@@ -60,5 +60,24 @@ describe('AlpacaMarketStatus', () => {
   it('maps non-ok responses to PROVIDER_ERROR', async () => {
     stub(500, {});
     await expect(provider.getStatus()).rejects.toBeInstanceOf(StockProviderError);
+  });
+
+  it('sends both the key-id and secret auth headers', async () => {
+    const fetchMock = vi.fn(
+      async (_input: string | URL, _init?: RequestInit) =>
+        new Response(JSON.stringify({ is_open: true }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+    );
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    await provider.getStatus();
+
+    const headers = fetchMock.mock.calls[0]?.[1]?.headers as Record<string, string>;
+    expect(headers['APCA-API-KEY-ID']).toBe('test-key-id');
+    // Regression: without the secret header, every authenticated Alpaca call
+    // is rejected 401/403 in production.
+    expect(headers['APCA-API-SECRET-KEY']).toBe('test-secret');
   });
 });

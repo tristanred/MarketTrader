@@ -94,6 +94,8 @@ A handful of the deferred cosmetic lows (dead `editMode` flag, the two trivially
 
 ---
 
-## Process note (dev ergonomics, not a code finding)
+## Process notes (dev ergonomics, not code findings)
 
-`pnpm typecheck` does not build `packages/shared` first, so a stale `shared/dist` makes the frontend typecheck fail spuriously (hit at the start of this session). Worth a `prebuild`/`predev` or topo-ordered typecheck so CI/devs don't chase phantom type errors. Recorded for a separate change.
+1. **Stale `shared/dist` breaks typecheck.** `pnpm typecheck` does not build `packages/shared` first, so a stale `shared/dist` makes the frontend typecheck fail spuriously (hit at the start of this session). Worth a `prebuild`/`predev` or topo-ordered typecheck so CI/devs don't chase phantom type errors.
+
+2. **Playwright e2e full-run is flaky (PRE-EXISTING, also fails on `main`).** `pnpm --filter frontend e2e` fails 26/54 in the full run — every failure traces to the worker-scoped `adminUser` fixture (`e2e/fixtures/base.ts:197`) asserting the first-registered user is auto-promoted to admin and getting `groups=[]`. The `:memory:` server's "first user becomes admin" bootstrap only fires when no admin exists; across the full suite an earlier spec's registration already created one, so later fixture re-inits see `groups=[]`. **The same specs pass 5/5 in isolation, and clean `main` produces the identical 26-pass / 26-fail split** — verified this session by running the full suite on both branches. So it's a harness state-bleed bug, not a regression from this work. Fix direction: scope the admin bootstrap per test (reset the DB or use a dedicated admin seed) rather than relying on registration order. Recorded for a separate change — out of scope for this clean-up branch.

@@ -32,19 +32,23 @@ Ordered by execution sequence. Money-path / high-risk items are hand-done and co
 
 ### B. HIGH / MEDIUM security — deduplicated by root cause
 
-**B1. `/auth/refresh` (and the disabled kill-switch) — re-check `users.disabled`** — `routes/auth.ts`
+**B1. `/auth/refresh` (and the disabled kill-switch) — re-check `users.disabled`** — ✅ DONE (commit `f6c868c`).
+`routes/auth.ts`
 _Collapses 4 findings_ (player-routes HIGH, app-plugins HIGH, admin MEDIUM, security MEDIUM). `/auth/refresh` verifies the refresh JWT and re-mints a 15-min access token but never re-reads the user, so a disabled/deleted user keeps minting tokens for up to 7 days — the admin "disable" control is nearly inert.
 **Fix:** in `/auth/refresh`, after verifying the token, load the user by `payload.id`; return 401 if missing or `disabled`. Re-derive `username`/groups from the DB rather than trusting the token. (Bounds post-ban exposure to one 15-min access-token lifetime without a per-request DB hit elsewhere.)
 
-**B2. WS upgrade accepts long-lived refresh tokens (no `type` check)** — `ws/live-route.ts`, `ws/global-live-route.ts`
+**B2. WS upgrade accepts long-lived refresh tokens (no `type` check)** — ✅ DONE (commit `f0b1f3e`).
+`ws/live-route.ts`, `ws/global-live-route.ts`
 _Collapses 2 findings._ Both WS routes accept any structurally valid JWT; a 7-day refresh token works as a socket credential, and the token rides in the URL query string (proxy logs, history). Independently confirmed during orientation.
 **Fix:** after `verify`, reject `payload.type === 'refresh'` (close 1008) in both routes.
 
-**B3. POST `/games/:id/trades` — move membership check before existence/status/order-type gates** — `routes/trading.ts`
+**B3. POST `/games/:id/trades` — move membership check before existence/status/order-type gates** — ✅ DONE (commit `bff7d0a`).
+`routes/trading.ts`
 Membership is checked **last**, after 404/409 branches that leak game existence, status, and which order types a game permits to non-members — contradicting the documented "return 404 so game IDs aren't enumerable" invariant honored elsewhere.
 **Fix:** reorder so the membership lookup runs immediately after loading the game, returning the same 404 for non-members before any status recompute / order-type gate. Read-only reorder, well before any mutation.
 
-**B4. Add per-route rate limit to unauthenticated `/stocks/*`** — `routes/stocks.ts`
+**B4. Add per-route rate limit to unauthenticated `/stocks/*`** — ✅ DONE (commit `bae268e`; search 30/min, lookups 120/min).
+`routes/stocks.ts`
 The limiter is `global:false`; the four `/stocks/*` routes are unauthenticated, opt into no limit, and proxy the external provider. `/stocks/search?q=…` is cache-keyed by query, so varied queries reach upstream — an anon client can drive provider cost and trip the shared rate-limit backoff that trading also depends on.
 **Fix:** add a modest per-route `config.rateLimit` (e.g. 60/min) keyed by IP, consistent with the existing opt-in model.
 

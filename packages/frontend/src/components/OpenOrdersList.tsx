@@ -10,7 +10,7 @@ import {
 } from '@/api/trades';
 import { toast } from '@/components/ui/toast';
 import { formatUSD, cn } from '@/lib/utils';
-import { ApiError } from '@/lib/api';
+import { extractApiMessage } from '@/lib/extractApiMessage';
 import type { PendingTrade, WorkingOrder } from '@markettrader/shared';
 
 /**
@@ -197,7 +197,7 @@ export function OpenOrdersList({ gameId }: { gameId: string }) {
     const reason = first?.status === 'rejected' ? first.reason : undefined;
     toast({
       title: `${failures.length} of ${g.ids.length} cancels failed`,
-      description: extractMessage(reason),
+      description: extractApiMessage(reason),
       variant: 'destructive',
     });
   };
@@ -326,17 +326,4 @@ function StatusCancelBadge({
       </span>
     </button>
   );
-}
-
-function extractMessage(err: unknown): string {
-  if (err instanceof ApiError) {
-    const body = err.body;
-    if (body && typeof body === 'object') {
-      const rec = body as Record<string, unknown>;
-      if (typeof rec['message'] === 'string') return rec['message'];
-      if (typeof rec['error'] === 'string') return rec['error'];
-    }
-    return `${err.status} ${err.message}`;
-  }
-  return err instanceof Error ? err.message : 'Unknown error';
 }

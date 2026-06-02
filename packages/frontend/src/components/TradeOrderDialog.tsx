@@ -6,7 +6,7 @@ import { useStockSearch, useStockDetails, useStockQuote } from '@/api/stocks';
 import { usePlaceTrade, usePortfolio } from '@/api/trades';
 import { useLiveStore } from '@/stores/liveStore';
 import { toast } from '@/components/ui/toast';
-import { ApiError } from '@/lib/api';
+import { extractApiMessage } from '@/lib/extractApiMessage';
 import { cn, formatPct, formatUSD, SYMBOL_RE } from '@/lib/utils';
 import { projectAllocation, projectPositionAfter, type PositionSnapshot } from '@/lib/positionMath';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
@@ -1066,16 +1066,3 @@ const SummaryRow = memo(function SummaryRow({
     </div>
   );
 });
-
-function extractApiMessage(err: unknown): string {
-  if (err instanceof ApiError) {
-    const body = err.body;
-    if (body && typeof body === 'object') {
-      const rec = body as Record<string, unknown>;
-      if (typeof rec['message'] === 'string') return rec['message'];
-      if (typeof rec['error'] === 'string') return rec['error'];
-    }
-    return `${err.status} ${err.message}`;
-  }
-  return err instanceof Error ? err.message : 'Unknown error';
-}

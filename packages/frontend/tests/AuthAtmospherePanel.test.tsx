@@ -26,7 +26,7 @@ function wrap(ui: React.ReactElement) {
 
 beforeEach(() => {
   // The panel calls fetch('/api/public/featured-games'); resolve with SAMPLE.
-  global.fetch = vi.fn(async () => ({
+  globalThis.fetch = vi.fn(async () => ({
     ok: true,
     json: async () => SAMPLE,
   })) as unknown as typeof fetch;

@@ -69,6 +69,16 @@ describe('GET /ws/live (global socket)', () => {
     expect(code).toBe(1008);
   });
 
+  it('rejects a refresh token (close 1008)', async () => {
+    const refreshToken = app.jwt.sign(
+      { id: 'whoever', username: 'global-ws-user', type: 'refresh' },
+      { expiresIn: '7d' },
+    );
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/ws/live?token=${refreshToken}`);
+    const code = await waitForClose(ws);
+    expect(code).toBe(1008);
+  });
+
   it('accepts a valid token and stays open', async () => {
     const ws = new WebSocket(`ws://127.0.0.1:${port}/ws/live?token=${token}`);
     await waitForOpen(ws);

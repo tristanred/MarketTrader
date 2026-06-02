@@ -118,6 +118,18 @@ describe('GET /games/:id/live (WebSocket)', () => {
     expect(code).toBe(1008);
   });
 
+  it('closes with code 1008 when a refresh token is presented (not an access token)', async () => {
+    // A structurally valid refresh token (same secret, type:'refresh') must be
+    // rejected — only the 15-minute access token may authenticate a socket.
+    const refreshToken = app.jwt.sign(
+      { id: 'whoever', username: 'wsuser1', type: 'refresh' },
+      { expiresIn: '7d' },
+    );
+    const ws = connectWs(port, gameId, refreshToken);
+    const code = await waitForClose(ws);
+    expect(code).toBe(1008);
+  });
+
   it('closes with code 1008 when user is not a member of the game', async () => {
     const { token: otherToken } = await registerUser(app, 'wsuser2');
     const ws = connectWs(port, gameId, otherToken);

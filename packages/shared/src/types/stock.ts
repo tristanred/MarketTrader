@@ -38,6 +38,13 @@ export interface StockSearchResult {
   symbol: string;
   /** Human-readable company or fund name. */
   name: string;
+  /**
+   * Percentage change since previous close, when the active provider supplies a
+   * quote for this row. Optional and best-effort: undefined when the provider
+   * has no quote path (Alpaca/mock) or enrichment was skipped/failed, in which
+   * case the UI renders "—". Same value the ticker shows ({@link StockQuote.changePercent}).
+   */
+  changePercent?: number;
 }
 
 /** Time ranges supported by the history endpoint. */

@@ -141,6 +141,57 @@ export class YahooProvider implements StockProvider {
     };
   }
 
+  async getQuotes(symbols: string[]): Promise<Map<string, StockQuote>> {
+    const out = new Map<string, StockQuote>();
+    const unique = [...new Set(symbols.map((s) => s.toUpperCase()))];
+    if (unique.length === 0) return out;
+
+    this.throwIfRateLimited();
+
+    let rows: Map<string, unknown>;
+    try {
+      // Validated batch (same trade-safety discipline as getQuote — these rows
+      // are written into the shared price cache). `return: 'map'` keys by symbol.
+      rows = await this.client.quote(
+        unique,
+        {
+          return: 'map',
+          fields: [
+            'symbol',
+            'regularMarketPrice',
+            'regularMarketChange',
+            'regularMarketChangePercent',
+            'regularMarketVolume',
+            'marketState',
+          ],
+        },
+      );
+    } catch (err) {
+      if (is429(err)) this.trip429();
+      throw new StockProviderError('PROVIDER_ERROR', 'Yahoo Finance batch quote failed');
+    }
+
+    const fetchedAt = new Date().toISOString();
+    for (const [sym, raw] of rows) {
+      if (!raw || typeof raw !== 'object') continue;
+      const row = raw as Record<string, unknown>;
+      // Skip rows without a usable price — no partial quotes in the cache.
+      if (row.regularMarketPrice == null) continue;
+      const marketState = asMarketState(row.marketState);
+      const volume = row.regularMarketVolume;
+      out.set(sym, {
+        symbol: typeof row.symbol === 'string' ? row.symbol : sym,
+        price: row.regularMarketPrice as number,
+        change: (row.regularMarketChange as number | undefined) ?? 0,
+        changePercent: (row.regularMarketChangePercent as number | undefined) ?? 0,
+        fetchedAt,
+        ...(marketState && { marketState }),
+        ...(typeof volume === 'number' && { volume }),
+      });
+    }
+    return out;
+  }
+
   async getDetails(symbol: string): Promise<StockDetails> {
     this.throwIfRateLimited();
 

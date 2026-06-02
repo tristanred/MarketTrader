@@ -17,6 +17,14 @@ import type {
 export interface StockProvider {
   /** Fetches the latest quote for a stock symbol. */
   getQuote(symbol: string): Promise<StockQuote>;
+  /**
+   * Optional batch quote: fetches quotes for several symbols in ONE upstream
+   * call, keyed by symbol. Used by {@link CachedProvider} to enrich search
+   * results with a day's change%. Providers without a batch path leave this
+   * undefined; callers MUST treat a missing method or a missing symbol as
+   * "no quote" and degrade gracefully.
+   */
+  getQuotes?(symbols: string[]): Promise<Map<string, StockQuote>>;
   /** Returns matching equity symbols for an autocomplete query. */
   searchSymbols(query: string): Promise<StockSearchResult[]>;
   /**

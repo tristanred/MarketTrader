@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import type {
   MarketState,
   StockDetails,
@@ -12,6 +12,13 @@ import { schema } from '../db/index.js';
 import type { StockProvider } from './interface.js';
 import { StockProviderError } from './interface.js';
 import { env } from '../env.js';
+
+/**
+ * How many leading search rows get a live change%. Covers {@link SymbolSearch}'s
+ * full scrollable list; the other two dropdowns slice to 8. Rows past this show
+ * "—" so a long, low-relevance tail never triggers a wide batch quote.
+ */
+const SEARCH_ENRICH_TOP_N = 10;
 
 /**
  * A {@link StockProvider} decorator that adds two caching layers on top of an
@@ -104,8 +111,17 @@ export class CachedProvider implements StockProvider {
       }
       throw err;
     }
-    if (quote.marketState) this.marketStateBySymbol.set(symbol, quote.marketState);
+    await this.cacheQuote(quote);
+    return quote;
+  }
 
+  /**
+   * Upserts a freshly-fetched quote into the persisted price cache and mirrors
+   * its market state, so subsequent {@link getQuote} reads and the rest of the
+   * app share it. Shared by {@link getQuote} and search-result enrichment.
+   */
+  private async cacheQuote(quote: StockQuote): Promise<void> {
+    if (quote.marketState) this.marketStateBySymbol.set(quote.symbol, quote.marketState);
     await this.db
       .insert(schema.stockPriceCache)
       .values({
@@ -126,8 +142,6 @@ export class CachedProvider implements StockProvider {
           fetchedAt: quote.fetchedAt,
         },
       });
-
-    return quote;
   }
 
   async getHistory(symbol: string, range: StockHistoryRange): Promise<StockHistoryBar[]> {
@@ -171,13 +185,68 @@ export class CachedProvider implements StockProvider {
     const key = query.trim().toLowerCase();
     if (key.length === 0) return [];
 
+    // The search cache stores BARE {symbol,name} rows. The change% must never be
+    // frozen by the 5-min search TTL, so it's layered on per call from the
+    // shorter-lived quote cache below — not stored here.
+    let base: StockSearchResult[];
     const hit = this.searchCache.get(key);
     if (hit && Date.now() - hit.fetchedAt < env.STOCK_SEARCH_CACHE_TTL_MS) {
-      return hit.results;
+      base = hit.results;
+    } else {
+      // A search-path rate-limit must still surface as 429 — keep this OUTSIDE
+      // the best-effort enrichment try/catch.
+      base = await this.inner.searchSymbols(query);
+      this.searchCache.set(key, { results: base, fetchedAt: Date.now() });
     }
 
-    const results = await this.inner.searchSymbols(query);
-    this.searchCache.set(key, { results, fetchedAt: Date.now() });
-    return results;
+    // Best-effort enrichment: a search must never fail because a quote hiccupped.
+    // Build new objects so cached rows are never mutated.
+    try {
+      const top = base.slice(0, SEARCH_ENRICH_TOP_N).map((r) => r.symbol);
+      const pctBySymbol = await this.changePctForSymbols(top);
+      return base.map((r) => {
+        const pct = pctBySymbol.get(r.symbol);
+        return pct === undefined ? { ...r } : { ...r, changePercent: pct };
+      });
+    } catch {
+      return base.map((r) => ({ ...r }));
+    }
+  }
+
+  /**
+   * Returns the day change% for each symbol, reusing the persisted quote cache
+   * for rows younger than the quote TTL and batching only the misses through
+   * the inner provider's optional {@link StockProvider.getQuotes}. Freshly-
+   * fetched quotes are written back to the cache. Symbols with no quote (or when
+   * the inner provider has no batch path) are simply absent from the map.
+   */
+  private async changePctForSymbols(symbols: string[]): Promise<Map<string, number>> {
+    const out = new Map<string, number>();
+    if (symbols.length === 0) return out;
+
+    const cached = await this.db
+      .select()
+      .from(schema.stockPriceCache)
+      .where(inArray(schema.stockPriceCache.symbol, symbols));
+
+    const now = Date.now();
+    const fresh = new Map<string, number>();
+    for (const row of cached) {
+      if (now - new Date(row.fetchedAt).getTime() < env.STOCK_CACHE_TTL_MS) {
+        fresh.set(row.symbol, Number(row.changePercent));
+      }
+    }
+
+    const misses = symbols.filter((s) => !fresh.has(s));
+    for (const [sym, pct] of fresh) out.set(sym, pct);
+
+    if (misses.length > 0 && this.inner.getQuotes) {
+      const quotes = await this.inner.getQuotes(misses);
+      for (const [sym, quote] of quotes) {
+        out.set(sym, quote.changePercent);
+        await this.cacheQuote(quote);
+      }
+    }
+    return out;
   }
 }

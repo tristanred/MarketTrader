@@ -20,8 +20,9 @@ vi.mock('@/api/stocks', () => ({
   useStockSearch: (query: string) => ({
     data: query
       ? [
-          { symbol: 'AAPL', name: 'Apple Inc.' },
-          { symbol: 'NVDA', name: 'Nvidia Corp.' },
+          { symbol: 'AAPL', name: 'Apple Inc.', changePercent: 1.23 },
+          { symbol: 'NVDA', name: 'Nvidia Corp.', changePercent: -0.5 },
+          { symbol: 'TSLA', name: 'Tesla Inc.' },
         ]
       : [],
     isLoading: false,
@@ -96,6 +97,24 @@ describe('SymbolSearch', () => {
     await user.type(input, 'a');
     await screen.findByText('AAPL');
     await user.keyboard('{ArrowUp}{Enter}');
-    expect(onSelect).toHaveBeenCalledWith('NVDA');
+    expect(onSelect).toHaveBeenCalledWith('TSLA'); // wraps to the last row
+  });
+
+  it('shows each result\'s day change%, color-coded, with "—" when absent', async () => {
+    const user = userEvent.setup();
+    render(wrap(<SymbolSearch onSelect={() => {}} />));
+    await user.type(screen.getByRole('searchbox'), 'a');
+    await screen.findByText('AAPL');
+
+    const gain = screen.getByText('+1.23%');
+    expect(gain).toBeInTheDocument();
+    expect(gain).toHaveClass('text-gain');
+
+    const loss = screen.getByText('-0.50%');
+    expect(loss).toBeInTheDocument();
+    expect(loss).toHaveClass('text-loss');
+
+    // TSLA has no changePercent → renders an em dash.
+    expect(screen.getByText('—')).toBeInTheDocument();
   });
 });

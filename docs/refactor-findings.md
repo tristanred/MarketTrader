@@ -71,13 +71,13 @@ _Bundles the related MEDIUM (market-status factory doesn't validate key) and LOW
 ### E. Maintainability / SoC — selected, genuine-duplication wins (fan-out OK with caveats)
 
 - **E1. Money path (HAND-DONE, separate commit AFTER A1 is green):** extract `deductCashReservation(tx, …)` and `decrementHolding(tx, …)` tx-scoped helpers; `placeWorkingOrder` reimplements both twice across the bracket/non-bracket branches (~230-line fn). High risk — same code as the bracket bug.
-- **E2.** `services/leaderboard.ts` — the open-order reservation query is unscoped by game; it pulls **every** open order platform-wide on every snapshot tick then discards non-members. Scope it to the game's players.
-- **E3.** `schema.sqlite.ts` + `schema.pg.ts` — `trades` has no index beyond PK, yet every worker tick scans `status='working'`/`'pending'`. Add a `status` index and a `(gamePlayerId, status)` composite to **both** dialects + generate migrations.
-- **E4.** `shared/types/player.ts` — add canonical `TradeStatus = 'pending'|'working'|'executed'|'cancelled'` (triplicated today). **CAVEAT: do NOT touch `trading.ts:93`** — its `z.enum(['executed','working','pending'])` is a deliberate API subset.
+- **E2.** ✅ DONE (commit `5ae7493`). `services/leaderboard.ts` reservation query scoped to the game's players (+ cross-game isolation test).
+- **E3.** ✅ DONE (commit `c618140`). `status` and `(gamePlayerId, status)` indexes on `trades` in both dialects + migrations (`0016` sqlite / `0015` pg).
+- **E4.** ✅ DONE (commit `567cb21`). Canonical `TradeStatus` in `shared/types/player.ts`, reused in `AdminTradeRow` + frontend admin trades query. `trading.ts:93` left untouched as required.
 - **E5a.** ✅ DONE (commit `f558fe5`). Shared `lib/extractApiMessage` replacing 3 copies; kept message-then-error precedence (and unified `toastApiError` onto it — see commit for the deliberate body.message-over-body.error change).
 - **E5b.** ❌ DEFERRED. Shared symbol-search input for TradeOrderDialog + QuoteInfo. A fuller component already exists (`components/search/SymbolSearch.tsx`) but the two simpler copies have *different Enter semantics* (TradeOrderDialog: Enter picks the raw typed symbol via `SYMBOL_RE`, even if not in the suggestion list, to seed the buy form; `SymbolSearch`: Enter selects the highlighted suggestion row) and a **parent-owned `searchQuery`** woven into a reset effect + form-seeding. Swapping is a behavior change, not a refactor — real surgery for pure line-count dedup. Defer until one of these components is being reworked for its own reasons.
-- **E6.** Frontend `formatPct`/`formatUSD` — ~6 panels redefine local copies; the locals can render `−0.00%` (the shared `lib/utils.formatPct` normalizes it). **CAVEAT: glyph trap — locals use U+2212 `−`, shared uses ASCII `-`; align deliberately, don't silently change the rendered minus.**
-- **E7.** Achievements DSL — extract a `readPlayerStatColumn` / `progressFromStat` helper for the ~10 byte-identical "select one stat column, guard, setProgress" definition bodies. Assess the pattern as a whole; don't rewrite 40 files.
+- **E6.** ✅ DONE (commit `c7d7d8e`). Fixed the `−0.00%`/`−$0.00` bug in-place across 6 panels (+ regression test). **Dedup onto `lib/utils` deliberately NOT done** — the panels' U+2212 minus is intentional and asserted by 4 panel tests; deduping would change tested rendering. Recorded as a conscious keep-glyph decision.
+- **E7.** ✅ DONE (commit `0c0099d`). Extracted `progressFromStat(column)`; 8 pure definitions → one line each, 2 guarded ones delegate after their guard. All 157 achievement tests pass.
 
 ---
 

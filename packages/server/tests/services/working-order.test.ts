@@ -141,6 +141,42 @@ describe('placeWorkingOrder — validation', () => {
       }),
     ).rejects.toBeInstanceOf(TradeError);
   });
+
+  it('rejects a bracket buy-entry when cash is insufficient', async () => {
+    const { db, gamePlayerId } = await seed({ cash: 100 });
+    await expect(
+      placeWorkingOrder(db, {
+        gamePlayerId,
+        symbol: 'AAPL',
+        direction: 'buy',
+        quantity: 10,
+        orderType: 'bracket',
+        timeInForce: 'day',
+        limitPrice: 100, // entry reservation 10 * 100 = 1000 > 100 cash
+        takeProfitPrice: 120,
+        stopLossPrice: 90,
+      }),
+    ).rejects.toMatchObject({ code: 'INSUFFICIENT_FUNDS' });
+  });
+
+  it('rejects a bracket sell-entry when shares are insufficient', async () => {
+    const { db, gamePlayerId } = await seed();
+    await seedHolding(db, gamePlayerId, 'AAPL', 3);
+    await expect(
+      placeWorkingOrder(db, {
+        gamePlayerId,
+        symbol: 'AAPL',
+        direction: 'sell',
+        quantity: 10, // only 3 held
+        orderType: 'bracket',
+        timeInForce: 'day',
+        limitPrice: 100,
+        // Short bracket: TP (cover) below entry, SL (cover) above.
+        takeProfitPrice: 80,
+        stopLossPrice: 120,
+      }),
+    ).rejects.toMatchObject({ code: 'INSUFFICIENT_SHARES' });
+  });
 });
 
 describe('placeWorkingOrder — limit buy', () => {

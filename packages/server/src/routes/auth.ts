@@ -226,15 +226,31 @@ export function authRoutes(db: Db) {
         return reply.status(401).send({ error: 'Invalid refresh token' });
       }
 
+      // Re-load the user instead of trusting the (up to 7-day-old) token.
+      // Without this, disabling or deleting an account does nothing until the
+      // refresh cookie expires — the holder keeps minting 15-minute access
+      // tokens. Re-checking here caps post-disable access to one access-token
+      // lifetime. Username/groups are re-derived from the live row too, so a
+      // stale token can't carry a renamed identity forward.
+      const [current] = await db
+        .select({ id: users.id, username: users.username, disabled: users.disabled })
+        .from(users)
+        .where(eq(users.id, payload.id))
+        .limit(1);
+
+      if (!current || current.disabled) {
+        return reply.status(401).send({ error: 'Invalid refresh token' });
+      }
+
       const accessToken = app.jwt.sign(
-        { id: payload.id, username: payload.username },
+        { id: current.id, username: current.username },
         { expiresIn: '15m' },
       );
 
-      const groups = await loadUserGroups(db, payload.id);
+      const groups = await loadUserGroups(db, current.id);
       return reply.status(200).send({
         token: accessToken,
-        user: { id: payload.id, username: payload.username, groups },
+        user: { id: current.id, username: current.username, groups },
       });
     });
   };

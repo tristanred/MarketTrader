@@ -32,10 +32,22 @@ export async function createTestApp(
   provider?: StockProvider,
   marketStatusProvider?: MarketStatusProvider,
 ): Promise<FastifyInstance> {
+  return (await createTestAppWithDb(provider, marketStatusProvider)).app;
+}
+
+/**
+ * Like {@link createTestApp} but also returns the backing `db`, for tests that
+ * need to assert on or mutate persisted state directly (e.g. flipping
+ * `users.disabled` to exercise the account kill-switch).
+ */
+export async function createTestAppWithDb(
+  provider?: StockProvider,
+  marketStatusProvider?: MarketStatusProvider,
+): Promise<{ app: FastifyInstance; db: Awaited<ReturnType<typeof createTestDb>> }> {
   const db = await createTestDb();
   // Always disable the price poller in tests to prevent setInterval from
   // keeping the Vitest process alive after app.close().
-  return buildApp({
+  const app = await buildApp({
     logger: false,
     db,
     provider: provider ?? new MockStockProvider(),
@@ -44,4 +56,5 @@ export async function createTestApp(
     disableRateLimit: true,
     leaderboardThrottleMs: 0,
   });
+  return { app, db };
 }

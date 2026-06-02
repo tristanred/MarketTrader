@@ -48,9 +48,8 @@ Membership is checked **last**, after 404/409 branches that leak game existence,
 The limiter is `global:false`; the four `/stocks/*` routes are unauthenticated, opt into no limit, and proxy the external provider. `/stocks/search?q=…` is cache-keyed by query, so varied queries reach upstream — an anon client can drive provider cost and trip the shared rate-limit backoff that trading also depends on.
 **Fix:** add a modest per-route `config.rateLimit` (e.g. 60/min) keyed by IP, consistent with the existing opt-in model.
 
-**B5. Gate Swagger UI behind non-production (or admin)** — `plugins/swagger.ts`, `app.ts`
-`/docs` and the OpenAPI JSON are publicly browsable in prod (route/param/scheme enumeration).
-**Fix:** skip the swagger-UI registration when `NODE_ENV === 'production'` (keep the validator/serializer compilers routes depend on).
+**B5. Gate Swagger UI behind non-production (or admin)** — ❌ WON'T DO (deliberate decision, 2026-06-02).
+`/docs` and the OpenAPI JSON are publicly browsable in prod, but this is **documentation only** — it grants no privilege; every route independently enforces JWT/`requireAdmin` regardless of where the request originates. The only effect is making the API surface easy to enumerate (reconnaissance), and the spec leaks no secrets. MarketTrader's API is a private backend for its own SPA with no third-party consumers, but the residual risk is minimal and many mature public APIs (Stripe, GitHub) keep docs public. Decision: **keep it public**, consistent with the "demonstrable value" bar — gating it is near-free but the benefit is marginal. Revisit only if the threat model changes (e.g. the API becomes a regulated/multi-tenant surface).
 
 ### C. HIGH correctness — provider
 

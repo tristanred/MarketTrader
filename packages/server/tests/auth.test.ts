@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
-import { createTestApp } from './helpers/app.js';
+import { createTestApp, createTestAppWithDb } from './helpers/app.js';
+import { schema } from '../src/db/index.js';
 
 describe('POST /auth/register', () => {
   let app: FastifyInstance;
@@ -224,6 +226,51 @@ describe('POST /auth/refresh', () => {
       url: '/auth/refresh',
       cookies: { refreshToken: 'not.a.valid.jwt' },
     });
+    expect(res.statusCode).toBe(401);
+  });
+});
+
+describe('POST /auth/refresh — account kill-switch', () => {
+  let app: FastifyInstance;
+  let db: Awaited<ReturnType<typeof createTestAppWithDb>>['db'];
+
+  beforeAll(async () => {
+    ({ app, db } = await createTestAppWithDb());
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  async function registerAndGetRefreshCookie(username: string): Promise<{ id: string; cookie: string }> {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/auth/register',
+      payload: { username, password: 'password123' },
+    });
+    const id = res.json<{ user: { id: string } }>().user.id;
+    const cookie = res.cookies.find((c) => c.name === 'refreshToken')?.value ?? '';
+    return { id, cookie };
+  }
+
+  it('rejects refresh once the user is disabled (kill-switch takes effect)', async () => {
+    const { id, cookie } = await registerAndGetRefreshCookie('frank');
+
+    // Sanity: a valid refresh works before disabling.
+    const ok = await app.inject({ method: 'POST', url: '/auth/refresh', cookies: { refreshToken: cookie } });
+    expect(ok.statusCode).toBe(200);
+
+    await db.update(schema.users).set({ disabled: true }).where(eq(schema.users.id, id));
+
+    const res = await app.inject({ method: 'POST', url: '/auth/refresh', cookies: { refreshToken: cookie } });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it('rejects refresh once the user is deleted', async () => {
+    const { id, cookie } = await registerAndGetRefreshCookie('grace');
+    await db.delete(schema.users).where(eq(schema.users.id, id));
+
+    const res = await app.inject({ method: 'POST', url: '/auth/refresh', cookies: { refreshToken: cookie } });
     expect(res.statusCode).toBe(401);
   });
 });

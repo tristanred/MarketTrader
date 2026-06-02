@@ -70,7 +70,7 @@ _Bundles the related MEDIUM (market-status factory doesn't validate key) and LOW
 
 ### E. Maintainability / SoC — selected, genuine-duplication wins (fan-out OK with caveats)
 
-- **E1. Money path (HAND-DONE, separate commit AFTER A1 is green):** extract `deductCashReservation(tx, …)` and `decrementHolding(tx, …)` tx-scoped helpers; `placeWorkingOrder` reimplements both twice across the bracket/non-bracket branches (~230-line fn). High risk — same code as the bracket bug.
+- **E1.** ✅ DONE (commit `92623af`, hand-done; characterization tests `bc2b3f6` first). Extracted `deductCashReservation`/`decrementHolding` tx-scoped helpers; `placeWorkingOrder` no longer reimplements them twice. Pure refactor — all four placement error paths (2 added as missing coverage before refactoring) + both bracket round-trips green. `releaseReservation` and `pending-trade.ts` deliberately not unified (inverse op / separate finding).
 - **E2.** ✅ DONE (commit `5ae7493`). `services/leaderboard.ts` reservation query scoped to the game's players (+ cross-game isolation test).
 - **E3.** ✅ DONE (commit `c618140`). `status` and `(gamePlayerId, status)` indexes on `trades` in both dialects + migrations (`0016` sqlite / `0015` pg).
 - **E4.** ✅ DONE (commit `567cb21`). Canonical `TradeStatus` in `shared/types/player.ts`, reused in `AdminTradeRow` + frontend admin trades query. `trading.ts:93` left untouched as required.

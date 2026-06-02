@@ -26,7 +26,7 @@ Ordered by execution sequence. Money-path / high-risk items are hand-done and co
 
 ### A. CRITICAL — money-path bug (separate deliverable, test-first, isolated commit)
 
-**A1. Bracket child SELL leaks shares** — `services/trade.ts`, `services/working-order.ts`
+**A1. Bracket child SELL leaks shares** — ✅ DONE (commit `27af4ba`). Fixed at both fill sites (trigger worker + admin force-execute) via an explicit `sharesAlreadyReserved` flag; long/short bracket round-trip regression tests added (the long case fails without the fix). — `services/trade.ts`, `services/working-order.ts`
 `executeTrade` treats every resting sell (`existingTradeId != null`) as already share-decremented at placement. True for plain working/pending sells, **false for bracket TP/SL children** (only the entry reserves; children don't). When a child sell fills, the decrement is skipped → player banks the sale proceeds **and** keeps the phantom shares, inflating portfolio value and corrupting the leaderboard. The existing bracket test asserts statuses, not final portfolio quantity, so the suite stays green over the bug.
 **Fix:** gate the share-decrement on whether shares were actually reserved (e.g. an explicit `sharesAlreadyReserved` flag from the call site: true for plain working + pending sells, false for bracket-child sells), not on `isResting`. **Test-first**: write a failing regression asserting `portfolios.quantity` returns to 0 after a full long-bracket round trip (entry buy fill + TP sell fill) and the symmetric short case, then fix.
 

@@ -117,6 +117,10 @@ export function adminTradesRoutes(
           price,
           existingTradeId: id,
           reservedCash: trade.reservedCash == null ? 0 : Number(trade.reservedCash),
+          // Bracket TP/SL children weren't share-reserved at placement, so a
+          // force-execute must decrement their shares now (mirrors the trigger
+          // worker). Without this an admin fill of a bracket child leaks shares.
+          sharesAlreadyReserved: !(trade.parentTradeId != null && trade.bracketRole !== 'entry'),
         });
         const executed = result.trade;
 

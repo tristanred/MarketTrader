@@ -89,6 +89,16 @@ export interface ExecuteTradeParams {
   /** Cash reservation to release on fill — pass the row's `reservedCash`. */
   reservedCash?: number;
   /**
+   * Whether the order's shares were already decremented from the portfolio at
+   * placement (true for plain working/pending sells). Defaults to the value of
+   * `existingTradeId != null` to preserve the historical behavior, but bracket
+   * take-profit/stop-loss child sells must pass `false`: they are resting rows
+   * (`existingTradeId` is set) yet were never reserved — only the bracket entry
+   * reserves. Without this, the fill would skip the share decrement and leak
+   * the position (player keeps proceeds *and* shares).
+   */
+  sharesAlreadyReserved?: boolean;
+  /**
    * Optional ISO 8601 override for the trade's `executedAt` column. Used only
    * by the `tools/seed-game-history` utility to backdate synthetic trades.
    *
@@ -136,6 +146,10 @@ export async function executeTrade(db: Db, params: ExecuteTradeParams): Promise<
   const reservedCash = Number(params.reservedCash ?? 0);
   const { gamePlayers, portfolios, trades } = schema;
   const isResting = existingTradeId != null;
+  // Whether this sell's shares were physically decremented at placement.
+  // Defaults to isResting (true for plain working/pending sells) but bracket
+  // TP/SL children pass false — they rest without their own share reservation.
+  const sharesReserved = params.sharesAlreadyReserved ?? isResting;
   const executedAt = params.executedAt ?? new Date().toISOString();
 
   const [player] = await db
@@ -168,7 +182,9 @@ export async function executeTrade(db: Db, params: ExecuteTradeParams): Promise<
     } else {
       validateBuy(cashBalance, price, quantity);
     }
-  } else if (!isResting) {
+  } else if (!sharesReserved) {
+    // Shares weren't pre-decremented (immediate sell or bracket child) — they
+    // must exist now, so validate against the live holding.
     validateSell(holding?.quantity ?? 0, quantity);
   } else if (!Number.isInteger(quantity) || quantity < 1) {
     throw new TradeError('INVALID_QUANTITY', 'Quantity must be a positive integer');
@@ -191,9 +207,10 @@ export async function executeTrade(db: Db, params: ExecuteTradeParams): Promise<
     );
   } else {
     newCash = cashBalance + quantity * price;
-    // For a resting sell, shares were already decremented at placement.
-    // The portfolio update path below is skipped via the isResting flag.
-    newQty = (holding?.quantity ?? 0) - (isResting ? 0 : quantity);
+    // When shares were already decremented at placement, the holding is net of
+    // this sell — don't subtract again. Bracket children weren't reserved, so
+    // their shares must be decremented now (the portfolio write below mirrors).
+    newQty = (holding?.quantity ?? 0) - (sharesReserved ? 0 : quantity);
     newAvg = Number(holding?.avgCostBasis ?? 0);
   }
 
@@ -231,7 +248,7 @@ export async function executeTrade(db: Db, params: ExecuteTradeParams): Promise<
           avgCostBasis: newAvg,
         });
       }
-    } else if (!isResting) {
+    } else if (!sharesReserved) {
       if (newQty === 0) {
         await tx.delete(portfolios).where(and(eq(portfolios.gamePlayerId, gamePlayerId), eq(portfolios.symbol, symbol)));
       } else {

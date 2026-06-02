@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { createTestDb } from '../helpers/app.js';
 import { MockStockProvider } from '../helpers/mock-provider.js';
 import {
@@ -64,6 +64,19 @@ async function getQty(db: Db, gamePlayerId: string, _symbol: string): Promise<nu
     .select({ q: schema.portfolios.quantity })
     .from(schema.portfolios)
     .where(eq(schema.portfolios.gamePlayerId, gamePlayerId));
+  return h?.q ?? 0;
+}
+
+async function getSymbolQty(db: Db, gamePlayerId: string, symbol: string): Promise<number> {
+  const [h] = await db
+    .select({ q: schema.portfolios.quantity })
+    .from(schema.portfolios)
+    .where(
+      and(
+        eq(schema.portfolios.gamePlayerId, gamePlayerId),
+        eq(schema.portfolios.symbol, symbol),
+      ),
+    );
   return h?.q ?? 0;
 }
 
@@ -467,6 +480,78 @@ describe('evaluateTriggers — bracket', () => {
     const [slRow] = await db.select().from(schema.trades).where(eq(schema.trades.id, sl.id));
     expect(slRow?.status).toBe('cancelled');
     expect(slRow?.cancelReason).toBe('OCO_SIBLING_FILLED');
+  });
+
+  it('long bracket round-trip leaves the position flat (no leaked shares)', async () => {
+    const { db, gamePlayerId } = env;
+    const orders = await placeWorkingOrder(db, {
+      gamePlayerId,
+      symbol: 'BRKT',
+      direction: 'buy',
+      quantity: 10,
+      orderType: 'bracket',
+      timeInForce: 'day',
+      limitPrice: 100,
+      takeProfitPrice: 120,
+      stopLossPrice: 90,
+    });
+    const parent = orders.find((o) => o.bracketRole === 'entry')!;
+    const tp = orders.find((o) => o.bracketRole === 'take_profit')!;
+
+    const provider = new MockStockProvider();
+    // Entry buy fills at 95 → player now holds 10 shares.
+    provider.setQuote('BRKT', { price: 95 });
+    await evaluateTriggers(db, provider);
+    const [parentRow] = await db.select().from(schema.trades).where(eq(schema.trades.id, parent.id));
+    expect(parentRow?.status).toBe('executed');
+    expect(await getSymbolQty(db, gamePlayerId, 'BRKT')).toBe(10);
+
+    // TP sell fills at 121 → position must return to flat (0 shares).
+    provider.setQuote('BRKT', { price: 121 });
+    await evaluateTriggers(db, provider);
+    const [tpRow] = await db.select().from(schema.trades).where(eq(schema.trades.id, tp.id));
+    expect(tpRow?.status).toBe('executed');
+
+    // Regression: before the fix, the TP child sell credited the sale proceeds
+    // but never decremented the holding (it was never reserved at placement),
+    // leaving 10 phantom shares that inflated portfolio value.
+    expect(await getSymbolQty(db, gamePlayerId, 'BRKT')).toBe(0);
+  });
+
+  it('short bracket round-trip leaves the position flat (no leaked shares)', async () => {
+    const { db, gamePlayerId } = env;
+    await seedHolding(db, gamePlayerId, 'SHRT', 10, 100);
+    const orders = await placeWorkingOrder(db, {
+      gamePlayerId,
+      symbol: 'SHRT',
+      direction: 'sell',
+      quantity: 10,
+      orderType: 'bracket',
+      timeInForce: 'day',
+      limitPrice: 100,
+      // Short bracket: TP (buy-to-cover) below entry, SL (buy-to-cover) above.
+      takeProfitPrice: 80,
+      stopLossPrice: 120,
+    });
+    const parent = orders.find((o) => o.bracketRole === 'entry')!;
+    const tp = orders.find((o) => o.bracketRole === 'take_profit')!;
+
+    // Sell-entry decrements the holding at placement → 0 shares held.
+    expect(await getSymbolQty(db, gamePlayerId, 'SHRT')).toBe(0);
+
+    const provider = new MockStockProvider();
+    // Entry sell fills at 100.
+    provider.setQuote('SHRT', { price: 100 });
+    await evaluateTriggers(db, provider);
+    const [parentRow] = await db.select().from(schema.trades).where(eq(schema.trades.id, parent.id));
+    expect(parentRow?.status).toBe('executed');
+
+    // TP buy-to-cover fills at 79 → buys back the 10 shares.
+    provider.setQuote('SHRT', { price: 79 });
+    await evaluateTriggers(db, provider);
+    const [tpRow] = await db.select().from(schema.trades).where(eq(schema.trades.id, tp.id));
+    expect(tpRow?.status).toBe('executed');
+    expect(await getSymbolQty(db, gamePlayerId, 'SHRT')).toBe(10);
   });
 
   it('cancelling a bracket parent before fill also cancels both children', async () => {

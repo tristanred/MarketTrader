@@ -705,6 +705,10 @@ export async function evaluateTriggers(
         price: quote,
         existingTradeId: row.id,
         reservedCash: row.reservedCash == null ? 0 : Number(row.reservedCash),
+        // Bracket TP/SL children rest without their own share reservation
+        // (only the entry reserves), so their shares must be decremented at
+        // fill rather than assumed already taken at placement.
+        sharesAlreadyReserved: !(row.parentTradeId != null && row.bracketRole !== 'entry'),
       });
       outcomes.push({ kind: 'filled', trade: result.trade, row, result });
 

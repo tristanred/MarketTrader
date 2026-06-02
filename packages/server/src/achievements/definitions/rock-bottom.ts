@@ -1,6 +1,7 @@
-import { eq } from 'drizzle-orm';
 import { defineAchievement } from '../define.js';
-import { schema } from '../../db/index.js';
+import { progressFromStat } from '../stat-progress.js';
+
+const mirrorConsecutiveLastPlace = progressFromStat('consecutiveDaysInLastPlace');
 
 /**
  * Streak achievement: be in last place on the leaderboard for 3 consecutive
@@ -18,13 +19,8 @@ export default defineAchievement({
   target: 3,
   events: ['snapshot.recorded'],
   async onEvent(event, ctx) {
+    // Last place is meaningless in a one-player game.
     if (event.totalPlayers <= 1) return;
-    const [stats] = await ctx.db
-      .select({ consec: schema.gamePlayerStats.consecutiveDaysInLastPlace })
-      .from(schema.gamePlayerStats)
-      .where(eq(schema.gamePlayerStats.gamePlayerId, event.gamePlayerId))
-      .limit(1);
-    if (!stats) return;
-    await ctx.setProgress(event.gamePlayerId, stats.consec);
+    await mirrorConsecutiveLastPlace(event, ctx);
   },
 });

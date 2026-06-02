@@ -1,6 +1,7 @@
-import { eq } from 'drizzle-orm';
 import { defineAchievement } from '../define.js';
-import { schema } from '../../db/index.js';
+import { progressFromStat } from '../stat-progress.js';
+
+const mirrorLosingSellsToday = progressFromStat('losingSellsToday');
 
 /**
  * Counter achievement: close 3 losing positions in a single UTC day.
@@ -17,13 +18,8 @@ export default defineAchievement({
   target: 3,
   events: ['position.closed'],
   async onEvent(event, ctx) {
+    // Only winning-vs-losing matters here; the stat itself counts the losers.
     if (event.realizedPnl >= 0) return;
-    const [stats] = await ctx.db
-      .select({ value: schema.gamePlayerStats.losingSellsToday })
-      .from(schema.gamePlayerStats)
-      .where(eq(schema.gamePlayerStats.gamePlayerId, event.gamePlayerId))
-      .limit(1);
-    if (!stats) return;
-    await ctx.setProgress(event.gamePlayerId, stats.value);
+    await mirrorLosingSellsToday(event, ctx);
   },
 });

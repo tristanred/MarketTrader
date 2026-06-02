@@ -1,6 +1,5 @@
-import { eq } from 'drizzle-orm';
 import { defineAchievement } from '../define.js';
-import { schema } from '../../db/index.js';
+import { progressFromStat } from '../stat-progress.js';
 
 /**
  * Progress achievement: cumulative 7 days at rank 1 (not necessarily
@@ -15,13 +14,5 @@ export default defineAchievement({
   category: 'standing',
   target: 7,
   events: ['snapshot.recorded'],
-  async onEvent(event, ctx) {
-    const [stats] = await ctx.db
-      .select({ value: schema.gamePlayerStats.daysAtRankOne })
-      .from(schema.gamePlayerStats)
-      .where(eq(schema.gamePlayerStats.gamePlayerId, event.gamePlayerId))
-      .limit(1);
-    if (!stats) return;
-    await ctx.setProgress(event.gamePlayerId, stats.value);
-  },
+  onEvent: progressFromStat('daysAtRankOne'),
 });

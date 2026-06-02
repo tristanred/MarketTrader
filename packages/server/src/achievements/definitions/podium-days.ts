@@ -1,6 +1,5 @@
-import { eq } from 'drizzle-orm';
 import { defineAchievement } from '../define.js';
-import { schema } from '../../db/index.js';
+import { progressFromStat } from '../stat-progress.js';
 
 /**
  * Progress achievement: cumulative 5 days in the top 3. Reads
@@ -15,13 +14,5 @@ export default defineAchievement({
   category: 'standing',
   target: 5,
   events: ['snapshot.recorded'],
-  async onEvent(event, ctx) {
-    const [stats] = await ctx.db
-      .select({ value: schema.gamePlayerStats.daysInTopThree })
-      .from(schema.gamePlayerStats)
-      .where(eq(schema.gamePlayerStats.gamePlayerId, event.gamePlayerId))
-      .limit(1);
-    if (!stats) return;
-    await ctx.setProgress(event.gamePlayerId, stats.value);
-  },
+  onEvent: progressFromStat('daysInTopThree'),
 });

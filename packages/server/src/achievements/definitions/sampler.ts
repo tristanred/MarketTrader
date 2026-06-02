@@ -1,6 +1,5 @@
-import { eq } from 'drizzle-orm';
 import { defineAchievement } from '../define.js';
-import { schema } from '../../db/index.js';
+import { progressFromStat } from '../stat-progress.js';
 
 /**
  * Progress achievement: trade 5 distinct symbols. Reads the canonical count
@@ -16,13 +15,5 @@ export default defineAchievement({
   category: 'trading',
   target: 5,
   events: ['trade.executed'],
-  async onEvent(event, ctx) {
-    const [stats] = await ctx.db
-      .select({ distinct: schema.gamePlayerStats.distinctSymbolsTradedEver })
-      .from(schema.gamePlayerStats)
-      .where(eq(schema.gamePlayerStats.gamePlayerId, event.gamePlayerId))
-      .limit(1);
-    if (!stats) return;
-    await ctx.setProgress(event.gamePlayerId, stats.distinct);
-  },
+  onEvent: progressFromStat('distinctSymbolsTradedEver'),
 });

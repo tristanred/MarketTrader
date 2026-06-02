@@ -48,6 +48,22 @@ type MarketStatusProviderName = (typeof VALID_MARKET_STATUS_PROVIDERS)[number];
 const VALID_MARKET_HOURS_MODES = ['disabled', 'pending', 'instant'] as const;
 type MarketHoursMode = (typeof VALID_MARKET_HOURS_MODES)[number];
 
+const VALID_NODE_ENVS = ['development', 'production', 'test'] as const;
+type NodeEnv = (typeof VALID_NODE_ENVS)[number];
+
+/**
+ * Validates NODE_ENV against the known set. A bare cast would let a typo like
+ * `prod` silently skip {@link validateProductionEnv} (which keys on an exact
+ * `=== 'production'` match), shipping an unhardened process. Fail at boot instead.
+ */
+function validatedNodeEnv(): NodeEnv {
+  const raw = optional('NODE_ENV', 'development');
+  if (!(VALID_NODE_ENVS as readonly string[]).includes(raw)) {
+    throw new Error(`Invalid NODE_ENV: "${raw}". Must be one of: ${VALID_NODE_ENVS.join(', ')}`);
+  }
+  return raw as NodeEnv;
+}
+
 function validatedMarketHoursMode(): MarketHoursMode {
   const raw = optional('MARKET_HOURS_MODE', 'instant');
   if (!(VALID_MARKET_HOURS_MODES as readonly string[]).includes(raw)) {
@@ -101,7 +117,7 @@ export const env = {
     'MARKET_STATUS_CACHE_TTL_MS',
     optional('MARKET_STATUS_CACHE_TTL_MS', '60000'),
   ),
-  NODE_ENV: optional('NODE_ENV', 'development') as 'development' | 'production' | 'test',
+  NODE_ENV: validatedNodeEnv(),
 
   // Stock-data resilience tunables. All durations are in milliseconds.
   /** TTL for the `stock_price_cache` table. Cache hits skip the upstream fetch. */

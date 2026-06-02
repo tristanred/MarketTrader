@@ -40,7 +40,10 @@ export class IndicesBroadcaster {
     this.symbols = mergeSymbols(MAJOR_INDICES, tapeSymbols);
     this.settings.on('change', this.onSettingsChange);
     this.timer = setInterval(() => {
-      void this.tick();
+      // Mirror the price-poller: swallow per-tick errors so a single failed
+      // tick can't become an unhandled rejection that crashes the process if
+      // tick() ever grows a throwing path before its internal try/catch.
+      void this.tick().catch(() => {});
     }, this.intervalMs);
   }
 

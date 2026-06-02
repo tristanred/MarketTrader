@@ -27,7 +27,7 @@ export function useStockQuote(symbol: string, opts: { enabled?: boolean } = {}) 
   const enabled = (opts.enabled ?? true) && !!symbol;
   return useQuery({
     queryKey: ['stocks', 'quote', symbol],
-    queryFn: () => apiFetch<StockQuote>(`/stocks/${symbol}`),
+    queryFn: () => apiFetch<StockQuote>(`/stocks/${encodeURIComponent(symbol)}`),
     enabled,
     staleTime: 15_000,
     refetchInterval: 300_000,

@@ -1,4 +1,5 @@
 import { memo, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import type { LeaderboardHistoryPoint, LeaderboardHistoryRange } from '@markettrader/shared';
 import { Panel, PanelHeader, PanelBody } from '@/components/panel';
 import { PortfolioSparkline } from '@/components/charts/PortfolioSparkline';
@@ -177,12 +178,12 @@ function RangeChips({
 
 function FullViewLink({ gameId }: { gameId: string }) {
   return (
-    <a
-      href={`/games/${gameId}/leaderboard`}
+    <Link
+      to={`/games/${gameId}/leaderboard`}
       className="rounded-chip border border-accent px-1.5 py-0.5 font-mono text-[9px] tracking-[0.14em] text-accent hover:bg-accent-bg"
     >
       Full view ↗
-    </a>
+    </Link>
   );
 }
 

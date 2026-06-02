@@ -142,6 +142,40 @@ describe('computeLeaderboard', () => {
     expect(alice!.totalValue).toBe(10000);
   });
 
+  it('does not count another game\'s open orders in this game\'s leaderboard', async () => {
+    // Two separate games. The reservation lives only in gameA; gameB's
+    // leaderboard must be unaffected by it (the reservation query is scoped to
+    // the queried game's players, not all open orders platform-wide).
+    const [gameA] = await db.insert(schema.games).values({
+      name: 'Scope A', startDate: '2026-01-01T00:00:00.000Z', endDate: '2027-01-01T00:00:00.000Z',
+      startingBalance: 10000, status: 'active', createdBy: aliceId,
+    }).returning({ id: schema.games.id });
+    const [gameB] = await db.insert(schema.games).values({
+      name: 'Scope B', startDate: '2026-01-01T00:00:00.000Z', endDate: '2027-01-01T00:00:00.000Z',
+      startingBalance: 10000, status: 'active', createdBy: aliceId,
+    }).returning({ id: schema.games.id });
+    if (!gameA || !gameB) throw new Error('Failed to insert scope games');
+
+    const [gpA] = await db.insert(schema.gamePlayers).values({
+      gameId: gameA.id, userId: aliceId, cashBalance: 9700,
+    }).returning({ id: schema.gamePlayers.id });
+    const [gpB] = await db.insert(schema.gamePlayers).values({
+      gameId: gameB.id, userId: aliceId, cashBalance: 10000,
+    }).returning({ id: schema.gamePlayers.id });
+    if (!gpA || !gpB) throw new Error('Failed to insert scope players');
+
+    // Open order belongs to gameA only.
+    await db.insert(schema.trades).values({
+      gamePlayerId: gpA.id, symbol: 'AAPL', direction: 'buy', quantity: 3,
+      status: 'pending', orderType: 'market', reservedPrice: 100, reservedCash: 300,
+    });
+
+    const aOnB = (await computeLeaderboard(db, gameB.id)).find(e => e.gamePlayerId === gpB.id);
+    expect(aOnB).toBeDefined();
+    // gameB player has no open orders — pure cash, untouched by gameA's reservation.
+    expect(aOnB!.totalValue).toBe(10000);
+  });
+
   it('falls back to avgCostBasis for portfolio value when no cache entry exists', async () => {
     // Use a separate game and players to avoid shared state with other tests
     const [game4] = await db.insert(schema.games).values({

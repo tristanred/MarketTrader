@@ -1,4 +1,4 @@
-import { eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import type { Db } from '../db/index.js';
 import { schema } from '../db/index.js';
 
@@ -84,6 +84,10 @@ export async function computeLeaderboard(db: Db, gameId: string): Promise<Leader
   // sells remove shares from portfolios. This applies to both `pending`
   // (market-on-open) and `working` (resting limit/stop) orders. Add them back
   // so a queued order doesn't masquerade as a loss / rank drop.
+  //
+  // Scope to this game's players: without it the query pulled every open order
+  // platform-wide on each call (this runs on every snapshot tick) and then
+  // discarded non-members below. playerMap already holds the game's players.
   const reservationRows = await db
     .select({
       gpId: schema.trades.gamePlayerId,
@@ -95,7 +99,12 @@ export async function computeLeaderboard(db: Db, gameId: string): Promise<Leader
     })
     .from(schema.trades)
     .leftJoin(schema.stockPriceCache, eq(schema.stockPriceCache.symbol, schema.trades.symbol))
-    .where(inArray(schema.trades.status, ['pending', 'working']));
+    .where(
+      and(
+        inArray(schema.trades.status, ['pending', 'working']),
+        inArray(schema.trades.gamePlayerId, [...playerMap.keys()]),
+      ),
+    );
 
   for (const row of reservationRows) {
     const player = playerMap.get(row.gpId);

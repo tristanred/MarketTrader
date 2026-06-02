@@ -240,7 +240,12 @@ export const trades = sqliteTable('trades', {
   executedAt: text('executed_at'),
   cancelledAt: text('cancelled_at'),
   cancelReason: text('cancel_reason'),
-});
+}, (t) => [
+  // The pending/working worker scans by status on every tick.
+  index('trades_status_idx').on(t.status),
+  // Per-player open-order lists filter by (gamePlayerId, status).
+  index('trades_player_status_idx').on(t.gamePlayerId, t.status),
+]);
 
 /**
  * Short-lived quote cache (30-second TTL). Keyed by ticker symbol.

@@ -36,7 +36,18 @@ function setRetryAfter(reply: FastifyReply): void {
 export function stockRoutes(_db: Db, provider: StockProvider) {
   return async function (rawApp: FastifyInstance): Promise<void> {
     const app = rawApp.withTypeProvider<ZodTypeProvider>();
+
+    // These routes are unauthenticated and proxy the external StockProvider, so
+    // an anonymous caller could otherwise drive upstream cost and trip the
+    // provider's own rate-limit backoff — which trading shares. A modest
+    // per-IP cap keeps that in check while staying generous for real use.
+    // search is keyed by query (distinct queries bypass the cache → upstream),
+    // so it gets a tighter limit than the symbol-keyed lookups.
+    const searchRateLimit = { rateLimit: { max: 30, timeWindow: '1 minute' } };
+    const lookupRateLimit = { rateLimit: { max: 120, timeWindow: '1 minute' } };
+
     app.get('/stocks/search', {
+      config: searchRateLimit,
       schema: {
         tags: ['Stocks'],
         summary: 'Symbol autocomplete.',
@@ -61,6 +72,7 @@ export function stockRoutes(_db: Db, provider: StockProvider) {
     app.get(
       '/stocks/:symbol/history',
       {
+        config: lookupRateLimit,
         schema: {
           tags: ['Stocks'],
           summary: 'Historical OHLC bars for a symbol.',
@@ -94,6 +106,7 @@ export function stockRoutes(_db: Db, provider: StockProvider) {
     );
 
     app.get('/stocks/:symbol/details', {
+      config: lookupRateLimit,
       schema: {
         tags: ['Stocks'],
         summary: 'Extended company/details metadata for a symbol.',
@@ -117,6 +130,7 @@ export function stockRoutes(_db: Db, provider: StockProvider) {
     });
 
     app.get('/stocks/:symbol', {
+      config: lookupRateLimit,
       schema: {
         tags: ['Stocks'],
         summary: 'Current quote for a single ticker.',

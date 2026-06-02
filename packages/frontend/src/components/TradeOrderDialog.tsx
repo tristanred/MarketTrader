@@ -7,7 +7,7 @@ import { usePlaceTrade, usePortfolio } from '@/api/trades';
 import { useLiveStore } from '@/stores/liveStore';
 import { toast } from '@/components/ui/toast';
 import { ApiError } from '@/lib/api';
-import { cn, formatUSD, SYMBOL_RE } from '@/lib/utils';
+import { cn, formatPct, formatUSD, SYMBOL_RE } from '@/lib/utils';
 import { projectAllocation, projectPositionAfter, type PositionSnapshot } from '@/lib/positionMath';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import type { OrderType, PlaceTradeRequest, TradeDirection } from '@markettrader/shared';
@@ -416,11 +416,21 @@ export function TradeOrderDialog({
                     <li key={r.symbol}>
                       <button
                         type="button"
-                        className="w-full px-3 py-2 text-left text-sm hover:bg-accent"
+                        className="flex w-full items-baseline px-3 py-2 text-left text-sm hover:bg-accent"
                         onClick={() => handlePickSymbol(r.symbol)}
                       >
                         <span className="font-medium">{r.symbol}</span>
                         <span className="ml-2 text-muted-foreground">{r.name}</span>
+                        <span
+                          className={cn(
+                            'ml-auto pl-2 font-mono',
+                            r.changePercent === undefined && 'text-muted-foreground',
+                            r.changePercent !== undefined && r.changePercent >= 0 && 'text-gain',
+                            r.changePercent !== undefined && r.changePercent < 0 && 'text-loss',
+                          )}
+                        >
+                          {r.changePercent === undefined ? '—' : formatPct(r.changePercent)}
+                        </span>
                       </button>
                     </li>
                   ))}

@@ -94,11 +94,21 @@ export function QuoteInfo({
                 <li key={r.symbol}>
                   <button
                     type="button"
-                    className="w-full px-3 py-2 text-left text-sm hover:bg-accent"
+                    className="flex w-full items-baseline px-3 py-2 text-left text-sm hover:bg-accent"
                     onClick={() => handlePick(r.symbol)}
                   >
                     <span className="font-medium">{r.symbol}</span>
                     <span className="ml-2 text-muted-foreground">{r.name}</span>
+                    <span
+                      className={cn(
+                        'ml-auto pl-2 font-mono',
+                        r.changePercent === undefined && 'text-muted-foreground',
+                        r.changePercent !== undefined && r.changePercent >= 0 && 'text-gain',
+                        r.changePercent !== undefined && r.changePercent < 0 && 'text-loss',
+                      )}
+                    >
+                      {r.changePercent === undefined ? '—' : formatPct(r.changePercent)}
+                    </span>
                   </button>
                 </li>
               ))}

@@ -105,4 +105,58 @@ describe('YahooProvider rate-limit handling', () => {
       code: 'PROVIDER_ERROR',
     });
   });
+
+  describe('getQuotes (batch)', () => {
+    it('returns a Map of normalized quotes keyed by symbol', async () => {
+      const quote = vi.fn().mockResolvedValue(
+        new Map([
+          ['AAPL', { symbol: 'AAPL', regularMarketPrice: 175.5, regularMarketChange: 1.2, regularMarketChangePercent: 0.69 }],
+          ['MSFT', { symbol: 'MSFT', regularMarketPrice: 410, regularMarketChange: -2, regularMarketChangePercent: -0.49 }],
+        ]),
+      );
+      stubClient(provider, { quote });
+
+      const result = await provider.getQuotes(['AAPL', 'MSFT']);
+      expect(quote).toHaveBeenCalledTimes(1); // one batch call
+      expect(result.get('AAPL')?.changePercent).toBe(0.69);
+      expect(result.get('AAPL')?.price).toBe(175.5);
+      expect(result.get('MSFT')?.changePercent).toBe(-0.49);
+    });
+
+    it('skips rows with a null price (no partial quotes)', async () => {
+      stubClient(provider, {
+        quote: vi.fn().mockResolvedValue(
+          new Map([
+            ['AAPL', { symbol: 'AAPL', regularMarketPrice: 175.5, regularMarketChangePercent: 0.69 }],
+            ['BADX', { symbol: 'BADX', regularMarketPrice: null }],
+          ]),
+        ),
+      });
+      const result = await provider.getQuotes(['AAPL', 'BADX']);
+      expect(result.has('AAPL')).toBe(true);
+      expect(result.has('BADX')).toBe(false);
+    });
+
+    it('returns an empty Map for an empty symbol list without calling the client', async () => {
+      const quote = vi.fn();
+      stubClient(provider, { quote });
+      const result = await provider.getQuotes([]);
+      expect(result.size).toBe(0);
+      expect(quote).not.toHaveBeenCalled();
+    });
+
+    it('maps 429 to RATE_LIMITED and trips the backoff', async () => {
+      const quote = vi.fn().mockRejectedValue(new Error('Too Many Requests'));
+      stubClient(provider, { quote });
+      await expect(provider.getQuotes(['AAPL'])).rejects.toMatchObject({ code: 'RATE_LIMITED' });
+      // Inside the backoff window the next call short-circuits without hitting the client.
+      await expect(provider.getQuotes(['MSFT'])).rejects.toMatchObject({ code: 'RATE_LIMITED' });
+      expect(quote).toHaveBeenCalledTimes(1);
+    });
+
+    it('maps non-429 errors to PROVIDER_ERROR', async () => {
+      stubClient(provider, { quote: vi.fn().mockRejectedValue(new Error('boom')) });
+      await expect(provider.getQuotes(['AAPL'])).rejects.toMatchObject({ code: 'PROVIDER_ERROR' });
+    });
+  });
 });

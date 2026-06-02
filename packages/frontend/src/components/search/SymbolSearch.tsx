@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Search } from 'lucide-react';
 import { useStockSearch } from '@/api/stocks';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
-import { cn } from '@/lib/utils';
+import { cn, formatPct } from '@/lib/utils';
 
 export interface SymbolSearchProps {
   /** Called with the canonical (uppercase) symbol when a result is chosen. */
@@ -141,6 +141,16 @@ export function SymbolSearch({
               >
                 <span className="font-mono text-accent">{r.symbol}</span>
                 <span className="text-muted">{r.name}</span>
+                <span
+                  className={cn(
+                    'ml-auto font-mono',
+                    r.changePercent === undefined && 'text-muted',
+                    r.changePercent !== undefined && r.changePercent >= 0 && 'text-gain',
+                    r.changePercent !== undefined && r.changePercent < 0 && 'text-loss',
+                  )}
+                >
+                  {r.changePercent === undefined ? '—' : formatPct(r.changePercent)}
+                </span>
               </button>
             </li>
           ))}

@@ -5,11 +5,12 @@ import type {
   AdminEditTradePriceRequest,
   AdminListGameTradesResponse,
   Trade,
+  TradeStatus,
 } from '@markettrader/shared';
 import { adminGameKeys } from './games';
 
 export interface AdminGameTradesQuery {
-  status?: 'pending' | 'working' | 'executed' | 'cancelled';
+  status?: TradeStatus;
   playerId?: string;
   symbol?: string;
   limit?: number;

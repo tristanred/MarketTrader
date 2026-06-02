@@ -3,6 +3,8 @@
  * the caller to be a member of the `admin` group.
  */
 
+import type { OrderType, TradeDirection, TradeStatus } from './player.js';
+
 /** Currently the only group; left as a string union so adding more is trivial. */
 export type GroupName = 'admin';
 
@@ -159,10 +161,10 @@ export interface AdminTradeRow {
   userId: string;
   username: string;
   symbol: string;
-  direction: 'buy' | 'sell';
+  direction: TradeDirection;
   quantity: number;
-  status: 'pending' | 'working' | 'executed' | 'cancelled';
-  orderType: 'market' | 'limit' | 'stop' | 'stop_limit' | 'bracket';
+  status: TradeStatus;
+  orderType: OrderType;
   price: number | null;
   placedAt: string;
 }

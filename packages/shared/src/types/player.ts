@@ -34,6 +34,15 @@ export type TradeDirection = 'buy' | 'sell';
 export type OrderType = 'market' | 'limit' | 'stop' | 'stop_limit' | 'bracket';
 
 /**
+ * Lifecycle state of a `trades` row.
+ * - `pending`   — accepted while the market is closed; settles at next open.
+ * - `working`   — a resting order (limit/stop/bracket) awaiting its trigger.
+ * - `executed`  — filled; terminal.
+ * - `cancelled` — cancelled by the user, OCO, expiry, or a failed fill; terminal.
+ */
+export type TradeStatus = 'pending' | 'working' | 'executed' | 'cancelled';
+
+/**
  * Order lifetime policy. Orthogonal to {@link OrderType}.
  * - `day` — cancelled at end of the trading day if not filled.
  * - `gtc` — Good-Til-Cancelled; lives until filled or explicitly cancelled.

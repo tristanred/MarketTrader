@@ -114,6 +114,21 @@ describe('POST /games/:id/trades', () => {
     expect(res.statusCode).toBe(404);
   });
 
+  it('returns the same 404 for a non-member as for a missing game (no enumeration)', async () => {
+    // A non-member must not be able to distinguish an existing game from a
+    // missing one — same status AND body — and must never reach the order-type
+    // gates or status recompute that would leak the game's configuration.
+    const { token: outsider } = await registerUser(app, 'outsider');
+    const res = await app.inject({
+      method: 'POST',
+      url: `/games/${gameId}/trades`,
+      headers: { Authorization: `Bearer ${outsider}` },
+      payload: { symbol: 'AAPL', direction: 'buy', quantity: 1 },
+    });
+    expect(res.statusCode).toBe(404);
+    expect(res.json<{ error: string }>().error).toBe('Game not found');
+  });
+
   it('returns 409 when game is not active (pending)', async () => {
     const { token: t2 } = await registerUser(app, 'trader2');
     const pendingRes = await app.inject({

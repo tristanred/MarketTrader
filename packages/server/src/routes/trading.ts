@@ -153,6 +153,18 @@ export function tradingRoutes(
           .limit(1);
         if (!game) return reply.status(404).send({ error: 'Game not found' });
 
+        // Membership is checked here — before any order-type gate or status
+        // recompute — and returns the same 404 as a missing game, so that a
+        // non-member can't probe a game's existence, status, or which order
+        // types it permits by reading the distinct downstream error codes.
+        // Mirrors the documented invariant in GET /games/:id.
+        const [gamePlayer] = await db
+          .select()
+          .from(gamePlayers)
+          .where(and(eq(gamePlayers.gameId, gameId), eq(gamePlayers.userId, userId)))
+          .limit(1);
+        if (!gamePlayer) return reply.status(404).send({ error: 'Game not found' });
+
         // Defensive: when shorts are wired into TradeDirection later, this
         // gate enforces the per-game `allowShortSelling` setting. Today the
         // Zod enum only admits buy/sell, so the predicate is unreachable —
@@ -193,13 +205,6 @@ export function tradingRoutes(
         if (status !== 'active') {
           return reply.status(409).send({ error: 'GAME_NOT_ACTIVE', message: `Game is ${status}` });
         }
-
-        const [gamePlayer] = await db
-          .select()
-          .from(gamePlayers)
-          .where(and(eq(gamePlayers.gameId, gameId), eq(gamePlayers.userId, userId)))
-          .limit(1);
-        if (!gamePlayer) return reply.status(404).send({ error: 'You are not a member of this game' });
 
         // ── Working-order branch ─────────────────────────────────────────────
         // Non-market orders are placed as resting working orders. The trigger

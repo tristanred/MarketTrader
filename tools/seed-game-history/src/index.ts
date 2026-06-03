@@ -75,6 +75,25 @@ const PLAYER_MAX = 20;
 const TRADES_MIN = 10;
 const TRADES_MAX = 60;
 
+// Cooperative abort: the seed loop commits per-trade, so a hard kill mid-run
+// would leave the libsql connection open (no clean close). On the first
+// SIGINT/SIGTERM we set this flag — the player loop finishes its current player,
+// skips snapshots, and falls through to closeDb() for a clean shutdown. A
+// second signal forces an immediate exit.
+let aborting = false;
+function requestAbort(signal: string): void {
+  if (aborting) {
+    console.error(`\nReceived ${signal} again — forcing exit.`);
+    process.exit(130);
+  }
+  aborting = true;
+  console.error(
+    `\nReceived ${signal} — finishing the current player, then closing the database cleanly. Press Ctrl-C again to force quit.`,
+  );
+}
+process.on('SIGINT', () => requestAbort('SIGINT'));
+process.on('SIGTERM', () => requestAbort('SIGTERM'));
+
 async function main(): Promise<void> {
   const game = await selectActiveGame(args.gameId);
   const nowISO = new Date().toISOString();
@@ -102,6 +121,13 @@ async function main(): Promise<void> {
   let totalInserted = 0;
   let totalSkipped = 0;
   for (const player of players) {
+    // Yield to the macrotask queue so a pending SIGINT is actually delivered
+    // before we check the flag. libsql resolves file writes synchronously, so
+    // the trade loop is otherwise an unbroken microtask chain that starves
+    // signal handling — without this, Ctrl-C wouldn't take effect until the
+    // whole seed finished.
+    await new Promise((resolve) => setImmediate(resolve));
+    if (aborting) break;
     const tradeCount = randInt(TRADES_MIN, TRADES_MAX);
     const { inserted, skipped } = await seedTradesForPlayer(
       player,
@@ -116,6 +142,13 @@ async function main(): Promise<void> {
     console.log(
       `  ${player.username}: ${inserted} trades inserted, ${skipped} skipped`,
     );
+  }
+
+  if (aborting) {
+    console.log(
+      `\nInterrupted — stopped after ${totalInserted} trades. Committed rows are kept; closing the database cleanly. Re-run the seed to finish.`,
+    );
+    return;
   }
 
   let snapshotsInserted = 0;
@@ -153,7 +186,7 @@ async function main(): Promise<void> {
 
 main()
   .then(() => closeDb())
-  .then(() => process.exit(0))
+  .then(() => process.exit(aborting ? 130 : 0))
   .catch(async (err) => {
     console.error(err);
     await closeDb().catch(() => undefined);

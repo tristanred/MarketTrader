@@ -143,9 +143,9 @@ export async function buildApp(
   await app.register(globalLiveRoute(globalRegistry));
 
   if (!disablePoller) {
-    const handle = startPricePoller(db, provider, registry);
+    const poller = startPricePoller(db, provider, registry);
     app.addHook('onClose', async () => {
-      clearInterval(handle);
+      await poller.stop();
     });
 
     if (env.MARKET_HOURS_MODE === 'pending') {
@@ -158,7 +158,7 @@ export async function buildApp(
         logger: app.log,
       });
       app.addHook('onClose', async () => {
-        pendingWorker.stop();
+        await pendingWorker.stop();
       });
     }
 
@@ -168,7 +168,7 @@ export async function buildApp(
       logger: app.log,
     });
     app.addHook('onClose', async () => {
-      snapshotWorker.stop();
+      await snapshotWorker.stop();
     });
 
     // Engine tick: feeds time-based achievements without external triggers.

@@ -11,6 +11,7 @@ import { emitTradeEvents } from '../services/trade-emit.js';
 import type { GameClientRegistry } from '../ws/registry.js';
 import type { EventBus } from '../events/bus.js';
 import { env } from '../env.js';
+import { startIntervalWorker, type IntervalWorker } from './interval-worker.js';
 import type { MarketState, TradeDirection } from '@markettrader/shared';
 
 /** Whether the configured policy treats a given market state as "open" for settlement. */
@@ -260,9 +261,10 @@ export async function runPendingOrdersTick(deps: {
 }
 
 /**
- * Starts the pending-orders settlement loop. Returns a stop handle. Re-entrancy
- * is guarded: if a tick is still running when the next interval fires, the new
- * tick is skipped.
+ * Starts the pending-orders settlement loop. Returns an {@link IntervalWorker}
+ * whose `stop()` awaits any in-flight tick so settlement writes can't race
+ * `closeDb()` on shutdown. Re-entrancy is guarded: if a tick is still running
+ * when the next interval fires, the new tick is skipped.
  */
 export function startPendingOrdersWorker(deps: {
   db: Db;
@@ -272,21 +274,11 @@ export function startPendingOrdersWorker(deps: {
   bus?: EventBus;
   logger?: FastifyBaseLogger;
   intervalMs?: number;
-}): { stop: () => void } {
+}): IntervalWorker {
   const intervalMs = deps.intervalMs ?? env.PENDING_ORDERS_TICK_MS;
-  let running = false;
-  const handle = setInterval(() => {
-    if (running) return;
-    running = true;
-    runPendingOrdersTick(deps)
-      .catch((err) => {
-        deps.logger?.error({ err }, 'pending-orders tick failed');
-      })
-      .finally(() => {
-        running = false;
-      });
-  }, intervalMs);
-  return {
-    stop: () => clearInterval(handle),
-  };
+  return startIntervalWorker(
+    () => runPendingOrdersTick(deps),
+    intervalMs,
+    (err) => deps.logger?.error({ err }, 'pending-orders tick failed'),
+  );
 }

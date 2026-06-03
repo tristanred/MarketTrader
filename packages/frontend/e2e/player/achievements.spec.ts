@@ -51,11 +51,13 @@ test('first-trade unlock shows toast for the trader', async ({
   // The toast should appear via the WS achievement.unlocked event arriving
   // on the open connection. 'First Trade' is the achievement name from the
   // committed definition (packages/server/src/achievements/definitions/first-trade.ts).
-  // Use exact:true so the locator matches only the name element (not the
-  // parent toast container, which also contains the text as a substring).
-  await expect(page.getByText('First Trade', { exact: true })).toBeVisible({ timeout: 8_000 });
+  // Scope to the toast's role="status" container: the game arena also renders
+  // an achievement grid that contains "First Trade", so a page-wide exact-text
+  // match resolves to two elements and trips strict mode.
+  const toast = page.getByRole('status').filter({ hasText: 'First Trade' });
+  await expect(toast.getByText('First Trade', { exact: true })).toBeVisible({ timeout: 8_000 });
 
   // The eyebrow uses uppercase rarity. first-trade is 'common', so the
   // eyebrow renders as 'COMMON · UNLOCKED' for a live (non-replayed) unlock.
-  await expect(page.getByText(/COMMON · UNLOCKED/)).toBeVisible();
+  await expect(toast.getByText(/COMMON · UNLOCKED/)).toBeVisible();
 });

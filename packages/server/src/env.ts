@@ -167,6 +167,18 @@ export const env = {
   ),
 
   /**
+   * SQLite (libsql) busy-handler timeout in ms — how long a writer waits for a
+   * contended lock before failing with SQLITE_BUSY. Set as a per-connection
+   * `PRAGMA busy_timeout` at startup (covers reads/conn0) and re-applied before
+   * each write by the seed tool (`db-busy.ts`), because libsql resets it to 0
+   * on every fresh connection it spawns after a transaction. Ignored under PG.
+   */
+  SQLITE_BUSY_TIMEOUT_MS: parsePositiveInt(
+    'SQLITE_BUSY_TIMEOUT_MS',
+    optional('SQLITE_BUSY_TIMEOUT_MS', '5000'),
+  ),
+
+  /**
    * Sentry DSN. When set, the server initializes @sentry/node and forwards
    * 5xx errors to Sentry. Empty string disables Sentry entirely (no-op).
    */

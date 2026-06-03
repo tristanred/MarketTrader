@@ -1,6 +1,7 @@
 import { db } from '../../../packages/server/src/db/index.js';
 import { executeTrade } from '../../../packages/server/src/services/trade.js';
 import { TradeError } from '../../../packages/server/src/providers/index.js';
+import { withBusyTimeout } from './db-busy.js';
 import { coinFlip, pick, randInt, randomTimestampsBetween } from './rng.js';
 import type { SeededPlayer } from './seed-players.js';
 
@@ -74,14 +75,16 @@ export async function seedTradesForPlayer(
       quantity = randInt(1, Math.min(50, maxAffordable));
 
       try {
-        await executeTrade(db, {
-          gamePlayerId: player.gamePlayerId,
-          symbol,
-          direction: 'buy',
-          quantity,
-          price,
-          executedAt: tsISO,
-        });
+        await withBusyTimeout(() =>
+          executeTrade(db, {
+            gamePlayerId: player.gamePlayerId,
+            symbol,
+            direction: 'buy',
+            quantity,
+            price,
+            executedAt: tsISO,
+          }),
+        );
         cash -= quantity * price;
         holdings.set(symbol, (holdings.get(symbol) ?? 0) + quantity);
         inserted++;
@@ -103,14 +106,16 @@ export async function seedTradesForPlayer(
       quantity = randInt(1, qtyHeld);
 
       try {
-        await executeTrade(db, {
-          gamePlayerId: player.gamePlayerId,
-          symbol,
-          direction: 'sell',
-          quantity,
-          price,
-          executedAt: tsISO,
-        });
+        await withBusyTimeout(() =>
+          executeTrade(db, {
+            gamePlayerId: player.gamePlayerId,
+            symbol,
+            direction: 'sell',
+            quantity,
+            price,
+            executedAt: tsISO,
+          }),
+        );
         cash += quantity * price;
         const newQty = qtyHeld - quantity;
         if (newQty === 0) holdings.delete(symbol);

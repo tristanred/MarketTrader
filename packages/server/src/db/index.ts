@@ -39,11 +39,26 @@ async function createDatabase(): Promise<AppDb> {
     return drizzle(client, { schema: pgSchema }) as unknown as AppDb;
   } else {
     const { createClient } = await import('@libsql/client');
-    const client = createClient({ url: normalizeLibsqlUrl(env.DATABASE_URL) });
+    const url = normalizeLibsqlUrl(env.DATABASE_URL);
+    const client = createClient({ url });
     libsqlClient = client;
     // FK enforcement is per-connection and off by default in libsql. Cascade
     // and restrict actions in the schema rely on it being on.
     await client.execute('PRAGMA foreign_keys = ON');
+    // WAL lets readers and the single writer run concurrently instead of
+    // blocking each other — required so the API/workers can keep serving while
+    // a long write job (e.g. tools/seed-game-history) runs against the same
+    // file. journal_mode is stored in the DB file header, so this one PRAGMA
+    // persists across every connection libsql lazily spawns and across restarts.
+    // Skip in-memory DBs: WAL is not applicable there (stays in `memory` mode).
+    if (!url.includes(':memory:')) {
+      await client.execute('PRAGMA journal_mode = WAL');
+    }
+    // busy_timeout makes a writer wait for a contended lock rather than failing
+    // instantly. Best-effort only: libsql opens a fresh connection after each
+    // transaction that resets this to 0 (verified), so writer-vs-writer races
+    // are ultimately handled by app-level SQLITE_BUSY retries, not this PRAGMA.
+    await client.execute(`PRAGMA busy_timeout = ${env.SQLITE_BUSY_TIMEOUT_MS}`);
     return drizzleLibsql(client, { schema: sqliteSchema });
   }
 }

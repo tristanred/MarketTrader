@@ -1,5 +1,6 @@
 import { eq, inArray } from 'drizzle-orm';
 import { db, schema } from '../../../packages/server/src/db/index.js';
+import { withBusyTimeout } from './db-busy.js';
 import type { SeededPlayer } from './seed-players.js';
 
 /**
@@ -164,7 +165,7 @@ export async function seedSnapshotsForGame(
   const BATCH = 150;
   for (let i = 0; i < inserts.length; i += BATCH) {
     const chunk = inserts.slice(i, i + BATCH);
-    await db.insert(schema.portfolioSnapshots).values(chunk);
+    await withBusyTimeout(() => db.insert(schema.portfolioSnapshots).values(chunk));
   }
 
   return { inserted: inserts.length, ticks };
@@ -181,6 +182,8 @@ export async function clearSnapshotsForGame(gameId: string): Promise<number> {
     .from(schema.portfolioSnapshots)
     .where(eq(schema.portfolioSnapshots.gameId, gameId));
   if (before.length === 0) return 0;
-  await db.delete(schema.portfolioSnapshots).where(eq(schema.portfolioSnapshots.gameId, gameId));
+  await withBusyTimeout(() =>
+    db.delete(schema.portfolioSnapshots).where(eq(schema.portfolioSnapshots.gameId, gameId)),
+  );
   return before.length;
 }

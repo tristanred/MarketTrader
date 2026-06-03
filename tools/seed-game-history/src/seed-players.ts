@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { hash } from '@node-rs/argon2';
 import { faker } from '@faker-js/faker';
 import { db, schema } from '../../../packages/server/src/db/index.js';
+import { withBusyTimeout } from './db-busy.js';
 
 /** Throwaway password assigned to every seeded user. Argon2 needs min 8 chars. */
 export const SEED_USER_PASSWORD = 'seedseed';
@@ -47,7 +48,7 @@ export async function seedPlayers(
     const rand4 = randomBytes(2).toString('hex');
     const username = `${first}_${last}_${rand4}`;
 
-    const result = await db.transaction(async (tx) => {
+    const result = await withBusyTimeout(() => db.transaction(async (tx) => {
       const [user] = await tx
         .insert(schema.users)
         .values({ username, passwordHash })
@@ -61,7 +62,7 @@ export async function seedPlayers(
       if (!player) throw new Error(`Failed to enroll user ${username}`);
 
       return { gamePlayerId: player.id, userId: user.id, username: user.username };
-    });
+    }));
 
     out.push(result);
   }

@@ -86,6 +86,8 @@ const db = DATABASE_URL.startsWith('postgres')
 
 **Reason:** PostgreSQL provides the transactional guarantees needed for financial data (concurrent trade execution, balance updates) and runs well on a $5–10/month AWS instance or as a Docker container. SQLite eliminates external database setup for local development and allows fast in-memory databases for test runs (`DATABASE_URL=:memory:`).
 
+**Concurrency note:** File-based SQLite connections open in WAL mode so readers and the single writer don't block each other — this is what lets the API and its workers keep serving while a long write job (e.g. `tools/seed-game-history`) runs against the same file. WAL is stored in the DB-file header, so it persists across every connection libsql lazily spawns. Writer-vs-writer contention is handled separately by `PRAGMA busy_timeout` (`SQLITE_BUSY_TIMEOUT_MS`): libsql resets it to 0 on each new connection and retrying a failed `BEGIN IMMEDIATE` on the same connection does not recover, so the seed tool re-applies the PRAGMA immediately before each write (see `db-busy.ts`) to make the lock *wait* rather than fail. The live API's own writes are not yet wrapped this way (follow-up). This is connection tuning, not a driver change, so it stays under this ADR.
+
 ---
 
 ## ADR-006: Pluggable Stock Price Provider

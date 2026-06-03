@@ -167,33 +167,66 @@ export const testFixtures = base.extend<Fixtures, WorkerFixtures>({
   // group by the server. We rely on this fixture being touched before any
   // other user is created in the worker — playerUser depends on adminUser
   // to enforce that ordering.
+  //
+  // Deterministic credentials + register-or-login so the fixture survives a
+  // worker restart (which Playwright does after a test failure with
+  // `retries`). On first init, register succeeds and the first-user bootstrap
+  // promotes this account to admin. On a restart, the account already exists
+  // in the still-running :memory: server, so register returns 409 and we log
+  // in instead — recovering the same admin session. Without this, a single
+  // failure would cascade: the restarted fixture's fresh-username register
+  // would NOT be the first user, come back with groups=[], and fail every
+  // downstream test in the worker.
   adminUser: [
     async ({}, use) => {
       const ctx = await request.newContext({ baseURL: API_BASE });
       try {
-        const username = uniqueName('admin');
+        const username = 'e2e-admin';
         const password = 'correct-horse-battery';
-        const res = await ctx.post('/auth/register', {
+
+        let session: UserSession;
+        const registerRes = await ctx.post('/auth/register', {
           data: { username, password },
         });
-        expect(
-          res.ok(),
-          `admin register failed: ${res.status()} ${await res.text()}`,
-        ).toBeTruthy();
-        const body = (await res.json()) as AuthBody;
-        const refreshToken = extractRefreshToken(res.headers());
-        const session: UserSession = {
-          username,
-          password,
-          userId: body.user.id,
-          accessToken: body.token,
-          cookies: authCookies(refreshToken),
-          refreshToken,
-          groups: body.user.groups ?? [],
-        };
+        if (registerRes.ok()) {
+          const body = (await registerRes.json()) as AuthBody;
+          session = {
+            username,
+            password,
+            userId: body.user.id,
+            accessToken: body.token,
+            cookies: authCookies(extractRefreshToken(registerRes.headers())),
+            refreshToken: extractRefreshToken(registerRes.headers()),
+            groups: body.user.groups ?? [],
+          };
+        } else if (registerRes.status() === 409) {
+          // Already registered (worker restart) — log in to recover the session.
+          const loginRes = await ctx.post('/auth/login', {
+            data: { username, password },
+          });
+          expect(
+            loginRes.ok(),
+            `admin re-login failed: ${loginRes.status()} ${await loginRes.text()}`,
+          ).toBeTruthy();
+          const body = (await loginRes.json()) as AuthBody;
+          session = {
+            username,
+            password,
+            userId: body.user.id,
+            accessToken: body.token,
+            cookies: authCookies(extractRefreshToken(loginRes.headers())),
+            refreshToken: extractRefreshToken(loginRes.headers()),
+            groups: body.user.groups ?? [],
+          };
+        } else {
+          throw new Error(
+            `admin register failed: ${registerRes.status()} ${await registerRes.text()}`,
+          );
+        }
+
         expect(
           session.groups,
-          `expected first registered user to be promoted to admin, got groups=${JSON.stringify(session.groups)}`,
+          `expected the admin account to be in the admin group, got groups=${JSON.stringify(session.groups)}`,
         ).toContain('admin');
         await use(session);
       } finally {

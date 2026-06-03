@@ -15,6 +15,9 @@ MarketTrader is a virtual stock trading tournament platform. Groups of friends c
 ```
 packages/
   server/     ← Fastify REST API + WebSocket server (Node.js + TypeScript)
+              src/: routes services providers db ws events
+              workers (pending-orders settler, portfolio-snapshot)
+              achievements observability (Sentry)
   frontend/   ← React 19 + Vite SPA
   shared/     ← TypeScript types only — API contracts shared between server and frontend
 docs/
@@ -110,6 +113,7 @@ Every exported function, class, and interface must have a JSDoc comment unless t
 - Access token: 15-minute JWT, `Authorization: Bearer <token>` header on REST requests
 - Refresh token: 7-day token, HttpOnly cookie
 - Password hashing: argon2 via `@node-rs/argon2` (not bcrypt)
+- JWT secret: any string ≥ 32 chars (enforced in production by `validateProductionEnv` in `env.ts`)
 - WebSocket auth: `ws://host/games/:id/live?token=<access_token>`
 
 ---
@@ -125,14 +129,24 @@ Switch via `STOCK_PROVIDER=alpaca` env var.
 
 ## Environment Variables
 
+Core vars (see `.env.example` for the full, commented set):
+
 ```
-DATABASE_URL=         # postgres://... or path/to/file.db or :memory:
-JWT_SECRET=           # random 64-char hex string
-STOCK_PROVIDER=yahoo  # yahoo | alpaca  (polygon is TODO, not yet wired in env.ts)
-ALPACA_API_KEY=       # required if STOCK_PROVIDER=alpaca
+DATABASE_URL=          # postgres://... or path/to/file.db or :memory:
+JWT_SECRET=            # any string ≥ 32 chars (prod-enforced)
+STOCK_PROVIDER=yahoo   # yahoo | alpaca | mock  (polygon is TODO, not yet wired in env.ts)
+ALPACA_API_KEY_ID=     # required if STOCK_PROVIDER=alpaca (legacy ALPACA_API_KEY read as fallback)
+ALPACA_API_SECRET_KEY= # required alongside the key ID
 PORT=3000
-CORS_ORIGIN=          # frontend URL (e.g. http://localhost:5173)
+CORS_ORIGIN=           # frontend URL (e.g. http://localhost:5173)
+NODE_ENV=development   # development | production | test
 ```
+
+Additional vars rarely need touching (defined in `env.ts`, most also documented
+in `.env.example`): the `MARKET_*` family (hours mode, status provider, extended
+hours), the `STOCK_*_MS` resilience tunables (cache TTLs, rate-limit backoff,
+stale-trade policy), `PENDING_ORDERS_TICK_MS`, `PORTFOLIO_SNAPSHOT_INTERVAL_MS`,
+and `SENTRY_DSN`. `env.ts` is the source of truth for the full set.
 
 ---
 
@@ -155,6 +169,9 @@ pnpm --filter server dev
 pnpm --filter frontend dev
 
 # Tests / typecheck / lint (root-level, runs across all packages)
+# Note: `pnpm test` and `pnpm typecheck` build @markettrader/shared first.
+# Running `pnpm --filter server test` directly can fail on stale shared types —
+# run `pnpm build:shared` first, or just use the root script.
 pnpm test
 pnpm typecheck
 pnpm lint

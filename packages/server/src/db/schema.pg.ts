@@ -239,6 +239,9 @@ export const stockPriceCache = pgTable('stock_price_cache', {
   change: decimal('change', { precision: 15, scale: 4 }).notNull(),
   changePercent: decimal('change_percent', { precision: 10, scale: 4 }).notNull(),
   volume: integer('volume'),
+  open: decimal('open', { precision: 15, scale: 4 }),
+  high: decimal('high', { precision: 15, scale: 4 }),
+  low: decimal('low', { precision: 15, scale: 4 }),
   fetchedAt: timestamp('fetched_at', { mode: 'string' }).defaultNow().notNull(),
 });
 

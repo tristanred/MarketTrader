@@ -258,6 +258,9 @@ export const stockPriceCache = sqliteTable('stock_price_cache', {
   change: real('change').notNull(),
   changePercent: real('change_percent').notNull(),
   volume: integer('volume'),
+  open: real('open'),
+  high: real('high'),
+  low: real('low'),
   fetchedAt: text('fetched_at')
     .default(sql`(datetime('now'))`)
     .notNull(),

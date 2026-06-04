@@ -31,6 +31,12 @@ export interface StockQuote {
   stale?: boolean;
   /** Regular-session trading volume (shares), when reported by the provider. */
   volume?: number;
+  /** Regular-session opening price in USD, when reported by the provider. Fixed for the trading day. */
+  open?: number;
+  /** Highest regular-session price so far today in USD, when reported by the provider. */
+  high?: number;
+  /** Lowest regular-session price so far today in USD, when reported by the provider. */
+  low?: number;
 }
 
 /** A single result from the symbol autocomplete endpoint. */

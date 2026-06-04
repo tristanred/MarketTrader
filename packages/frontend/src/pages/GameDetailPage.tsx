@@ -221,6 +221,12 @@ function ArenaBody({
         }
       : undefined;
 
+  // O/H/L/V for the strip below the chart. Same source preference as quoteData
+  // (live tick, else the REST quote), but passed to <OhlcStrip> directly rather
+  // than widened into quoteData — quoteData is spread into <QuoteHeader>, which
+  // has no use for these fields.
+  const ohlcv = liveTick ?? freshQuote.data;
+
   const achievementsView = useAchievements(gameId);
 
   // Seed persisted unlock history into the activity store. The store is
@@ -313,7 +319,7 @@ function ArenaBody({
             : {})}
         />
         <ChartPanel symbol={selectedSymbol} />
-        <OhlcStrip />
+        <OhlcStrip open={ohlcv?.open} high={ohlcv?.high} low={ohlcv?.low} volume={ohlcv?.volume} />
         <HoldingsPanel rows={holdingRows} onSelect={setSelectedSymbol} />
         <OpenOrdersList gameId={gameId} />
         {/* Leaderboard moved here from the left rail to gain horizontal room

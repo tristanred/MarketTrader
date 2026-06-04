@@ -129,7 +129,11 @@ export class YahooProvider implements StockProvider {
     }
 
     const marketState = asMarketState((row as { marketState?: unknown }).marketState);
-    const volume = (row as { regularMarketVolume?: unknown }).regularMarketVolume;
+    const r = row as Record<string, unknown>;
+    const volume = r.regularMarketVolume;
+    const open = r.regularMarketOpen;
+    const high = r.regularMarketDayHigh;
+    const low = r.regularMarketDayLow;
     return {
       symbol: typeof row.symbol === 'string' ? row.symbol : symbol,
       price: row.regularMarketPrice as number,
@@ -138,6 +142,9 @@ export class YahooProvider implements StockProvider {
       fetchedAt: new Date().toISOString(),
       ...(marketState && { marketState }),
       ...(typeof volume === 'number' && { volume }),
+      ...(typeof open === 'number' && { open }),
+      ...(typeof high === 'number' && { high }),
+      ...(typeof low === 'number' && { low }),
     };
   }
 
@@ -162,6 +169,9 @@ export class YahooProvider implements StockProvider {
             'regularMarketChange',
             'regularMarketChangePercent',
             'regularMarketVolume',
+            'regularMarketOpen',
+            'regularMarketDayHigh',
+            'regularMarketDayLow',
             'marketState',
           ],
         },
@@ -179,6 +189,9 @@ export class YahooProvider implements StockProvider {
       if (row.regularMarketPrice == null) continue;
       const marketState = asMarketState(row.marketState);
       const volume = row.regularMarketVolume;
+      const open = row.regularMarketOpen;
+      const high = row.regularMarketDayHigh;
+      const low = row.regularMarketDayLow;
       out.set(sym, {
         symbol: typeof row.symbol === 'string' ? row.symbol : sym,
         price: row.regularMarketPrice as number,
@@ -187,6 +200,9 @@ export class YahooProvider implements StockProvider {
         fetchedAt,
         ...(marketState && { marketState }),
         ...(typeof volume === 'number' && { volume }),
+        ...(typeof open === 'number' && { open }),
+        ...(typeof high === 'number' && { high }),
+        ...(typeof low === 'number' && { low }),
       });
     }
     return out;

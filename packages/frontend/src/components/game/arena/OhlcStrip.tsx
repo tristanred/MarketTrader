@@ -1,10 +1,12 @@
 import { cn } from '@/lib/utils';
 
 export interface OhlcStripProps {
-  open?: number;
-  high?: number;
-  low?: number;
-  volume?: number;
+  // `| undefined` (not just `?`) so callers can pass a live value that may be
+  // absent while loading; the component renders a dash for each undefined field.
+  open?: number | undefined;
+  high?: number | undefined;
+  low?: number | undefined;
+  volume?: number | undefined;
   className?: string;
 }
 

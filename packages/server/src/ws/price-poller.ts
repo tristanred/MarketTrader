@@ -3,6 +3,7 @@ import type { Db } from '../db/index.js';
 import { schema } from '../db/index.js';
 import type { StockProvider } from '../providers/index.js';
 import type { GameClientRegistry } from './registry.js';
+import { startIntervalWorker, type IntervalWorker } from '../workers/interval-worker.js';
 
 const POLL_INTERVAL_MS = 5_000;
 
@@ -94,24 +95,18 @@ export async function pollPrices(
 }
 
 /**
- * Starts the 5-second polling loop.
- * Returns the interval handle — pass it to `clearInterval` in an `onClose` hook.
+ * Starts the 5-second polling loop. Returns an {@link IntervalWorker} whose
+ * `stop()` awaits any in-flight poll (which writes the quote cache) so it can't
+ * race `closeDb()` on shutdown. Per-tick errors are swallowed — a single failed
+ * poll must not crash the server.
  */
 export function startPricePoller(
   db: Db,
   provider: StockProvider,
   registry: GameClientRegistry,
-): ReturnType<typeof setInterval> {
-  let polling = false;
-  return setInterval(() => {
-    if (polling) return;
-    polling = true;
-    pollPrices(db, provider, registry)
-      .catch(() => {
-        // Swallow per-tick errors — a single failed poll must not crash the server
-      })
-      .finally(() => {
-        polling = false;
-      });
-  }, POLL_INTERVAL_MS);
+): IntervalWorker {
+  return startIntervalWorker(
+    () => pollPrices(db, provider, registry),
+    POLL_INTERVAL_MS,
+  );
 }

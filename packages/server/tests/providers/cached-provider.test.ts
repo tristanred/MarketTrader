@@ -147,6 +147,56 @@ describe('CachedProvider', () => {
     });
   });
 
+  describe('open/high/low caching', () => {
+    const quoteWithOhlc = (): StockQuote => ({
+      symbol: 'AAPL',
+      price: 175.5,
+      change: 1.2,
+      changePercent: 0.69,
+      open: 174,
+      high: 176.8,
+      low: 173.2,
+      volume: 42_000_000,
+      fetchedAt: new Date().toISOString(),
+    });
+
+    it('persists open/high/low on fetch and restores them on a cache hit', async () => {
+      inner.nextQuote = quoteWithOhlc();
+      const first = await provider.getQuote('AAPL');
+      expect(first.open).toBe(174);
+      expect(inner.quoteCalls).toBe(1);
+
+      // Second read within TTL must be a cache hit that still carries O/H/L,
+      // proving they round-tripped through stock_price_cache (not the inner).
+      inner.nextQuote = null;
+      const second = await provider.getQuote('AAPL');
+      expect(inner.quoteCalls).toBe(1); // served from cache, not re-fetched
+      expect(second.open).toBe(174);
+      expect(second.high).toBe(176.8);
+      expect(second.low).toBe(173.2);
+      expect(second.volume).toBe(42_000_000);
+    });
+
+    it('carries open/high/low through the rate-limited stale fallback', async () => {
+      inner.nextQuote = quoteWithOhlc();
+      await provider.getQuote('AAPL');
+
+      const past = new Date(Date.now() - 90_000).toISOString();
+      await db
+        .update(schema.stockPriceCache)
+        .set({ fetchedAt: past })
+        .where(eq(schema.stockPriceCache.symbol, 'AAPL'));
+
+      inner.nextQuote = null;
+      inner.nextError = new StockProviderError('RATE_LIMITED', 'mock');
+      const stale = await provider.getQuote('AAPL');
+      expect(stale.stale).toBe(true);
+      expect(stale.open).toBe(174);
+      expect(stale.high).toBe(176.8);
+      expect(stale.low).toBe(173.2);
+    });
+  });
+
   describe('searchSymbols cache', () => {
     it('serves the second call from the in-memory cache', async () => {
       inner.nextSearch = [{ symbol: 'AAPL', name: 'Apple' }];

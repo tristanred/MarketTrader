@@ -71,6 +71,36 @@ describe('YahooProvider rate-limit handling', () => {
     expect(quote.changePercent).toBe(0.69);
   });
 
+  it('maps regularMarketOpen/DayHigh/DayLow to open/high/low', async () => {
+    stubClient(provider, {
+      quote: vi.fn().mockResolvedValue({
+        symbol: 'AAPL',
+        regularMarketPrice: 175.5,
+        regularMarketChange: 1.2,
+        regularMarketChangePercent: 0.69,
+        regularMarketOpen: 174.0,
+        regularMarketDayHigh: 176.8,
+        regularMarketDayLow: 173.2,
+        regularMarketVolume: 42_000_000,
+      }),
+    });
+    const quote = await provider.getQuote('AAPL');
+    expect(quote.open).toBe(174.0);
+    expect(quote.high).toBe(176.8);
+    expect(quote.low).toBe(173.2);
+    expect(quote.volume).toBe(42_000_000);
+  });
+
+  it('omits open/high/low when the upstream does not report them', async () => {
+    stubClient(provider, {
+      quote: vi.fn().mockResolvedValue({ symbol: 'AAPL', regularMarketPrice: 175.5 }),
+    });
+    const quote = await provider.getQuote('AAPL');
+    expect(quote.open).toBeUndefined();
+    expect(quote.high).toBeUndefined();
+    expect(quote.low).toBeUndefined();
+  });
+
   it('throws SYMBOL_NOT_FOUND when the upstream response lacks a price', async () => {
     stubClient(provider, { quote: vi.fn().mockResolvedValue(null) });
     await expect(provider.getQuote('NOPE')).rejects.toMatchObject({
@@ -121,6 +151,39 @@ describe('YahooProvider rate-limit handling', () => {
       expect(result.get('AAPL')?.changePercent).toBe(0.69);
       expect(result.get('AAPL')?.price).toBe(175.5);
       expect(result.get('MSFT')?.changePercent).toBe(-0.49);
+    });
+
+    it('maps open/high/low from the batch rows', async () => {
+      const quote = vi.fn().mockResolvedValue(
+        new Map([
+          [
+            'AAPL',
+            {
+              symbol: 'AAPL',
+              regularMarketPrice: 175.5,
+              regularMarketChangePercent: 0.69,
+              regularMarketOpen: 174,
+              regularMarketDayHigh: 176.8,
+              regularMarketDayLow: 173.2,
+            },
+          ],
+        ]),
+      );
+      stubClient(provider, { quote });
+      const result = await provider.getQuotes(['AAPL']);
+      expect(result.get('AAPL')?.open).toBe(174);
+      expect(result.get('AAPL')?.high).toBe(176.8);
+      expect(result.get('AAPL')?.low).toBe(173.2);
+    });
+
+    it('requests open/high/low in the batch fields whitelist', async () => {
+      const quote = vi.fn().mockResolvedValue(new Map());
+      stubClient(provider, { quote });
+      await provider.getQuotes(['AAPL']);
+      const fields = (quote.mock.calls[0]?.[1] as { fields?: string[] } | undefined)?.fields ?? [];
+      expect(fields).toEqual(
+        expect.arrayContaining(['regularMarketOpen', 'regularMarketDayHigh', 'regularMarketDayLow']),
+      );
     });
 
     it('skips rows with a null price (no partial quotes)', async () => {

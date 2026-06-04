@@ -6,6 +6,7 @@ import {
   compactEndedGames,
 } from '../services/portfolio-snapshot.js';
 import { env } from '../env.js';
+import { startIntervalWorker, type IntervalWorker } from './interval-worker.js';
 
 /**
  * One tick of the portfolio-snapshot worker:
@@ -24,8 +25,9 @@ export async function runPortfolioSnapshotTick(deps: { db: Db; bus?: EventBus })
 }
 
 /**
- * Starts the portfolio-snapshot loop. Mirrors the re-entrancy guard used by
- * {@link startPendingOrdersWorker}: if a previous tick is still in flight
+ * Starts the portfolio-snapshot loop. Returns an {@link IntervalWorker} whose
+ * `stop()` awaits any in-flight tick so snapshot writes can't race `closeDb()`
+ * on shutdown. Re-entrancy is guarded: if a previous tick is still in flight
  * when the next interval fires, the new tick is skipped.
  */
 export function startPortfolioSnapshotWorker(deps: {
@@ -33,21 +35,11 @@ export function startPortfolioSnapshotWorker(deps: {
   bus?: EventBus;
   logger?: FastifyBaseLogger;
   intervalMs?: number;
-}): { stop: () => void } {
+}): IntervalWorker {
   const intervalMs = deps.intervalMs ?? env.PORTFOLIO_SNAPSHOT_INTERVAL_MS;
-  let running = false;
-  const handle = setInterval(() => {
-    if (running) return;
-    running = true;
-    runPortfolioSnapshotTick(deps)
-      .catch((err) => {
-        deps.logger?.error({ err }, 'portfolio-snapshot tick failed');
-      })
-      .finally(() => {
-        running = false;
-      });
-  }, intervalMs);
-  return {
-    stop: () => clearInterval(handle),
-  };
+  return startIntervalWorker(
+    () => runPortfolioSnapshotTick(deps),
+    intervalMs,
+    (err) => deps.logger?.error({ err }, 'portfolio-snapshot tick failed'),
+  );
 }

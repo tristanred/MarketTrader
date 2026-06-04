@@ -81,6 +81,9 @@ export class CachedProvider implements StockProvider {
         fetchedAt: cached.fetchedAt,
         ...(marketState && { marketState }),
         ...(cached.volume != null && { volume: Number(cached.volume) }),
+        ...(cached.open != null && { open: Number(cached.open) }),
+        ...(cached.high != null && { high: Number(cached.high) }),
+        ...(cached.low != null && { low: Number(cached.low) }),
       };
     }
 
@@ -107,6 +110,9 @@ export class CachedProvider implements StockProvider {
           stale: true,
           ...(marketState && { marketState }),
           ...(cached.volume != null && { volume: Number(cached.volume) }),
+          ...(cached.open != null && { open: Number(cached.open) }),
+          ...(cached.high != null && { high: Number(cached.high) }),
+          ...(cached.low != null && { low: Number(cached.low) }),
         };
       }
       throw err;
@@ -130,6 +136,9 @@ export class CachedProvider implements StockProvider {
         change: quote.change,
         changePercent: quote.changePercent,
         volume: quote.volume ?? null,
+        open: quote.open ?? null,
+        high: quote.high ?? null,
+        low: quote.low ?? null,
         fetchedAt: quote.fetchedAt,
       })
       .onConflictDoUpdate({
@@ -139,6 +148,9 @@ export class CachedProvider implements StockProvider {
           change: quote.change,
           changePercent: quote.changePercent,
           volume: quote.volume ?? null,
+          open: quote.open ?? null,
+          high: quote.high ?? null,
+          low: quote.low ?? null,
           fetchedAt: quote.fetchedAt,
         },
       });

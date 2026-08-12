@@ -152,11 +152,6 @@ and `SENTRY_DSN`. `env.ts` is the source of truth for the full set.
 
 ## Running Locally
 
-Requires **Node 26+** (`engines` in the root `package.json`, `.nvmrc`, CI, and the
-Dockerfiles all track it). The frontend test config passes
-`--no-experimental-webstorage` because Node 26 defines inert `localStorage` /
-`sessionStorage` globals that would otherwise shadow jsdom's working Storage.
-
 ```bash
 # Start PostgreSQL (optional — use SQLite if you don't want Docker)
 docker-compose up -d db

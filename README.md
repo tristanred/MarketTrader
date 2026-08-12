@@ -140,7 +140,7 @@ pnpm workspace monorepo. The `shared` package is the single source of truth for 
 
 ### Prerequisites
 
-- Node.js 22+ (an `.nvmrc` is provided — `nvm use` picks it up)
+- Node.js 26+ (an `.nvmrc` is provided — `nvm use` picks it up)
 - pnpm (via corepack): `corepack enable`
 - Docker (optional, for PostgreSQL in dev)
 

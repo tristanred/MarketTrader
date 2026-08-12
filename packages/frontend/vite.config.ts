@@ -56,5 +56,12 @@ export default defineConfig({
     environment: 'jsdom',
     setupFiles: ['./tests/setup.ts'],
     exclude: ['**/node_modules/**', '**/dist/**', '**/e2e/**'],
+    // Node >= 26 ships Web Storage on by default, so `localStorage` and
+    // `sessionStorage` already exist as globals in the worker — inert ones,
+    // since they need --localstorage-file to work. Vitest's jsdom environment
+    // never overwrites a global that is already defined, so jsdom's working
+    // Storage gets skipped and every `localStorage.*` call throws. Dropping the
+    // Node feature hands those globals back to jsdom.
+    execArgv: ['--no-experimental-webstorage'],
   },
 });

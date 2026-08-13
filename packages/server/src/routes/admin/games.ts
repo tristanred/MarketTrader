@@ -29,6 +29,7 @@ const updateBody = z.object({
   allowStopOrders: z.boolean().optional(),
   allowBracketOrders: z.boolean().optional(),
   allowGTC: z.boolean().optional(),
+  visibility: z.enum(['public', 'private']).optional(),
 });
 
 const transferOwnerBody = z.object({ newOwnerId: z.string() });
@@ -74,6 +75,7 @@ export function adminGamesRoutes(db: Db) {
           startDate: games.startDate,
           endDate: games.endDate,
           startingBalance: games.startingBalance,
+          visibility: games.visibility,
           createdBy: games.createdBy,
           createdAt: games.createdAt,
         })

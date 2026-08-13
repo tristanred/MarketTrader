@@ -34,7 +34,14 @@ PrivateDevices=true
 ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectControlGroups=true
-RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+# AF_NETLINK is not optional despite the app never opening a netlink socket
+# itself: glibc's getifaddrs() enumerates interfaces over netlink, and Fastify
+# calls os.networkInterfaces() to log the bound address immediately after
+# listen(). Without it the process binds the port and then dies with
+# "uv_interface_addresses returned Unknown system error 97" (EAFNOSUPPORT).
+# glibc's resolver also uses netlink for AI_ADDRCONFIG, so outbound DNS —
+# every stock-price fetch — depends on it too.
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
 RestrictNamespaces=true
 LockPersonality=true
 ReadWritePaths=/var/lib/markettrader

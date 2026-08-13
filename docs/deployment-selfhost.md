@@ -174,6 +174,10 @@ sudo nano /etc/markettrader/env && sudo systemctl restart markettrader
 
 **Service won't start.** `journalctl -u markettrader -n 50`. A config error throws before the port is bound and prints exactly which variable is wrong. `Restart=always` is capped at 5 attempts per 300s so an unsatisfiable config doesn't spin forever.
 
+**Changed a systemd unit and nothing happened.** Units are installed by `provision.sh`, not by a deploy. Re-run `provision.sh` to apply them — it's idempotent. `deploy.sh` warns when the repo copy differs from the installed one. Note that a broken unit cannot be fixed by the automatic rollback either, because the unit is the same at every commit.
+
+**`uv_interface_addresses returned Unknown system error 97`.** Errno 97 is `EAFNOSUPPORT`. The unit's `RestrictAddressFamilies` is missing `AF_NETLINK`, which glibc needs for `getifaddrs()` — Fastify calls `os.networkInterfaces()` right after binding — and for the resolver's `AI_ADDRCONFIG`. Re-run `provision.sh`.
+
 **Users get logged out every 15 minutes.** The `Secure` refresh cookie isn't surviving. You're serving over plain HTTP, or nginx isn't forwarding `X-Forwarded-Proto`. Confirm the site actually loads over `https://`.
 
 **Login works but WebSockets don't.** Check the upgrade blocks in the nginx site. Both `/api/games/*/live` and `/api/ws/live` need `Upgrade`/`Connection` headers, and both must appear before the generic `location /api/`.

@@ -28,6 +28,22 @@ cd "$APP_DIR" || die "app directory not found: $APP_DIR"
 # found". Only the systemd unit sets NODE_ENV=production, for the runtime.
 unset NODE_ENV
 
+# systemd units are installed by provision.sh, never by a deploy, so editing
+# them in the repo has no effect until provision.sh is re-run. A stale unit
+# also can't be fixed by the automatic rollback below, since the unit is
+# identical at every commit — surface the drift instead of leaving someone to
+# infer it from a crash loop.
+warn_on_unit_drift() {
+  local unit
+  for unit in markettrader.service markettrader-backup.service markettrader-backup.timer; do
+    if [ -f "/etc/systemd/system/$unit" ] &&
+       ! cmp -s "$APP_DIR/deploy/systemd/$unit" "/etc/systemd/system/$unit"; then
+      log "WARNING: $unit differs from the installed copy"
+      log "         re-run provision.sh to apply it"
+    fi
+  done
+}
+
 wait_for_health() {
   for _ in $(seq 1 "$HEALTH_TIMEOUT"); do
     if curl -fsS "$HEALTH_URL" >/dev/null 2>&1; then
@@ -73,6 +89,8 @@ log "deploying $TARGET_SHA ($(git log -1 --pretty=%s))"
 # anything can damage it. Running it beforehand meant the OLD backup.sh
 # executed, so a bug in that script blocked every future deploy including the
 # one carrying its fix.
+warn_on_unit_drift
+
 log "taking pre-deploy backup"
 sudo -u markettrader "$APP_DIR/deploy/backup.sh" predeploy "${PREVIOUS_SHA:0:7}"
 

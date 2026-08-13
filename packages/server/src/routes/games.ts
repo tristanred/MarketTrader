@@ -69,6 +69,8 @@ export function gameRoutes(db: Db, bus?: EventBus) {
           startingBalance: games.startingBalance,
           allowShortSelling: games.allowShortSelling,
           achievementsEnabled: games.achievementsEnabled,
+          visibility: games.visibility,
+          inviteCode: games.inviteCode,
           status: games.status,
           createdBy: games.createdBy,
           createdAt: games.createdAt,

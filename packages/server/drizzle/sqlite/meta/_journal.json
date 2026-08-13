@@ -127,6 +127,13 @@
       "when": 1780531284501,
       "tag": "0017_sticky_pet_avengers",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "6",
+      "when": 1786659138325,
+      "tag": "0018_superb_silver_centurion",
+      "breakpoints": true
     }
   ]
 }

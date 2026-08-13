@@ -107,6 +107,16 @@ export const games = sqliteTable('games', {
   achievementsEnabled: integer('achievements_enabled', { mode: 'boolean' })
     .notNull()
     .default(true),
+  /** Public games appear in `GET /games/browse`; private games are reachable only by ID or invite code. */
+  visibility: text('visibility', { enum: ['public', 'private'] })
+    .notNull()
+    .default('public'),
+  /**
+   * Short shareable token used by `/join/:code`. Nullable because the column
+   * was added to a populated table and migrations are never hand-edited —
+   * pre-existing games mint a code on first share.
+   */
+  inviteCode: text('invite_code').unique(),
   status: text('status', { enum: ['pending', 'active', 'ended'] })
     .notNull()
     .default('pending'),

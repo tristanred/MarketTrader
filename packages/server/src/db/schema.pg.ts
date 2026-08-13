@@ -14,6 +14,7 @@ import {
 
 // PostgreSQL enums for status and direction fields; the SQLite schema uses text enums instead.
 export const gameStatusEnum = pgEnum('game_status', ['pending', 'active', 'ended']);
+export const gameVisibilityEnum = pgEnum('game_visibility', ['public', 'private']);
 export const tradeDirectionEnum = pgEnum('trade_direction', ['buy', 'sell']);
 export const tradeStatusEnum = pgEnum('trade_status', [
   'pending',
@@ -118,6 +119,14 @@ export const games = pgTable('games', {
   allowGTC: boolean('allow_gtc').notNull().default(false),
   /** When false, the achievement engine ignores every event for this game. */
   achievementsEnabled: boolean('achievements_enabled').notNull().default(true),
+  /** Public games appear in `GET /games/browse`; private games are reachable only by ID or invite code. */
+  visibility: gameVisibilityEnum('visibility').notNull().default('public'),
+  /**
+   * Short shareable token used by `/join/:code`. Nullable because the column
+   * was added to a populated table and migrations are never hand-edited —
+   * pre-existing games mint a code on first share.
+   */
+  inviteCode: text('invite_code').unique(),
   status: gameStatusEnum('status').notNull().default('pending'),
   createdBy: text('created_by')
     .notNull()

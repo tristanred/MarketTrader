@@ -6,6 +6,13 @@
  */
 export type GameStatus = 'pending' | 'active' | 'ended';
 
+/**
+ * Discoverability of a game.
+ * - `public`  — listed in `GET /games/browse` for users who have not joined
+ * - `private` — reachable only via its ID or invite code
+ */
+export type GameVisibility = 'public' | 'private';
+
 /** Full game entity as returned by the API. All dates are ISO 8601 strings. */
 export interface Game {
   id: string;
@@ -35,6 +42,9 @@ export interface Game {
    * Defaults to true on game creation.
    */
   achievementsEnabled: boolean;
+  visibility: GameVisibility;
+  /** Short share token. Null until minted; only ever returned to members. */
+  inviteCode: string | null;
   status: GameStatus;
   /** ID of the user who created the game. */
   createdBy: string;
@@ -62,6 +72,8 @@ export interface CreateGameRequest {
   allowGTC?: boolean;
   /** Defaults to true when omitted. */
   achievementsEnabled?: boolean;
+  /** Defaults to `'public'` when omitted. */
+  visibility?: GameVisibility;
 }
 
 /** A single player's rank entry as returned in the game leaderboard. */

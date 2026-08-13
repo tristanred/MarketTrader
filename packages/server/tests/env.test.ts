@@ -28,9 +28,42 @@ describe('validateProductionEnv', () => {
     ).toThrow(/CORS_ORIGIN/);
   });
 
-  it('rejects a non-postgres DATABASE_URL', () => {
+  it('accepts an absolute SQLite path', () => {
+    expect(() =>
+      validateProductionEnv({ ...valid, DATABASE_URL: '/var/lib/markettrader/app.db' }),
+    ).not.toThrow();
+  });
+
+  it('accepts an absolute SQLite path in file: form', () => {
+    expect(() =>
+      validateProductionEnv({ ...valid, DATABASE_URL: 'file:/var/lib/markettrader/app.db' }),
+    ).not.toThrow();
+  });
+
+  it('accepts a remote libsql URL', () => {
+    expect(() =>
+      validateProductionEnv({ ...valid, DATABASE_URL: 'libsql://db.turso.io' }),
+    ).not.toThrow();
+  });
+
+  it('rejects a CWD-relative SQLite path', () => {
+    // Resolved against process.cwd(), so starting the server from a different
+    // directory silently opens a fresh, empty database and migrates it.
     expect(() => validateProductionEnv({ ...valid, DATABASE_URL: './dev.db' }))
       .toThrow(/DATABASE_URL/);
+  });
+
+  it('rejects an in-memory database', () => {
+    expect(() => validateProductionEnv({ ...valid, DATABASE_URL: ':memory:' }))
+      .toThrow(/DATABASE_URL/);
+  });
+
+  it('rejects the shared-cache in-memory form', () => {
+    // normalizeLibsqlUrl rewrites ':memory:' to this, so the check has to
+    // catch the expanded form too.
+    expect(() =>
+      validateProductionEnv({ ...valid, DATABASE_URL: 'file::memory:?cache=shared' }),
+    ).toThrow(/DATABASE_URL/);
   });
 
   it('requires the Alpaca key pair when STOCK_PROVIDER=alpaca', () => {

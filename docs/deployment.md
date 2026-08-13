@@ -2,6 +2,8 @@
 
 This is the smallest viable production deployment for MarketTrader: one EC2 instance running Docker Compose with Postgres + the Fastify server + an Nginx container serving the SPA. Suitable for a tournament with a handful of players. For multi-replica deployments, swap the auto-migration step (see "Migrations") and front the host with an ALB.
 
+> **Self-hosting on your own hardware instead?** See [deployment-selfhost.md](deployment-selfhost.md) — systemd + nginx + SQLite on a single Linux box, with one-command deploys and automated backups. That is the path in active use; this document covers the AWS/Docker/Postgres alternative.
+
 ---
 
 ## 1. Provision the instance

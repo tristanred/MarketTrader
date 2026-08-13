@@ -1,0 +1,8 @@
+# Deploy artifacts are consumed by Linux — bash, systemd, and nginx. With
+# core.autocrlf=true (the usual Windows setting) these would be checked out
+# with CRLF, and a shell script with CRLF fails as `$'\r': command not found`,
+# which gives no hint about the real cause. Pin them to LF everywhere.
+*.sh text eol=lf
+deploy/systemd/*.service text eol=lf
+deploy/systemd/*.timer text eol=lf
+deploy/nginx/*.conf text eol=lf

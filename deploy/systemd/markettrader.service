@@ -1,0 +1,47 @@
+[Unit]
+Description=MarketTrader API server
+Documentation=https://github.com/tristanred/MarketTrader
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=markettrader
+Group=markettrader
+WorkingDirectory=/opt/markettrader/packages/server
+EnvironmentFile=/etc/markettrader/env
+ExecStart=/usr/bin/node dist/index.js
+
+# The app installs SIGTERM handlers and drains WS clients before exiting
+# (packages/server/src/index.ts). Give it room to finish, then force the issue.
+KillSignal=SIGTERM
+TimeoutStopSec=20
+
+Restart=always
+RestartSec=5
+# Don't spin forever on a config error that can never succeed — a bad
+# JWT_SECRET or DATABASE_URL throws at boot every single time.
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+# Hardening. ProtectSystem=strict makes the whole filesystem read-only, so
+# every path the process writes to must be listed explicitly below.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+LockPersonality=true
+ReadWritePaths=/var/lib/markettrader
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=markettrader
+
+[Install]
+WantedBy=multi-user.target

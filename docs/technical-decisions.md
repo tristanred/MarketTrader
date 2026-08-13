@@ -80,7 +80,7 @@ const db = DATABASE_URL.startsWith('postgres')
 ## ADR-005: PostgreSQL for Production, SQLite for Development/Testing
 
 **Date:** 2026-05-08  
-**Status:** Accepted
+**Status:** Accepted — amended by [ADR-013](#adr-013-sqlite-as-a-supported-production-database-for-self-hosted-deployments) (2026-08-12), which permits SQLite in production for single-host deployments
 
 **Decision:** PostgreSQL is the production database. SQLite is used locally and in CI test runs.
 
@@ -180,3 +180,31 @@ const db = DATABASE_URL.startsWith('postgres')
 **Decision:** Provide `docker-compose.yml` for local development (PostgreSQL + server). Frontend runs natively via `pnpm dev`.
 
 **Reason:** Docker Compose gives developers a clean PostgreSQL instance without installing it locally. The frontend is excluded from Docker in dev mode to keep Vite HMR working natively. Production uses `Dockerfile.server` for the server and an Nginx container serving the built frontend static files.
+
+---
+
+## ADR-013: SQLite as a Supported Production Database for Self-Hosted Deployments
+
+**Date:** 2026-08-12
+**Status:** Accepted
+**Amends:** ADR-005
+
+**Decision:** SQLite is a supported production database for single-host, self-hosted deployments. PostgreSQL remains the choice for the AWS/multi-host path. `validateProductionEnv` no longer requires PostgreSQL in production; it enforces database *durability* instead.
+
+**Context:** The first real deployment of MarketTrader is a home server hosting a 6+ month tournament for a few dozen players, reached through a residential port-forward. ADR-005 assumed the production target was AWS with a managed or containerised PostgreSQL. On a single box with one operator, Postgres adds a second service to run, monitor, upgrade, and back up, in exchange for concurrency headroom this workload will not use.
+
+**Alternatives considered:**
+- **Keep the Postgres requirement, run Postgres on the VM** — correct but disproportionate: a second daemon plus `pg_dump` scheduling and role management, to serve a few dozen users whose writes are already serialised by the trade endpoint.
+- **Add an `ALLOW_SQLITE_IN_PRODUCTION` opt-in flag** — rejected. It would preserve a check that no longer reflects reality and push the contradiction onto every operator as configuration.
+
+**Reason:** At this scale SQLite in WAL mode is sufficient, and it makes the operational story markedly simpler: the database is one file, so a consistent backup is a single `VACUUM INTO` and a restore is a file swap. Point-in-time rollback — a stated requirement for a long-running competition — becomes trivial rather than a `pg_dump`/WAL-archiving exercise.
+
+**What the validation change actually does:** The old check (`DATABASE_URL must start with postgres`) asserted a deployment *preference*, not a correctness property. It was replaced by `isDurableProductionDatabase` in `packages/server/src/env.ts`, which accepts a `postgres://` URL, a remote libsql URL, or an **absolute** path to a SQLite file, and rejects in-memory databases and CWD-relative paths. Those two rejected forms are the genuinely dangerous ones: `:memory:` discards every trade on restart, and a relative path resolves against `process.cwd()`, so launching from a different directory silently opens a fresh, empty database and migrates it into a working-looking app. Both fail *silently*, which is precisely what a boot guard exists to prevent.
+
+**Consequences:**
+- Single writer. Fine at this scale (WAL + `SQLITE_BUSY_TIMEOUT_MS` + app-level retries), but it is the ceiling if concurrent trading grows well beyond a few dozen active players.
+- No network replication or read replicas. The database is only as available as the one host.
+- Backups are file-level and must never be a plain `cp` — WAL mode means a naive copy can capture a torn state. `deploy/backup.sh` uses `VACUUM INTO` and verifies each snapshot with `PRAGMA quick_check` before compressing it.
+- The schema must continue to be maintained in both `schema.sqlite.ts` and `schema.pg.ts`; this ADR does not retire the Postgres path.
+
+**See also:** `docs/deployment-selfhost.md` for the operator runbook.

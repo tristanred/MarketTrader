@@ -39,7 +39,7 @@ These were chosen deliberately (see `docs/technical-decisions.md` for full ratio
 | Server framework | Fastify v5 |
 | WebSocket (server) | `@fastify/websocket` |
 | ORM | Drizzle ORM |
-| Database (prod) | PostgreSQL |
+| Database (prod) | PostgreSQL (AWS/Docker path) or SQLite (self-hosted single host — ADR-013) |
 | Database (dev/test) | SQLite |
 | Frontend framework | React 19 |
 | Build tool | Vite |
@@ -215,3 +215,4 @@ pnpm --filter server db:studio     # open Drizzle Studio
 | Local (Docker PG) | `docker-compose up` |
 | Production | Docker: `Dockerfile.server` + Nginx for frontend static files |
 | AWS | Single EC2 instance (t3.micro/small), Docker Compose, Nginx reverse proxy |
+| Self-hosted | systemd + apt nginx + SQLite on one Linux box — `pnpm ship` to deploy. See `docs/deployment-selfhost.md` and ADR-013. Assets in `deploy/`. |

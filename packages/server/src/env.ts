@@ -1,3 +1,5 @@
+import path from 'node:path';
+
 // TODO(polygon-provider): add 'polygon' once PolygonProvider is implemented
 const VALID_PROVIDERS = ['yahoo', 'alpaca', 'mock'] as const;
 type StockProvider = (typeof VALID_PROVIDERS)[number];
@@ -196,10 +198,36 @@ export interface ProductionEnvCheck {
   SENTRY_DSN: string;
 }
 
+// Remote libsql endpoints are durable servers, not local files. Mirrors the
+// schemes accepted by normalizeLibsqlUrl in db/index.ts — keep the two in sync.
+const REMOTE_DB_SCHEMES = ['libsql:', 'http:', 'https:', 'ws:', 'wss:'];
+
+/**
+ * True when `url` names a database that survives a process restart. Postgres and
+ * remote libsql qualify; a SQLite file qualifies only at an absolute path.
+ *
+ * Both rejected forms lose data silently rather than failing loudly: an
+ * in-memory database is discarded on every restart, and a CWD-relative path
+ * resolves against `process.cwd()`, so launching from a different directory
+ * opens a fresh, empty file and migrates it into a working-looking app.
+ */
+function isDurableProductionDatabase(url: string): boolean {
+  if (url.startsWith('postgres')) return true;
+  if (REMOTE_DB_SCHEMES.some((scheme) => url.startsWith(scheme))) return true;
+  // Catches bare ':memory:' and the 'file::memory:?cache=shared' form that
+  // normalizeLibsqlUrl expands it into.
+  if (url.includes(':memory:')) return false;
+  const filePath = url.startsWith('file:') ? url.slice('file:'.length) : url;
+  return path.isAbsolute(filePath);
+}
+
 /**
  * Enforces production-only invariants that are too costly to require during
- * dev/test (e.g., refusing SQLite, demanding a real JWT secret). Throws on
- * the first failure so the process exits before binding the port.
+ * dev/test (a real JWT secret, a durable database). Collects every failure and
+ * throws once, so the process exits before binding the port.
+ *
+ * Each check targets config that would otherwise fail at *request* time, long
+ * after a seemingly successful boot.
  *
  * Intended caller: `src/index.ts`, only when `NODE_ENV === 'production'`.
  * The config is passed in (not pulled from {@link env}) so the function is
@@ -220,8 +248,12 @@ export function validateProductionEnv(cfg: ProductionEnvCheck = env): void {
     );
   }
 
-  if (!cfg.DATABASE_URL.startsWith('postgres')) {
-    errors.push('DATABASE_URL must be a postgres:// connection string in production.');
+  if (!isDurableProductionDatabase(cfg.DATABASE_URL)) {
+    errors.push(
+      'DATABASE_URL must point at a durable database in production: a postgres:// URL, ' +
+        'a remote libsql URL, or an absolute path to a SQLite file. ' +
+        'In-memory and CWD-relative databases lose data silently.',
+    );
   }
 
   // Either provider being set to alpaca needs a full key pair — a missing

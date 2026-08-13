@@ -84,8 +84,8 @@ The target defaults to `tristan@192.168.2.117`; override permanently with `MARKE
 `deploy/deploy.sh` on the server, in order:
 
 1. Records the currently deployed SHA.
-2. Takes a **pre-deploy backup** into `predeploy/`.
-3. `git fetch` + checks out the target ref.
+2. `git fetch` + checks out the target ref.
+3. Takes a **pre-deploy backup** into `predeploy/`. This runs after the checkout on purpose: nothing before the restart touches the database (migrations run at boot), so the snapshot still lands before anything can damage it — and a fix to `backup.sh` ships on the same deploy that carries it, instead of being blocked by the broken copy it replaces.
 4. `pnpm install --frozen-lockfile`, then builds shared → server → frontend.
 5. `rsync`es the SPA into `/var/www/markettrader` — only after a successful build, so nginx never serves a half-written bundle.
 6. Restarts the service. Migrations run automatically at boot via `runMigrations()`.

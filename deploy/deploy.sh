@@ -59,16 +59,22 @@ build_and_restart() {
 PREVIOUS_SHA="$(git rev-parse HEAD)"
 log "currently deployed: $PREVIOUS_SHA"
 
-# The safety net for a bad migration. Taken as the service user so the DB and
-# its WAL keep consistent ownership.
-log "taking pre-deploy backup"
-sudo -u markettrader "$APP_DIR/deploy/backup.sh" predeploy "${PREVIOUS_SHA:0:7}"
-
 log "fetching $REF"
 git fetch --all --tags --prune
 git checkout --detach "$REF"
 TARGET_SHA="$(git rev-parse HEAD)"
 log "deploying $TARGET_SHA ($(git log -1 --pretty=%s))"
+
+# The safety net for a bad migration. Taken as the service user so the DB and
+# its WAL keep consistent ownership.
+#
+# Deliberately after the checkout: nothing before the restart touches the
+# database (migrations run at boot), so the snapshot is still taken before
+# anything can damage it. Running it beforehand meant the OLD backup.sh
+# executed, so a bug in that script blocked every future deploy including the
+# one carrying its fix.
+log "taking pre-deploy backup"
+sudo -u markettrader "$APP_DIR/deploy/backup.sh" predeploy "${PREVIOUS_SHA:0:7}"
 
 if [ "$TARGET_SHA" = "$PREVIOUS_SHA" ]; then
   log "note: target matches what's already deployed; rebuilding anyway"

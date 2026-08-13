@@ -76,6 +76,11 @@ export interface CreateGameRequest {
   visibility?: GameVisibility;
 }
 
+/** `PATCH /games/:id` request body. Creator-only. */
+export interface UpdateGameRequest {
+  visibility: GameVisibility;
+}
+
 /** A single player's rank entry as returned in the game leaderboard. */
 export interface LeaderboardEntry {
   /** The player's userId (matches {@link Game.createdBy}). */

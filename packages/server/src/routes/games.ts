@@ -13,6 +13,10 @@ import type { EventBus } from '../events/bus.js';
 
 const gameIdParamsSchema = z.object({ id: z.string() });
 
+const updateGameSchema = z.object({
+  visibility: z.enum(['public', 'private']),
+});
+
 const leaderboardHistoryQuerySchema = z.object({
   range: z.enum(['1d', '5d', '10d', 'all']).optional().default('5d'),
   maxPoints: z.coerce.number().int().min(10).max(1000).optional().default(240),
@@ -308,6 +312,43 @@ export function gameRoutes(db: Db, bus?: EventBus) {
         status,
         leaderboard,
         viewerGamePlayerId: membership.id,
+      });
+    });
+
+    app.patch('/games/:id', {
+      onRequest: rawApp.authenticate,
+      schema: {
+        tags: ['Games'],
+        summary: "Update a game's visibility. Creator only.",
+        security: [{ bearerAuth: [] }],
+        params: gameIdParamsSchema,
+        body: updateGameSchema,
+      },
+    }, async (request, reply) => {
+      const { id: gameId } = request.params;
+      const { visibility } = request.body;
+      const userId = request.user.id;
+
+      const [game] = await db.select().from(games).where(eq(games.id, gameId)).limit(1);
+      if (!game) return reply.status(404).send({ error: 'Game not found' });
+
+      // 403 rather than 404 here: the caller already proved the game exists by
+      // some other route, and hiding authorship would be misleading.
+      if (game.createdBy !== userId) {
+        return reply.status(403).send({ error: 'Only the game creator can change visibility' });
+      }
+
+      const [updated] = await db
+        .update(games)
+        .set({ visibility })
+        .where(eq(games.id, gameId))
+        .returning();
+
+      if (!updated) return reply.status(500).send({ error: 'Failed to update game' });
+
+      return reply.status(200).send({
+        ...updated,
+        startingBalance: Number(updated.startingBalance),
       });
     });
 

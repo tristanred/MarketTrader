@@ -453,3 +453,68 @@ describe('GET /games/browse', () => {
     expect(browseHas(await browse(browser.token), gameId)).toBe(false);
   });
 });
+
+// ─── PATCH /games/:id ─────────────────────────────────────────────────────────
+
+describe('PATCH /games/:id', () => {
+  let app: FastifyInstance;
+  let owner: { token: string; userId: string };
+  let outsider: { token: string; userId: string };
+
+  beforeAll(async () => {
+    app = await createTestApp();
+    owner = await registerUser(app, 'patch-owner');
+    outsider = await registerUser(app, 'patch-outsider');
+  });
+  afterAll(() => app.close());
+
+  async function newGame(): Promise<string> {
+    const res = await createGame(app, owner.token, { name: 'Patchable' });
+    return res.json<{ id: string }>().id;
+  }
+
+  function patch(id: string, token: string, body: unknown) {
+    return app.inject({
+      method: 'PATCH',
+      url: `/games/${id}`,
+      headers: { Authorization: `Bearer ${token}` },
+      payload: body,
+    });
+  }
+
+  it('lets the creator flip a game to private', async () => {
+    const id = await newGame();
+    const res = await patch(id, owner.token, { visibility: 'private' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json<{ visibility: string }>().visibility).toBe('private');
+  });
+
+  it('removes the game from browse once it is private', async () => {
+    const id = await newGame();
+    await patch(id, owner.token, { visibility: 'private' });
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/games/browse',
+      headers: { Authorization: `Bearer ${outsider.token}` },
+    });
+    expect(browseHas(res, id)).toBe(false);
+  });
+
+  it('returns 403 when a non-creator tries to change visibility', async () => {
+    const id = await newGame();
+    const res = await patch(id, outsider.token, { visibility: 'private' });
+    expect(res.statusCode).toBe(403);
+  });
+
+  it('returns 404 for an unknown game', async () => {
+    const res = await patch('does-not-exist', owner.token, { visibility: 'private' });
+    expect(res.statusCode).toBe(404);
+  });
+
+  it('returns 400 for an invalid visibility value', async () => {
+    const id = await newGame();
+    const res = await patch(id, owner.token, { visibility: 'nope' });
+    expect(res.statusCode).toBe(400);
+  });
+});

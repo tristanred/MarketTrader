@@ -6,6 +6,7 @@ import type { Db } from '../db/index.js';
 import { schema } from '../db/index.js';
 import { isUniqueConstraintError } from '../db/errors.js';
 import { recomputeGameStatus, recomputeMany } from '../services/game-status.js';
+import { generateInviteCode } from '../services/invite-code.js';
 import { computeLeaderboard } from '../services/leaderboard.js';
 import { getLeaderboardHistory } from '../services/leaderboard-history.js';
 import type { EventBus } from '../events/bus.js';
@@ -29,6 +30,7 @@ const createGameSchema = z
     allowBracketOrders: z.boolean().optional().default(false),
     allowGTC: z.boolean().optional().default(false),
     achievementsEnabled: z.boolean().optional().default(true),
+    visibility: z.enum(['public', 'private']).optional().default('public'),
   })
   .refine(d => d.endDate > d.startDate, {
     message: 'endDate must be after startDate',
@@ -110,25 +112,38 @@ export function gameRoutes(db: Db, bus?: EventBus) {
         allowBracketOrders,
         allowGTC,
         achievementsEnabled,
+        visibility,
       } = request.body;
       const userId = request.user.id;
 
-      const [game] = await db
-        .insert(games)
-        .values({
-          name,
-          startDate,
-          endDate,
-          startingBalance,
-          allowShortSelling,
-          allowLimitOrders,
-          allowStopOrders,
-          allowBracketOrders,
-          allowGTC,
-          achievementsEnabled,
-          createdBy: userId,
-        })
-        .returning();
+      // The unique index on invite_code makes a collision a hard failure
+      // rather than silent data corruption, so retry on the astronomically
+      // unlikely duplicate instead of surfacing a 500.
+      let game: typeof games.$inferSelect | undefined;
+      for (let attempt = 0; attempt < 5 && !game; attempt++) {
+        try {
+          [game] = await db
+            .insert(games)
+            .values({
+              name,
+              startDate,
+              endDate,
+              startingBalance,
+              allowShortSelling,
+              allowLimitOrders,
+              allowStopOrders,
+              allowBracketOrders,
+              allowGTC,
+              achievementsEnabled,
+              visibility,
+              inviteCode: generateInviteCode(),
+              createdBy: userId,
+            })
+            .returning();
+        } catch (err: unknown) {
+          if (!isUniqueConstraintError(err)) throw err;
+        }
+      }
 
       if (!game) return reply.status(500).send({ error: 'Failed to create game' });
 

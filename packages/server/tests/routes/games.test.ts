@@ -100,6 +100,25 @@ describe('POST /games', () => {
     const res = await app.inject({ method: 'POST', url: '/games', payload: { name: 'x' } });
     expect(res.statusCode).toBe(401);
   });
+
+  it('defaults visibility to public and mints an invite code', async () => {
+    const res = await createGame(app, token);
+    expect(res.statusCode).toBe(201);
+    const body = res.json<{ visibility: string; inviteCode: string }>();
+    expect(body.visibility).toBe('public');
+    expect(body.inviteCode).toMatch(/^[ABCDEFGHJKMNPQRSTVWXYZ23456789]{8}$/);
+  });
+
+  it('honours an explicit private visibility', async () => {
+    const res = await createGame(app, token, { visibility: 'private' });
+    expect(res.statusCode).toBe(201);
+    expect(res.json<{ visibility: string }>().visibility).toBe('private');
+  });
+
+  it('rejects an unknown visibility value', async () => {
+    const res = await createGame(app, token, { visibility: 'secret' });
+    expect(res.statusCode).toBe(400);
+  });
 });
 
 // ─── GET /games ───────────────────────────────────────────────────────────────

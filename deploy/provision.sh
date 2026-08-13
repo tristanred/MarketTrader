@@ -182,9 +182,19 @@ chmod 0440 /etc/sudoers.d/markettrader-deploy
 visudo -cf /etc/sudoers.d/markettrader-deploy || die "generated sudoers rule is invalid"
 
 # ── nginx ───────────────────────────────────────────────────────────────────
-log "installing nginx site for $HOSTNAME_FQDN"
-sed "s/server_name _;/server_name $HOSTNAME_FQDN;/" \
-  "$SCRIPT_DIR/nginx/markettrader.conf" > /etc/nginx/sites-available/markettrader
+# Never regenerate an existing site file. `certbot --nginx` edits this file in
+# place to add the 443 listener, the certificate paths, and the HTTP→HTTPS
+# redirect, so overwriting it on a re-run would silently revert a working
+# deployment to HTTP-only — and for an HSTS-preloaded TLD like .app, that
+# takes the site off the air entirely rather than merely downgrading it.
+if [ -f /etc/nginx/sites-available/markettrader ]; then
+  log "nginx site already exists — leaving it untouched (certbot's edits live there)"
+  log "  to regenerate from the repo: delete it, re-run this script, then re-run certbot"
+else
+  log "installing nginx site for $HOSTNAME_FQDN"
+  sed "s/server_name _;/server_name $HOSTNAME_FQDN;/" \
+    "$SCRIPT_DIR/nginx/markettrader.conf" > /etc/nginx/sites-available/markettrader
+fi
 ln -sf /etc/nginx/sites-available/markettrader /etc/nginx/sites-enabled/markettrader
 rm -f /etc/nginx/sites-enabled/default
 # Placeholder so nginx has something to serve before the first deploy.

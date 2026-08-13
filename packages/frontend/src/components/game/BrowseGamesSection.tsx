@@ -212,12 +212,14 @@ function BrowseRow({
           >
             {game.status.toUpperCase()}
           </span>
-          <span>{game.createdByUsername}</span>
-          <span aria-hidden>·</span>
+          {/* A username is the host's own data — the micro-caps rhythm around
+              it does not get to restyle it. */}
+          <span className="normal-case">{game.createdByUsername}</span>
+          <span>·</span>
           <span>
             {game.playerCount} {game.playerCount === 1 ? 'player' : 'players'}
           </span>
-          <span aria-hidden>·</span>
+          <span>·</span>
           <span>{formatUSD(game.startingBalance)} start</span>
         </div>
 

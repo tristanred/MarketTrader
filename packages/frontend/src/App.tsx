@@ -52,6 +52,9 @@ const AchievementsPage = lazy(() =>
   import('@/pages/AchievementsPage').then((m) => ({ default: m.AchievementsPage })),
 );
 const SymbolPage = lazy(() => import('@/pages/SymbolPage').then((m) => ({ default: m.SymbolPage })));
+const JoinByCodePage = lazy(() =>
+  import('@/pages/JoinByCodePage').then((m) => ({ default: m.JoinByCodePage })),
+);
 
 const AdminUsersPage = lazy(() =>
   import('@/pages/admin/AdminUsersPage').then((m) => ({ default: m.AdminUsersPage })),
@@ -134,6 +137,9 @@ function App() {
               <Route path="/games/:gameId/leaderboard" element={<GameLeaderboardPage />} />
               <Route path="/games/:gameId/achievements" element={<AchievementsPage />} />
               <Route path="/symbols/:symbol" element={<SymbolPage />} />
+              {/* Inside the protected block so an invite link bounces an
+                  unauthenticated visitor through /login first. */}
+              <Route path="/join/:code" element={<JoinByCodePage />} />
               <Route
                 path="/admin"
                 element={

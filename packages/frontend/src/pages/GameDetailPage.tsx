@@ -301,8 +301,12 @@ function ArenaBody({
   const myDayPnl = 0;
 
   return (
+    // `min-w-0` on each column is load-bearing: grid items default to
+    // `min-width: auto`, so any panel with a wide intrinsic minimum would
+    // otherwise push the track out and scroll the whole document sideways
+    // rather than being constrained by its column.
     <main className="mx-auto grid w-full max-w-[1600px] grid-cols-1 gap-2 p-3 lg:grid-cols-[280px_1fr_300px]">
-      <aside className="flex flex-col gap-2">
+      <aside className="flex min-w-0 flex-col gap-2">
         <PortfolioPanel value={myPortfolioValue} pnlPct={myPnlPct} cash={myCash} dayPnl={myDayPnl} />
         {/* On narrow viewports the grid collapses to one column, so surface
             the search bar right under the portfolio (above the quote). At
@@ -310,7 +314,7 @@ function ArenaBody({
         <SymbolSearchPanel onSelect={setSelectedSymbol} className="lg:hidden" />
       </aside>
 
-      <section className="flex flex-col gap-2">
+      <section className="flex min-w-0 flex-col gap-2">
         <QuoteHeader
           symbol={selectedSymbol}
           {...quoteData}
@@ -331,7 +335,7 @@ function ArenaBody({
         />
       </section>
 
-      <aside className="flex flex-col gap-2">
+      <aside className="flex min-w-0 flex-col gap-2">
         <SymbolSearchPanel onSelect={setSelectedSymbol} className="hidden lg:block" />
         <WatchlistPanel
           rows={watchlistRows}

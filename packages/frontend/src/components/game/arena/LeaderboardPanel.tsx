@@ -38,6 +38,28 @@ const VISIBLE_ROWS = 10;
 const SPARKLINE_MAX_POINTS = 60;
 
 /**
+ * Shared column template for the header, the pinned row, and every body row —
+ * they drift apart the moment one of them is edited alone.
+ *
+ * Every flexible track is `minmax(0, …)` so the row can shrink below its
+ * content: with the default `auto` minimum, the 240px sparkline plus the fixed
+ * money columns gave the row a ~738px floor that the arena grid propagated all
+ * the way up to the document, scrolling the whole page sideways on a phone.
+ * Δ24h drops out below `sm` and the sparkline below `lg`, which is what buys
+ * the remaining room on genuinely narrow viewports.
+ */
+const ROW_GRID = cn(
+  'grid items-center gap-2 sm:gap-3',
+  'grid-cols-[24px_minmax(0,1fr)_auto_auto_14px]',
+  'sm:grid-cols-[28px_minmax(0,1fr)_100px_70px_70px_18px]',
+  'lg:grid-cols-[28px_minmax(0,1.4fr)_minmax(0,1fr)_100px_70px_70px_18px]',
+);
+
+/** Cells that drop out on narrow viewports. Order must match {@link ROW_GRID}. */
+const TREND_CELL = 'hidden lg:block';
+const DELTA_CELL = 'hidden sm:block';
+
+/**
  * Centre-column leaderboard. Defaults to showing the top 10 with the current
  * user pinned to the top regardless of rank. An expand widget at the foot
  * reveals the full field. Each row carries a 240×24 sparkline derived from
@@ -84,8 +106,13 @@ export function LeaderboardPanel({
   return (
     <Panel className={className}>
       <PanelHeader
+        // This header carries more controls than any other panel's (four range
+        // chips, a link and a badge). Below ~360px they no longer fit beside
+        // the title, so let the row grow to two lines rather than push the
+        // panel — and the document — wider than the viewport.
+        className="h-auto min-h-7 flex-wrap gap-x-2 gap-y-1 py-1"
         right={
-          <span className="flex items-center gap-2">
+          <span className="flex flex-wrap items-center gap-2">
             <RangeChips range={range} onChange={setRange} />
             {showFullViewLink ? <FullViewLink gameId={gameId} /> : null}
             <span className="rounded-chip bg-accent-bg px-1.5 py-0.5 text-[9px] tracking-[0.14em] text-accent">
@@ -189,13 +216,18 @@ function FullViewLink({ gameId }: { gameId: string }) {
 
 function ColumnHeader() {
   return (
-    <div className="grid grid-cols-[28px_minmax(140px,1.4fr)_1fr_100px_70px_70px_18px] items-center gap-3 border-b border-hairline px-2.5 py-1 font-mono text-[9px] uppercase tracking-[0.16em] text-muted">
+    <div
+      className={cn(
+        ROW_GRID,
+        'border-b border-hairline px-2.5 py-1 font-mono text-[9px] uppercase tracking-[0.16em] text-muted',
+      )}
+    >
       <span>#</span>
       <span>Player</span>
-      <span className="text-center">Trend</span>
+      <span className={cn(TREND_CELL, 'text-center')}>Trend</span>
       <span className="text-right">Value</span>
       <span className="text-right">P&amp;L</span>
-      <span className="text-right">Δ24h</span>
+      <span className={cn(DELTA_CELL, 'text-right')}>Δ24h</span>
       <span />
     </div>
   );
@@ -215,7 +247,10 @@ function PinnedYouRow({
   return (
     <div
       data-current-user="true"
-      className="relative grid grid-cols-[28px_minmax(140px,1.4fr)_1fr_100px_70px_70px_18px] items-center gap-3 border-b-2 border-accent/40 bg-accent-bg/60 px-2.5 py-1.5"
+      className={cn(
+        ROW_GRID,
+        'relative border-b-2 border-accent/40 bg-accent-bg/60 px-2.5 py-1.5',
+      )}
       style={{
         backgroundImage:
           'linear-gradient(90deg, var(--accent-bg) 0%, rgba(103,232,249,0.04) 100%)',
@@ -227,18 +262,20 @@ function PinnedYouRow({
       </span>
       <span className="flex items-center gap-2 truncate text-xs font-semibold text-text-strong">
         <span className="inline-block h-0.5 w-2 rounded-[1px] bg-accent" aria-hidden="true" />
-        <span className="truncate">▸ {entry.username}</span>
+        <span className="min-w-0 truncate">▸ {entry.username}</span>
       </span>
-      <PortfolioSparkline
-        points={points}
-        color="var(--accent)"
-        startingBalance={startingBalance}
-        strokeWidth={1.75}
-        ariaLabel={`Your portfolio trend, ${pnlLabel(pnl)}`}
-      />
+      <span className={TREND_CELL}>
+        <PortfolioSparkline
+          points={points}
+          color="var(--accent)"
+          startingBalance={startingBalance}
+          strokeWidth={1.75}
+          ariaLabel={`Your portfolio trend, ${pnlLabel(pnl)}`}
+        />
+      </span>
       <span className="text-right font-mono text-xs text-text-strong">{formatUsd(entry.totalValue)}</span>
       <span className={cn('text-right font-mono text-xs', toneClass(pnl))}>{formatPnl(pnl)}</span>
-      <span className={cn('text-right font-mono text-xs', toneClass(d24))}>
+      <span className={cn(DELTA_CELL, 'text-right font-mono text-xs', toneClass(d24))}>
         {d24 == null ? '—' : formatPnl(d24)}
       </span>
       <span className="text-right text-muted">›</span>
@@ -265,7 +302,8 @@ const LeaderboardRow = memo(function LeaderboardRow({
     <li
       data-current-user={isMe ? 'true' : undefined}
       className={cn(
-        'grid grid-cols-[28px_minmax(140px,1.4fr)_1fr_100px_70px_70px_18px] items-center gap-3 px-2.5 py-1.5 text-xs',
+        ROW_GRID,
+        'px-2.5 py-1.5 text-xs',
         isMe && 'relative bg-accent-bg/50 before:absolute before:left-0 before:top-1 before:bottom-1 before:w-0.5 before:bg-accent',
       )}
     >
@@ -278,18 +316,20 @@ const LeaderboardRow = memo(function LeaderboardRow({
           style={{ background: color }}
           aria-hidden="true"
         />
-        <span className="truncate">{entry.username}</span>
+        <span className="min-w-0 truncate">{entry.username}</span>
       </span>
-      <PortfolioSparkline
-        points={points}
-        color={color}
-        startingBalance={startingBalance}
-        strokeWidth={isMe ? 1.75 : 1.25}
-        ariaLabel={`${entry.username} ${pnlLabel(pnl)}`}
-      />
+      <span className={TREND_CELL}>
+        <PortfolioSparkline
+          points={points}
+          color={color}
+          startingBalance={startingBalance}
+          strokeWidth={isMe ? 1.75 : 1.25}
+          ariaLabel={`${entry.username} ${pnlLabel(pnl)}`}
+        />
+      </span>
       <span className="text-right font-mono text-text">{formatUsd(entry.totalValue)}</span>
       <span className={cn('text-right font-mono', toneClass(pnl))}>{formatPnl(pnl)}</span>
-      <span className={cn('text-right font-mono text-[11px]', d24 == null ? 'text-muted' : toneClass(d24))}>
+      <span className={cn(DELTA_CELL, 'text-right font-mono text-[11px]', d24 == null ? 'text-muted' : toneClass(d24))}>
         {d24 == null ? '—' : formatPnl(d24)}
       </span>
       <span className="text-right text-muted">›</span>

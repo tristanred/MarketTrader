@@ -6,7 +6,10 @@ export interface PortfolioSparklineProps {
   color: string;
   /** Game's starting balance — anchors the dashed mid-line baseline. */
   startingBalance: number;
-  /** Rendered SVG width in CSS pixels. Default 240. */
+  /**
+   * viewBox coordinate width the path is projected into. The rendered width
+   * is always 100% of the grid track — this only sets the drawing basis.
+   */
   width?: number;
   /** Rendered SVG height in CSS pixels. Default 24. */
   height?: number;
@@ -24,6 +27,13 @@ export interface PortfolioSparklineProps {
  * Normalises its Y axis independently per row (a flat tristan at $100k can't
  * mute a +5% leader), but anchors the dashed mid-line at the game's starting
  * balance so the eye reads "above/below the start" consistently across rows.
+ *
+ * Renders at `w-full` rather than a fixed pixel width: a hard `width` made the
+ * enclosing leaderboard grid un-shrinkable and widened the whole document on
+ * narrow viewports. `preserveAspectRatio="none"` lets the x axis squash to fit,
+ * and `vector-effect="non-scaling-stroke"` keeps the line an even weight when
+ * it does. `overflow-visible` is what keeps the end-dot round — it sits at
+ * `cx === width`, so the default SVG clip would slice it into a vertical tick.
  */
 export function PortfolioSparkline({
   points,
@@ -73,7 +83,7 @@ export function PortfolioSparkline({
     return (
       <svg
         viewBox={`0 0 ${width} ${height}`}
-        width={width}
+        className="block w-full overflow-visible"
         height={height}
         preserveAspectRatio="none"
         aria-label={ariaLabel ?? 'No history yet'}
@@ -86,6 +96,7 @@ export function PortfolioSparkline({
           y2={height / 2}
           stroke="var(--hairline-strong)"
           strokeDasharray="1 3"
+          vectorEffect="non-scaling-stroke"
         />
       </svg>
     );
@@ -94,7 +105,7 @@ export function PortfolioSparkline({
   return (
     <svg
       viewBox={`0 0 ${width} ${height}`}
-      width={width}
+      className="block w-full overflow-visible"
       height={height}
       preserveAspectRatio="none"
       aria-label={ariaLabel}
@@ -107,8 +118,16 @@ export function PortfolioSparkline({
         y2={path.baselineY}
         stroke="var(--hairline-strong)"
         strokeDasharray="1 3"
+        vectorEffect="non-scaling-stroke"
       />
-      <path d={path.d} fill="none" stroke={color} strokeWidth={strokeWidth} strokeLinejoin="round" />
+      <path
+        d={path.d}
+        fill="none"
+        stroke={color}
+        strokeWidth={strokeWidth}
+        strokeLinejoin="round"
+        vectorEffect="non-scaling-stroke"
+      />
       <circle cx={path.endX} cy={path.endY} r={1.75} fill={color} />
     </svg>
   );

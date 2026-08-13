@@ -139,11 +139,32 @@ fi
 chown root:"$SERVICE_USER" "$ENV_DIR/env"
 chmod 0640 "$ENV_DIR/env"
 
+# ── Dynamic DNS ─────────────────────────────────────────────────────────────
+# Kept separate from the app's env file so the DDNS secret is not injected into
+# the server process, which has no use for it.
+if [ ! -f "$ENV_DIR/ddns.env" ]; then
+  log "generating $ENV_DIR/ddns.env (set DDNS_PASSWORD to activate)"
+  cat > "$ENV_DIR/ddns.env" <<EOF
+# Namecheap Dynamic DNS. Enable it under the domain's Advanced DNS tab and
+# paste the generated password here. Until then the updater is a no-op.
+DDNS_DOMAIN=$(echo "$HOSTNAME_FQDN" | awk -F. '{ print $(NF-1)"."$NF }')
+# Space-separated record labels. '@' is the bare domain.
+DDNS_HOSTS=@
+DDNS_PASSWORD=replace-with-namecheap-ddns-password
+EOF
+else
+  log "$ENV_DIR/ddns.env already exists — leaving it untouched"
+fi
+chown root:"$SERVICE_USER" "$ENV_DIR/ddns.env"
+chmod 0640 "$ENV_DIR/ddns.env"
+
 # ── systemd ─────────────────────────────────────────────────────────────────
 log "installing systemd units"
 install -m 0644 "$SCRIPT_DIR/systemd/markettrader.service" /etc/systemd/system/
 install -m 0644 "$SCRIPT_DIR/systemd/markettrader-backup.service" /etc/systemd/system/
 install -m 0644 "$SCRIPT_DIR/systemd/markettrader-backup.timer" /etc/systemd/system/
+install -m 0644 "$SCRIPT_DIR/systemd/markettrader-ddns.service" /etc/systemd/system/
+install -m 0644 "$SCRIPT_DIR/systemd/markettrader-ddns.timer" /etc/systemd/system/
 systemctl daemon-reload
 
 # ── sudoers ─────────────────────────────────────────────────────────────────
@@ -184,6 +205,10 @@ ufw --force enable
 # ── Enable services ─────────────────────────────────────────────────────────
 systemctl enable markettrader-backup.timer
 systemctl start markettrader-backup.timer
+# Safe to start before DDNS_PASSWORD is filled in: the updater no-ops until it
+# is configured, rather than failing every five minutes.
+systemctl enable markettrader-ddns.timer
+systemctl start markettrader-ddns.timer
 systemctl enable markettrader
 
 cat <<EOF
@@ -196,6 +221,8 @@ Next steps:
   3. Deploy the app:      pnpm ship
   4. Issue a certificate: sudo certbot --nginx -d $HOSTNAME_FQDN
      (if inbound :80 is blocked by your ISP, use a DNS-01 plugin instead)
+  5. For a dynamic IP, enable Dynamic DNS on the domain and put the password
+     in $ENV_DIR/ddns.env, then: sudo -u $SERVICE_USER $APP_DIR/deploy/ddns-update.sh --force
 
 The service is enabled but not started — it has nothing to run until the
 first deploy. Step 3 builds the app and starts it.

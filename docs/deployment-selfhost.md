@@ -62,6 +62,34 @@ sudo certbot --nginx -d markettrader.app
 
 If port 80 is blocked, use a DNS-01 plugin for your registrar instead (`certbot-dns-cloudflare`, `certbot-dns-route53`, …) and forward only 443. Renewal is handled by the `certbot.timer` the package installs; confirm with `sudo certbot renew --dry-run`.
 
+### Dynamic DNS
+
+Residential IPs rotate. When yours does, the A record goes stale and the site disappears until someone notices — over a months-long tournament that is closer to inevitable than unlikely. `markettrader-ddns.timer` keeps the record current.
+
+Enable Dynamic DNS on the domain (Namecheap: Domain List → Manage → Advanced DNS → *Dynamic DNS*), then put the generated password in `/etc/markettrader/ddns.env`:
+
+```
+DDNS_DOMAIN=markettrader.app
+DDNS_HOSTS=@
+DDNS_PASSWORD=<the password Namecheap generated>
+```
+
+`DDNS_HOSTS` is space-separated record labels; `@` is the bare domain. Add `www` if you have a www A record (a CNAME to the apex needs no updating). Then force a first run:
+
+```bash
+sudo -u markettrader /opt/markettrader/deploy/ddns-update.sh --force
+```
+
+The timer runs every 5 minutes and 1 minute after boot — the boot run matters because a power cut is exactly when the ISP is likely to hand out a new address. Updates are sent only when the IP actually changes, plus a daily re-assertion so a record edited or lost upstream repairs itself.
+
+Until `DDNS_PASSWORD` is set the updater is a deliberate no-op, so enabling the timer at provision time is harmless.
+
+```bash
+journalctl -u markettrader-ddns --since today
+```
+
+The secret lives in its own file rather than the app's env, so it is never injected into the server process, and the update URL is never logged.
+
 ## 3. Deploy
 
 From your development machine:
@@ -154,7 +182,9 @@ Hits `/api/health`, registers a throwaway user, and makes an authenticated `/api
 | What's deployed? | `git -C /opt/markettrader log -1 --oneline` |
 | Open a SQL shell | `sudo -u markettrader sqlite3 /var/lib/markettrader/app.db` |
 | Force a backup now | `sudo systemctl start markettrader-backup.service` |
-| List snapshots | `ls -lt /var/backups/markettrader/hourly/` |
+| List snapshots | `deploy/restore.sh --list` |
+| Force a DNS update | `sudo -u markettrader deploy/ddns-update.sh --force` |
+| Check the public IP on record | `cat /var/lib/markettrader/.ddns-last-ip` |
 | Roll back a release | `pnpm ship --ref <previous-sha>` |
 | Check cert expiry | `sudo certbot certificates` |
 
@@ -186,4 +216,8 @@ sudo nano /etc/markettrader/env && sudo systemctl restart markettrader
 
 **Deploy fails with a permission error.** The deploy user must be in the `markettrader` group. Group membership only takes effect on a new login session — reconnect after provisioning.
 
-**Site unreachable from outside but fine on the LAN.** Usually a rotated public IP (check your DDNS updater) or the router dropping its port-forward after a reboot.
+**Site unreachable from outside but fine on the LAN.** Usually a rotated public IP or the router dropping its port-forward after a reboot. Check `journalctl -u markettrader-ddns -n 20` and compare `dig +short markettrader.app @1.1.1.1` against `curl -s https://api.ipify.org` from the host.
+
+**DDNS reports "Passwords do not match".** The Dynamic DNS password is not your Namecheap account password — it is generated per-domain under Advanced DNS → Dynamic DNS, and only appears once that toggle is on.
+
+**A record looks right but the server still resolves the old IP.** The host's own resolver caches independently of authoritative DNS. `dig @1.1.1.1` bypasses it; `sudo resolvectl flush-caches` clears it.

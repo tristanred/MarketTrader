@@ -35,7 +35,9 @@ unset NODE_ENV
 # infer it from a crash loop.
 warn_on_unit_drift() {
   local unit
-  for unit in markettrader.service markettrader-backup.service markettrader-backup.timer; do
+  for unit in markettrader.service \
+              markettrader-backup.service markettrader-backup.timer \
+              markettrader-ddns.service markettrader-ddns.timer; do
     if [ -f "/etc/systemd/system/$unit" ] &&
        ! cmp -s "$APP_DIR/deploy/systemd/$unit" "/etc/systemd/system/$unit"; then
       log "WARNING: $unit differs from the installed copy"

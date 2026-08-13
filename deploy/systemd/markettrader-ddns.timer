@@ -1,0 +1,14 @@
+[Unit]
+Description=Keep MarketTrader's DNS record pointed at the current public IP
+Documentation=https://github.com/tristanred/MarketTrader
+
+[Timer]
+# Shortly after boot, because the ISP may have handed out a new address while
+# the machine was off — the exact case a power cut produces.
+OnBootSec=1min
+OnUnitActiveSec=5min
+RandomizedDelaySec=30
+Unit=markettrader-ddns.service
+
+[Install]
+WantedBy=timers.target

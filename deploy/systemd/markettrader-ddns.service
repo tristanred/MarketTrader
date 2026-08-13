@@ -1,0 +1,26 @@
+[Unit]
+Description=MarketTrader dynamic DNS update
+Documentation=https://github.com/tristanred/MarketTrader
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=markettrader
+Group=markettrader
+ExecStart=/opt/markettrader/deploy/ddns-update.sh
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+# AF_NETLINK is required for DNS resolution (glibc uses it for AI_ADDRCONFIG);
+# without it curl cannot resolve the update endpoint. Same trap as the main
+# service unit.
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+# Only the last-known-IP marker is written.
+ReadWritePaths=/var/lib/markettrader
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=markettrader-ddns

@@ -36,8 +36,17 @@ case "$TIER" in
   *) die "unknown tier '$TIER' (expected: hourly, predeploy)" ;;
 esac
 
-[ -f "$DB" ] || die "database not found at $DB"
 command -v sqlite3 >/dev/null || die "sqlite3 is not installed"
+
+# A missing database is the normal state before the first deploy — the file is
+# created when migrations run at first boot. Treating it as an error would
+# abort that first deploy at its pre-deploy backup, and would make the hourly
+# timer log a failure every hour on a freshly provisioned host. There is
+# nothing to snapshot, which is not the same as something being wrong.
+if [ ! -f "$DB" ]; then
+  log "no database at $DB yet — nothing to back up"
+  exit 0
+fi
 
 mkdir -p "$BACKUP_ROOT"/{hourly,daily,weekly,predeploy}
 

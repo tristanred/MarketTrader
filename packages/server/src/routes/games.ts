@@ -17,6 +17,8 @@ const updateGameSchema = z.object({
   visibility: z.enum(['public', 'private']),
 });
 
+const inviteCodeParamsSchema = z.object({ code: z.string().min(1).max(32) });
+
 const leaderboardHistoryQuerySchema = z.object({
   range: z.enum(['1d', '5d', '10d', 'all']).optional().default('5d'),
   maxPoints: z.coerce.number().int().min(10).max(1000).optional().default(240),
@@ -227,6 +229,61 @@ export function gameRoutes(db: Db, bus?: EventBus) {
       return reply.status(200).send(open);
     });
 
+    app.get('/games/by-code/:code', {
+      onRequest: rawApp.authenticate,
+      schema: {
+        tags: ['Games'],
+        summary: 'Resolve an invite code to a join prompt.',
+        security: [{ bearerAuth: [] }],
+        params: inviteCodeParamsSchema,
+      },
+    }, async (request, reply) => {
+      // Codes are generated uppercase; normalising here lets a link survive
+      // being lowercased by a chat client or typed by hand.
+      const code = request.params.code.toUpperCase();
+      const userId = request.user.id;
+
+      const [row] = await db
+        .select({
+          id: games.id,
+          name: games.name,
+          startDate: games.startDate,
+          endDate: games.endDate,
+          startingBalance: games.startingBalance,
+          status: games.status,
+          createdByUsername: users.username,
+        })
+        .from(games)
+        .innerJoin(users, eq(games.createdBy, users.id))
+        .where(eq(games.inviteCode, code))
+        .limit(1);
+
+      if (!row) return reply.status(404).send({ error: 'Invite code not found' });
+
+      // Recompute for the same reason browse does: the join prompt must not
+      // offer a game whose endDate has passed only to have join answer 409.
+      const status = await recomputeGameStatus(db, row, new Date().toISOString(), bus);
+
+      const [{ players } = { players: 0 }] = await db
+        .select({ players: count() })
+        .from(gamePlayers)
+        .where(eq(gamePlayers.gameId, row.id));
+
+      const [membership] = await db
+        .select({ id: gamePlayers.id })
+        .from(gamePlayers)
+        .where(and(eq(gamePlayers.gameId, row.id), eq(gamePlayers.userId, userId)))
+        .limit(1);
+
+      return reply.status(200).send({
+        ...row,
+        status,
+        startingBalance: Number(row.startingBalance),
+        playerCount: Number(players),
+        alreadyMember: Boolean(membership),
+      });
+    });
+
     app.post('/games/:id/join', {
       onRequest: rawApp.authenticate,
       schema: {
@@ -277,6 +334,52 @@ export function gameRoutes(db: Db, bus?: EventBus) {
         cashBalance: Number(player.cashBalance),
         joinedAt: player.joinedAt,
       });
+    });
+
+    app.post('/games/:id/invite-code', {
+      onRequest: rawApp.authenticate,
+      schema: {
+        tags: ['Games'],
+        summary: "Return this game's invite code, minting one if it has none.",
+        security: [{ bearerAuth: [] }],
+        params: gameIdParamsSchema,
+      },
+    }, async (request, reply) => {
+      const { id: gameId } = request.params;
+      const userId = request.user.id;
+
+      const [game] = await db.select().from(games).where(eq(games.id, gameId)).limit(1);
+      if (!game) return reply.status(404).send({ error: 'Game not found' });
+
+      // 404 rather than 403 for non-members, matching GET /games/:id so game
+      // IDs stay non-enumerable.
+      const [membership] = await db
+        .select({ id: gamePlayers.id })
+        .from(gamePlayers)
+        .where(and(eq(gamePlayers.gameId, gameId), eq(gamePlayers.userId, userId)))
+        .limit(1);
+      if (!membership) return reply.status(404).send({ error: 'Game not found' });
+
+      if (game.inviteCode) return reply.status(200).send({ inviteCode: game.inviteCode });
+
+      // Games created before invite codes existed have none; mint on demand.
+      for (let attempt = 0; attempt < 5; attempt++) {
+        const candidate = generateInviteCode();
+        try {
+          const [updated] = await db
+            .update(games)
+            .set({ inviteCode: candidate })
+            .where(eq(games.id, gameId))
+            .returning();
+          if (updated?.inviteCode) {
+            return reply.status(200).send({ inviteCode: updated.inviteCode });
+          }
+        } catch (err: unknown) {
+          if (!isUniqueConstraintError(err)) throw err;
+        }
+      }
+
+      return reply.status(500).send({ error: 'Failed to mint invite code' });
     });
 
     app.get('/games/:id', {

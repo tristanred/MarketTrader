@@ -518,3 +518,106 @@ describe('PATCH /games/:id', () => {
     expect(res.statusCode).toBe(400);
   });
 });
+
+// ─── Invite codes ─────────────────────────────────────────────────────────────
+
+describe('invite codes', () => {
+  let app: FastifyInstance;
+  let owner: { token: string; userId: string };
+  let friend: { token: string; userId: string };
+
+  beforeAll(async () => {
+    app = await createTestApp();
+    owner = await registerUser(app, 'code-owner');
+    friend = await registerUser(app, 'code-friend');
+  });
+  afterAll(() => app.close());
+
+  it('returns the existing code and is idempotent', async () => {
+    const created = await createGame(app, owner.token, { name: 'Coded' });
+    const { id, inviteCode } = created.json<{ id: string; inviteCode: string }>();
+
+    const first = await app.inject({
+      method: 'POST',
+      url: `/games/${id}/invite-code`,
+      headers: { Authorization: `Bearer ${owner.token}` },
+    });
+    expect(first.statusCode).toBe(200);
+    expect(first.json<{ inviteCode: string }>().inviteCode).toBe(inviteCode);
+
+    const second = await app.inject({
+      method: 'POST',
+      url: `/games/${id}/invite-code`,
+      headers: { Authorization: `Bearer ${owner.token}` },
+    });
+    expect(second.json<{ inviteCode: string }>().inviteCode).toBe(inviteCode);
+  });
+
+  it('returns 404 when a non-member tries to mint', async () => {
+    const created = await createGame(app, owner.token, { name: 'Private Mint' });
+    const id = created.json<{ id: string }>().id;
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/games/${id}/invite-code`,
+      headers: { Authorization: `Bearer ${friend.token}` },
+    });
+    expect(res.statusCode).toBe(404);
+  });
+
+  it('resolves a code to a joinable game for a non-member', async () => {
+    const created = await createGame(app, owner.token, {
+      name: 'Findable',
+      visibility: 'private',
+    });
+    const { id, inviteCode } = created.json<{ id: string; inviteCode: string }>();
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/games/by-code/${inviteCode}`,
+      headers: { Authorization: `Bearer ${friend.token}` },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json<{
+      id: string; name: string; playerCount: number; createdByUsername: string; alreadyMember: boolean;
+    }>();
+    expect(body.id).toBe(id);
+    expect(body.name).toBe('Findable');
+    expect(body.playerCount).toBe(1);
+    expect(body.createdByUsername).toBe('code-owner');
+    expect(body.alreadyMember).toBe(false);
+  });
+
+  it('reports alreadyMember for the creator', async () => {
+    const created = await createGame(app, owner.token, { name: 'Mine' });
+    const inviteCode = created.json<{ inviteCode: string }>().inviteCode;
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/games/by-code/${inviteCode}`,
+      headers: { Authorization: `Bearer ${owner.token}` },
+    });
+    expect(res.json<{ alreadyMember: boolean }>().alreadyMember).toBe(true);
+  });
+
+  it('is case-insensitive', async () => {
+    const created = await createGame(app, owner.token, { name: 'Case Test' });
+    const inviteCode = created.json<{ inviteCode: string }>().inviteCode;
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/games/by-code/${inviteCode.toLowerCase()}`,
+      headers: { Authorization: `Bearer ${friend.token}` },
+    });
+    expect(res.statusCode).toBe(200);
+  });
+
+  it('returns 404 for an unknown code', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/games/by-code/ZZZZZZZZ',
+      headers: { Authorization: `Bearer ${friend.token}` },
+    });
+    expect(res.statusCode).toBe(404);
+  });
+});

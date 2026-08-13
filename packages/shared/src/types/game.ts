@@ -125,3 +125,20 @@ export interface BrowsableGame {
   createdByUsername: string;
   createdAt: string;
 }
+
+/**
+ * `GET /games/by-code/:code` response — enough to render a join prompt
+ * without disclosing game internals to someone who only holds a code.
+ */
+export interface GameByCodeResponse {
+  id: string;
+  name: string;
+  startDate: string;
+  endDate: string;
+  startingBalance: number;
+  status: GameStatus;
+  playerCount: number;
+  createdByUsername: string;
+  /** True when the caller is already enrolled, so the UI can route straight in. */
+  alreadyMember: boolean;
+}

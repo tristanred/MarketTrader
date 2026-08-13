@@ -19,6 +19,8 @@ const updateGameSchema = z.object({
 
 const inviteCodeParamsSchema = z.object({ code: z.string().min(1).max(32) });
 
+const joinGameSchema = z.object({ inviteCode: z.string().min(1).max(32).optional() });
+
 const leaderboardHistoryQuerySchema = z.object({
   range: z.enum(['1d', '5d', '10d', 'all']).optional().default('5d'),
   maxPoints: z.coerce.number().int().min(10).max(1000).optional().default(240),
@@ -291,13 +293,25 @@ export function gameRoutes(db: Db, bus?: EventBus) {
         summary: 'Join an existing game.',
         security: [{ bearerAuth: [] }],
         params: gameIdParamsSchema,
+        // nullish, not optional: Fastify hands the handler `null` (not
+        // `undefined`) when a request carries no body at all.
+        body: joinGameSchema.nullish(),
       },
     }, async (request, reply) => {
       const { id: gameId } = request.params;
       const userId = request.user.id;
+      const suppliedCode = request.body?.inviteCode?.toUpperCase();
 
       const [game] = await db.select().from(games).where(eq(games.id, gameId)).limit(1);
       if (!game) return reply.status(404).send({ error: 'Game not found' });
+
+      // Private games are join-by-invite-only: a public listing can go stale in
+      // an open tab, so re-check visibility here rather than trusting the caller
+      // already saw an up-to-date state. 403 (not 404) because the caller already
+      // proved the game exists by knowing its id.
+      if (game.visibility === 'private' && (!suppliedCode || suppliedCode !== game.inviteCode)) {
+        return reply.status(403).send({ error: 'This game is private' });
+      }
 
       const status = await recomputeGameStatus(db, game, new Date().toISOString(), bus);
       if (status === 'ended') return reply.status(409).send({ error: 'Game has ended' });

@@ -44,7 +44,7 @@ export function JoinByCodePage() {
   async function handleJoin() {
     if (!gameId) return;
     try {
-      await join.mutateAsync(gameId);
+      await join.mutateAsync({ gameId, inviteCode: code });
       toast({ title: 'Joined', variant: 'success' });
       navigate(`/games/${gameId}`, { replace: true });
     } catch (err) {

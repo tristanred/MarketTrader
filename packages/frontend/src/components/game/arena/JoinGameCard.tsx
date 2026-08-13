@@ -19,7 +19,7 @@ export function JoinGameCard({ gameId, onJoined }: JoinGameCardProps) {
 
   async function handleJoin() {
     try {
-      await join.mutateAsync(gameId);
+      await join.mutateAsync({ gameId });
       toast({ title: 'Joined', variant: 'success' });
       onJoined();
     } catch (err) {

@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiFetch } from '@/lib/api';
+import { ApiError, apiFetch } from '@/lib/api';
 import type {
   BrowsableGame,
   CreateGameRequest,
@@ -7,6 +7,7 @@ import type {
   GameByCodeResponse,
   GameVisibility,
   GameWithLeaderboard,
+  JoinGameRequest,
   UpdateGameRequest,
 } from '@markettrader/shared';
 
@@ -48,15 +49,24 @@ export function useCreateGame() {
 export function useJoinGame() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (gameId: string) =>
-      apiFetch<{ playerId: string; gameId: string; cashBalance: number; joinedAt: string }>(
+    mutationFn: ({ gameId, inviteCode }: { gameId: string; inviteCode?: string }) => {
+      const body: JoinGameRequest = inviteCode ? { inviteCode } : {};
+      return apiFetch<{ playerId: string; gameId: string; cashBalance: number; joinedAt: string }>(
         `/games/${gameId}/join`,
-        { method: 'POST' },
-      ),
-    onSuccess: (_, gameId) => {
+        { method: 'POST', body },
+      );
+    },
+    onSuccess: (_, { gameId }) => {
       void qc.invalidateQueries({ queryKey: gameKeys.list() });
       void qc.invalidateQueries({ queryKey: gameKeys.detail(gameId) });
       void qc.invalidateQueries({ queryKey: gameKeys.browse() });
+    },
+    onError: (err) => {
+      // A 403 here means visibility flipped to private after the browse list
+      // was fetched; refetch so the now-stale row stops offering a dead join.
+      if (err instanceof ApiError && err.status === 403) {
+        void qc.invalidateQueries({ queryKey: gameKeys.browse() });
+      }
     },
   });
 }

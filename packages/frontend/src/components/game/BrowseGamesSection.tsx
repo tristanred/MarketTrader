@@ -150,7 +150,7 @@ function BrowseRow({
 
   async function handleJoin() {
     try {
-      await join.mutateAsync(game.id);
+      await join.mutateAsync({ gameId: game.id });
       onFilled(game.id);
       toast({ title: `Joined ${game.name}`, variant: 'success' });
     } catch (err) {

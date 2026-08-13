@@ -81,6 +81,14 @@ export interface UpdateGameRequest {
   visibility: GameVisibility;
 }
 
+/**
+ * `POST /games/:id/join` request body. `inviteCode` is required to join a
+ * private game and ignored for public ones; case-insensitive.
+ */
+export interface JoinGameRequest {
+  inviteCode?: string;
+}
+
 /** A single player's rank entry as returned in the game leaderboard. */
 export interface LeaderboardEntry {
   /** The player's userId (matches {@link Game.createdBy}). */

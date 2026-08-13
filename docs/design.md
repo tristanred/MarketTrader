@@ -25,7 +25,7 @@ User picks a username and password. JWT token returned. No email required (MVP).
 
 ### 3. Join a game
 - Public games are listed for every signed-in user under "Open games" and can be joined with one click
-- Any game — public or private — can be joined via its invite link (`/join/:code`) or its raw ID
+- Public games can also be joined directly by raw ID; private games require the current invite code (validated server-side on join, not just at lookup) — a public listing seen before the game went private does not grant access
 - Balance starts fresh even if the game has been running
 - Joining is rejected once the game has ended
 
@@ -121,7 +121,7 @@ These are candidates for future design cycles. None are committed.
 
 | Question | Status |
 |---|---|
-| Should games be public (discoverable) or private (join by ID only)? | **Resolved 2026-08-13** — both. Public by default with a per-game private opt-out, plus invite links for either. |
+| Should games be public (discoverable) or private (join by ID only)? | **Resolved 2026-08-13** — both. Public by default with a per-game private opt-out, plus invite links for either. Private games require the invite code to join (enforced server-side on `POST /games/:id/join`, not just at the `/games/by-code/:code` lookup) — raw ID alone is not sufficient once a game is private. |
 | What happens to stock price cache when market is closed? | Use last known price, mark as "stale" |
 | Should there be a rate limit on trades per player per game? | Not in MVP |
 

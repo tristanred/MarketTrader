@@ -262,6 +262,85 @@ describe('POST /games/:id/join', () => {
     const res = await app.inject({ method: 'POST', url: '/games/any-id/join' });
     expect(res.statusCode).toBe(401);
   });
+
+  it('returns 403 when joining a private game without an invite code', async () => {
+    const gameRes = await createGame(app, alice.token, { visibility: 'private' });
+    const gameId = gameRes.json<{ id: string }>().id;
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/games/${gameId}/join`,
+      headers: { Authorization: `Bearer ${bob.token}` },
+    });
+    expect(res.statusCode).toBe(403);
+  });
+
+  it('returns 403 when joining a private game with a wrong invite code', async () => {
+    const gameRes = await createGame(app, alice.token, { visibility: 'private' });
+    const gameId = gameRes.json<{ id: string }>().id;
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/games/${gameId}/join`,
+      headers: { Authorization: `Bearer ${bob.token}` },
+      payload: { inviteCode: 'ZZZZZZZZ' },
+    });
+    expect(res.statusCode).toBe(403);
+  });
+
+  it('returns 201 when joining a private game with the correct invite code', async () => {
+    const gameRes = await createGame(app, alice.token, { visibility: 'private' });
+    const gameId = gameRes.json<{ id: string }>().id;
+
+    const inviteRes = await app.inject({
+      method: 'POST',
+      url: `/games/${gameId}/invite-code`,
+      headers: { Authorization: `Bearer ${alice.token}` },
+    });
+    const { inviteCode } = inviteRes.json<{ inviteCode: string }>();
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/games/${gameId}/join`,
+      headers: { Authorization: `Bearer ${bob.token}` },
+      payload: { inviteCode: inviteCode.toLowerCase() },
+    });
+    expect(res.statusCode).toBe(201);
+  });
+
+  it('lets a private game become joinable again once visibility flips back to public', async () => {
+    const gameRes = await createGame(app, alice.token, { visibility: 'public' });
+    const gameId = gameRes.json<{ id: string }>().id;
+
+    await app.inject({
+      method: 'PATCH',
+      url: `/games/${gameId}`,
+      headers: { Authorization: `Bearer ${alice.token}` },
+      payload: { visibility: 'private' },
+    });
+
+    const blocked = await app.inject({
+      method: 'POST',
+      url: `/games/${gameId}/join`,
+      headers: { Authorization: `Bearer ${bob.token}` },
+    });
+    expect(blocked.statusCode).toBe(403);
+
+    await app.inject({
+      method: 'PATCH',
+      url: `/games/${gameId}`,
+      headers: { Authorization: `Bearer ${alice.token}` },
+      payload: { visibility: 'public' },
+    });
+
+    const allowed = await app.inject({
+      method: 'POST',
+      url: `/games/${gameId}/join`,
+      headers: { Authorization: `Bearer ${bob.token}` },
+    });
+    expect(allowed.statusCode).toBe(201);
+  });
+
 });
 
 // ─── GET /games/:id ───────────────────────────────────────────────────────────

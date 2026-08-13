@@ -86,8 +86,19 @@ fi
 log "adding $DEPLOY_USER to the $SERVICE_USER group"
 usermod -aG "$SERVICE_USER" "$DEPLOY_USER"
 
-for dir in "$APP_DIR" "$WEB_ROOT" "$DATA_DIR" "$BACKUP_ROOT" \
-           "$BACKUP_ROOT"/{hourly,daily,weekly,predeploy}; do
+# The deploy user owns what it builds in. Git refuses to operate on a
+# repository whose worktree root belongs to someone else ("detected dubious
+# ownership"), so $APP_DIR cannot be owned by the service user. The service
+# only reads from these two, which group membership + setgid already allows.
+# chown is recursive so re-running this repairs an existing install.
+for dir in "$APP_DIR" "$WEB_ROOT"; do
+  mkdir -p "$dir"
+  chown -R "$DEPLOY_USER:$SERVICE_USER" "$dir"
+  chmod 2775 "$dir"
+done
+
+# The service writes to these, so it owns them outright.
+for dir in "$DATA_DIR" "$BACKUP_ROOT" "$BACKUP_ROOT"/{hourly,daily,weekly,predeploy}; do
   mkdir -p "$dir"
   chown "$SERVICE_USER:$SERVICE_USER" "$dir"
   chmod 2775 "$dir"
@@ -104,9 +115,8 @@ if [ ! -d "$APP_DIR/.git" ]; then
 else
   log "repository already present at $APP_DIR"
 fi
-git config --global --add safe.directory "$APP_DIR" || true
-# Git on Windows checkouts doesn't preserve the exec bit; set it here so the
-# units and the deploy path can invoke these directly.
+# Ownership is aligned above, so no safe.directory exception is needed — and
+# adding one would only hide a future ownership mistake.
 chmod +x "$APP_DIR"/deploy/*.sh
 
 # ── Environment file ────────────────────────────────────────────────────────

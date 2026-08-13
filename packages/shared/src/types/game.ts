@@ -101,3 +101,22 @@ export interface GameWithLeaderboard extends Game {
    */
   viewerGamePlayerId: string | null;
 }
+
+/**
+ * One row of `GET /games/browse` — a public game the caller has not joined.
+ * Deliberately omits `inviteCode` and the order-type flags: this is the only
+ * endpoint that discloses games to non-members, so it stays minimal.
+ */
+export interface BrowsableGame {
+  id: string;
+  name: string;
+  startDate: string;
+  endDate: string;
+  startingBalance: number;
+  status: GameStatus;
+  /** Number of players currently enrolled. */
+  playerCount: number;
+  /** Username of the game's creator. */
+  createdByUsername: string;
+  createdAt: string;
+}

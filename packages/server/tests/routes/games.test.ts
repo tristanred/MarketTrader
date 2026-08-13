@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
 import { createTestApp } from '../helpers/app.js';
 
 async function registerUser(
@@ -32,6 +32,10 @@ async function createGame(
       ...overrides,
     },
   });
+}
+
+function browseHas(res: LightMyRequestResponse, gameId: string): boolean {
+  return res.json<{ id: string }[]>().some((g) => g.id === gameId);
 }
 
 // ─── POST /games ──────────────────────────────────────────────────────────────
@@ -351,5 +355,101 @@ describe('GET /games/:id', () => {
   it('returns 401 without auth', async () => {
     const res = await app.inject({ method: 'GET', url: '/games/some-id' });
     expect(res.statusCode).toBe(401);
+  });
+});
+
+// ─── GET /games/browse ────────────────────────────────────────────────────────
+
+describe('GET /games/browse', () => {
+  let app: FastifyInstance;
+  let owner: { token: string; userId: string };
+  let browser: { token: string; userId: string };
+
+  beforeAll(async () => {
+    app = await createTestApp();
+    owner = await registerUser(app, 'browse-owner');
+    browser = await registerUser(app, 'browse-visitor');
+  });
+  afterAll(() => app.close());
+
+  function browse(token: string) {
+    return app.inject({
+      method: 'GET',
+      url: '/games/browse',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+  }
+
+  it('returns 401 without a token', async () => {
+    const res = await app.inject({ method: 'GET', url: '/games/browse' });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it('lists a public game the caller has not joined, with counts and creator', async () => {
+    const created = await createGame(app, owner.token, { name: 'Open Tournament' });
+    const gameId = created.json<{ id: string }>().id;
+
+    const res = await browse(browser.token);
+    expect(res.statusCode).toBe(200);
+    const row = res.json<
+      { id: string; name: string; playerCount: number; createdByUsername: string }[]
+    >().find((g) => g.id === gameId);
+
+    expect(row).toBeDefined();
+    expect(row?.name).toBe('Open Tournament');
+    expect(row?.playerCount).toBe(1);
+    expect(row?.createdByUsername).toBe('browse-owner');
+  });
+
+  it('never exposes the invite code', async () => {
+    await createGame(app, owner.token, { name: 'No Code Leak' });
+    const res = await browse(browser.token);
+    for (const row of res.json<Record<string, unknown>[]>()) {
+      expect(row).not.toHaveProperty('inviteCode');
+    }
+  });
+
+  it("excludes the caller's own games", async () => {
+    const created = await createGame(app, owner.token, { name: 'Owned' });
+    const gameId = created.json<{ id: string }>().id;
+
+    const res = await browse(owner.token);
+    expect(browseHas(res, gameId)).toBe(false);
+  });
+
+  it('excludes a game once the caller joins it', async () => {
+    const created = await createGame(app, owner.token, { name: 'Joinable' });
+    const gameId = created.json<{ id: string }>().id;
+
+    expect(browseHas(await browse(browser.token), gameId)).toBe(true);
+
+    await app.inject({
+      method: 'POST',
+      url: `/games/${gameId}/join`,
+      headers: { Authorization: `Bearer ${browser.token}` },
+    });
+
+    expect(browseHas(await browse(browser.token), gameId)).toBe(false);
+  });
+
+  it('excludes private games', async () => {
+    const created = await createGame(app, owner.token, {
+      name: 'Hidden',
+      visibility: 'private',
+    });
+    const gameId = created.json<{ id: string }>().id;
+
+    expect(browseHas(await browse(browser.token), gameId)).toBe(false);
+  });
+
+  it('excludes ended games', async () => {
+    const created = await createGame(app, owner.token, {
+      name: 'Finished',
+      startDate: '2020-01-01T00:00:00.000Z',
+      endDate: '2020-06-01T00:00:00.000Z',
+    });
+    const gameId = created.json<{ id: string }>().id;
+
+    expect(browseHas(await browse(browser.token), gameId)).toBe(false);
   });
 });

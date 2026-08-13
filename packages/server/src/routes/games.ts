@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, count } from 'drizzle-orm';
 import type { Db } from '../db/index.js';
 import { schema } from '../db/index.js';
 import { isUniqueConstraintError } from '../db/errors.js';
@@ -50,7 +50,7 @@ const createGameSchema = z
 export function gameRoutes(db: Db, bus?: EventBus) {
   return async function (rawApp: FastifyInstance): Promise<void> {
     const app = rawApp.withTypeProvider<ZodTypeProvider>();
-    const { games, gamePlayers } = schema;
+    const { games, gamePlayers, users } = schema;
 
     app.get('/games', {
       onRequest: rawApp.authenticate,
@@ -165,6 +165,62 @@ export function gameRoutes(db: Db, bus?: EventBus) {
       }
 
       return reply.status(201).send({ ...game, startingBalance: Number(game.startingBalance), status });
+    });
+
+    app.get('/games/browse', {
+      onRequest: rawApp.authenticate,
+      schema: {
+        tags: ['Games'],
+        summary: 'List public games the caller has not joined and can still join.',
+        security: [{ bearerAuth: [] }],
+      },
+    }, async (request, reply) => {
+      const userId = request.user.id;
+
+      const joined = await db
+        .select({ gameId: gamePlayers.gameId })
+        .from(gamePlayers)
+        .where(eq(gamePlayers.userId, userId));
+      const joinedIds = new Set(joined.map(r => r.gameId));
+
+      const rows = await db
+        .select({
+          id: games.id,
+          name: games.name,
+          startDate: games.startDate,
+          endDate: games.endDate,
+          startingBalance: games.startingBalance,
+          status: games.status,
+          createdAt: games.createdAt,
+          createdByUsername: users.username,
+        })
+        .from(games)
+        .innerJoin(users, eq(games.createdBy, users.id))
+        .where(eq(games.visibility, 'public'));
+
+      const candidates = rows.filter(g => !joinedIds.has(g.id));
+
+      // Recompute so a game that has just passed its endDate is filtered out
+      // here rather than being offered and then rejected with 409 on join.
+      const statusMap = await recomputeMany(db, candidates);
+
+      const counts = await db
+        .select({ gameId: gamePlayers.gameId, players: count() })
+        .from(gamePlayers)
+        .groupBy(gamePlayers.gameId);
+      const countMap = new Map(counts.map(c => [c.gameId, Number(c.players)]));
+
+      const open = candidates
+        .filter(g => (statusMap.get(g.id) ?? g.status) !== 'ended')
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+        .map(g => ({
+          ...g,
+          startingBalance: Number(g.startingBalance),
+          status: statusMap.get(g.id) ?? g.status,
+          playerCount: countMap.get(g.id) ?? 0,
+        }));
+
+      return reply.status(200).send(open);
     });
 
     app.post('/games/:id/join', {

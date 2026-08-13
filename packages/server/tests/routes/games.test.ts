@@ -473,7 +473,7 @@ describe('PATCH /games/:id', () => {
     return res.json<{ id: string }>().id;
   }
 
-  function patch(id: string, token: string, body: unknown) {
+  function patch(id: string, token: string, body: Record<string, unknown>) {
     return app.inject({
       method: 'PATCH',
       url: `/games/${id}`,

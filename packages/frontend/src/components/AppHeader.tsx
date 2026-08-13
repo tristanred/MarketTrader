@@ -29,16 +29,20 @@ export function AppHeader() {
 
   return (
     <header className="flex h-11 items-center justify-between border-b border-hairline-strong bg-bg px-4">
-      <div className="flex items-center gap-6">
+      {/* On a phone the brand wordmark is the cheapest thing to drop: the mark
+          alone still anchors the topbar, and on game pages the extra
+          "Achievements" link would otherwise push this row past a 375px
+          viewport and scroll the whole document sideways. */}
+      <div className="flex min-w-0 items-center gap-3 sm:gap-6">
         <NavLink
           to="/"
           end
-          className="flex items-center gap-2 text-sm font-bold tracking-[-0.02em] text-text-strong"
+          className="flex shrink-0 items-center gap-2 text-sm font-bold tracking-[-0.02em] text-text-strong"
         >
           <BrandMark size={18} />
-          MarketTrader
+          <span className="hidden sm:inline">MarketTrader</span>
         </NavLink>
-        <nav className="flex items-center gap-1">
+        <nav className="flex min-w-0 items-center gap-1">
           <NavLink to="/" end className={({ isActive }) => linkClass(isActive)}>
             Games
           </NavLink>
@@ -57,7 +61,7 @@ export function AppHeader() {
           ) : null}
         </nav>
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex shrink-0 items-center gap-2">
         <Button variant="ghost" size="icon" onClick={toggle} aria-label="Toggle theme">
           {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
         </Button>

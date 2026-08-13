@@ -33,6 +33,8 @@ const schema = z
      * per-flag control.
      */
     advancedOrders: z.boolean(),
+    /** Inverted for the UI: the checkbox reads "Private game", the API takes a visibility enum. */
+    isPrivate: z.boolean(),
   })
   .refine((d) => new Date(d.endDate) > new Date(d.startDate), {
     message: 'End must be after start',
@@ -59,6 +61,7 @@ export function CreateGameDialog() {
     startingBalance: 100000,
     allowShortSelling: false,
     advancedOrders: false,
+    isPrivate: false,
   };
 
   const form = useForm<FormValues, unknown, FormOutput>({
@@ -78,6 +81,7 @@ export function CreateGameDialog() {
         allowStopOrders: values.advancedOrders,
         allowBracketOrders: values.advancedOrders,
         allowGTC: values.advancedOrders,
+        visibility: values.isPrivate ? 'private' : 'public',
       });
       toast({ title: 'Game created', variant: 'success' });
       setOpen(false);
@@ -174,6 +178,23 @@ export function CreateGameDialog() {
               </Label>
               <p className="text-xs text-muted-foreground">
                 Enables limit, stop, stop-limit, and bracket orders with Good-Til-Cancelled. Leave off for a market-only game.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-start gap-2">
+            <input
+              id="isPrivate"
+              type="checkbox"
+              className="mt-1 h-4 w-4"
+              {...form.register('isPrivate')}
+            />
+            <div className="space-y-0.5">
+              <Label htmlFor="isPrivate" className="cursor-pointer">
+                Private game
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                Keeps this game out of the open games list. Anyone with the invite link can still
+                join.
               </p>
             </div>
           </div>

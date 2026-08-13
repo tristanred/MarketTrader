@@ -120,6 +120,13 @@
       "when": 1780531285200,
       "tag": "0016_salty_thunderbolt_ross",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1786659167827,
+      "tag": "0017_petite_wallow",
+      "breakpoints": true
     }
   ]
 }

@@ -3,6 +3,7 @@
  * the caller to be a member of the `admin` group.
  */
 
+import type { GameVisibility } from './game.js';
 import type { OrderType, TradeDirection, TradeStatus } from './player.js';
 
 /** Currently the only group; left as a string union so adding more is trivial. */
@@ -75,6 +76,7 @@ export interface AdminGameSummary {
   startDate: string;
   endDate: string;
   startingBalance: number;
+  visibility: GameVisibility;
   createdBy: string;
   playerCount: number;
   createdAt: string;
@@ -95,6 +97,7 @@ export interface AdminUpdateGameRequest {
   allowStopOrders?: boolean;
   allowBracketOrders?: boolean;
   allowGTC?: boolean;
+  visibility?: GameVisibility;
 }
 
 export interface AdminTransferGameOwnerRequest {

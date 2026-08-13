@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import { ChevronRight } from 'lucide-react';
 import { useGames } from '@/api/games';
+import { BrowseGamesSection } from '@/components/game/BrowseGamesSection';
 import { CreateGameDialog } from '@/components/CreateGameDialog';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Panel, PanelBody } from '@/components/panel';
@@ -93,6 +94,8 @@ export function GamesListPage() {
           ))}
         </ul>
       )}
+
+      <BrowseGamesSection />
     </main>
   );
 }

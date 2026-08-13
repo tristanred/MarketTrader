@@ -79,6 +79,7 @@ export function AdminGamesPage() {
               <TableRow>
                 <TableHead>Name</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead>Visibility</TableHead>
                 <TableHead>Players</TableHead>
                 <TableHead>Starts</TableHead>
                 <TableHead>Ends</TableHead>
@@ -88,7 +89,7 @@ export function AdminGamesPage() {
             <TableBody>
               {data.games.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center text-sm text-muted-foreground">
+                  <TableCell colSpan={7} className="text-center text-sm text-muted-foreground">
                     No games match.
                   </TableCell>
                 </TableRow>
@@ -103,6 +104,7 @@ export function AdminGamesPage() {
                       {g.status}
                     </span>
                   </TableCell>
+                  <TableCell className="text-sm text-muted-foreground">{g.visibility}</TableCell>
                   <TableCell>{g.playerCount}</TableCell>
                   <TableCell className="text-sm text-muted-foreground">
                     {new Date(g.startDate).toLocaleDateString()}

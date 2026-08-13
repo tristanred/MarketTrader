@@ -36,6 +36,7 @@ const editSchema = z.object({
   allowStopOrders: z.boolean(),
   allowBracketOrders: z.boolean(),
   allowGTC: z.boolean(),
+  visibility: z.enum(['public', 'private']),
 });
 type EditValues = z.infer<typeof editSchema>;
 
@@ -84,6 +85,7 @@ export function AdminGameDetailPage() {
       allowStopOrders: false,
       allowBracketOrders: false,
       allowGTC: false,
+      visibility: 'public',
     },
   });
 
@@ -99,6 +101,7 @@ export function AdminGameDetailPage() {
         allowStopOrders: game.allowStopOrders,
         allowBracketOrders: game.allowBracketOrders,
         allowGTC: game.allowGTC,
+        visibility: game.visibility,
       });
     }
     // Re-sync on every refetch so out-of-band updates to the same game
@@ -127,6 +130,7 @@ export function AdminGameDetailPage() {
         allowStopOrders: values.allowStopOrders,
         allowBracketOrders: values.allowBracketOrders,
         allowGTC: values.allowGTC,
+        visibility: values.visibility,
       });
       toast({ title: 'Game updated', variant: 'success' });
     } catch (err) {
@@ -196,7 +200,7 @@ export function AdminGameDetailPage() {
         </Link>
         <h1 className="text-2xl font-semibold">{game.name}</h1>
         <p className="text-sm text-muted-foreground">
-          Status: {game.status} · {game.playerCount} players · owner{' '}
+          Status: {game.status} · {game.visibility} · {game.playerCount} players · owner{' '}
           <Link to={`/admin/users/${game.createdBy}`} className="underline hover:text-foreground">
             {owner?.username ?? game.createdBy}
           </Link>
@@ -229,6 +233,17 @@ export function AdminGameDetailPage() {
                 step="0.01"
                 {...form.register('startingBalance')}
               />
+            </div>
+            <div>
+              <Label htmlFor="visibility">Visibility</Label>
+              <select
+                id="visibility"
+                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                {...form.register('visibility')}
+              >
+                <option value="public">Public — listed in open games</option>
+                <option value="private">Private — invite only</option>
+              </select>
             </div>
             <div className="sm:col-span-2 grid grid-cols-2 gap-2 text-sm">
               <label className="flex items-center gap-2">

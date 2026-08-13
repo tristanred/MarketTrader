@@ -6,6 +6,13 @@
  */
 export type GameStatus = 'pending' | 'active' | 'ended';
 
+/**
+ * Discoverability of a game.
+ * - `public`  — listed in `GET /games/browse` for users who have not joined
+ * - `private` — reachable only via its ID or invite code
+ */
+export type GameVisibility = 'public' | 'private';
+
 /** Full game entity as returned by the API. All dates are ISO 8601 strings. */
 export interface Game {
   id: string;
@@ -35,6 +42,9 @@ export interface Game {
    * Defaults to true on game creation.
    */
   achievementsEnabled: boolean;
+  visibility: GameVisibility;
+  /** Short share token. Null until minted; only ever returned to members. */
+  inviteCode: string | null;
   status: GameStatus;
   /** ID of the user who created the game. */
   createdBy: string;
@@ -62,6 +72,21 @@ export interface CreateGameRequest {
   allowGTC?: boolean;
   /** Defaults to true when omitted. */
   achievementsEnabled?: boolean;
+  /** Defaults to `'public'` when omitted. */
+  visibility?: GameVisibility;
+}
+
+/** `PATCH /games/:id` request body. Creator-only. */
+export interface UpdateGameRequest {
+  visibility: GameVisibility;
+}
+
+/**
+ * `POST /games/:id/join` request body. `inviteCode` is required to join a
+ * private game and ignored for public ones; case-insensitive.
+ */
+export interface JoinGameRequest {
+  inviteCode?: string;
 }
 
 /** A single player's rank entry as returned in the game leaderboard. */
@@ -88,4 +113,40 @@ export interface GameWithLeaderboard extends Game {
    * lookup. Null when the viewer is not (yet) a member of this game.
    */
   viewerGamePlayerId: string | null;
+}
+
+/**
+ * One row of `GET /games/browse` — a public game the caller has not joined.
+ * Deliberately omits `inviteCode` and the order-type flags: this is the only
+ * endpoint that discloses games to non-members, so it stays minimal.
+ */
+export interface BrowsableGame {
+  id: string;
+  name: string;
+  startDate: string;
+  endDate: string;
+  startingBalance: number;
+  status: GameStatus;
+  /** Number of players currently enrolled. */
+  playerCount: number;
+  /** Username of the game's creator. */
+  createdByUsername: string;
+  createdAt: string;
+}
+
+/**
+ * `GET /games/by-code/:code` response — enough to render a join prompt
+ * without disclosing game internals to someone who only holds a code.
+ */
+export interface GameByCodeResponse {
+  id: string;
+  name: string;
+  startDate: string;
+  endDate: string;
+  startingBalance: number;
+  status: GameStatus;
+  playerCount: number;
+  createdByUsername: string;
+  /** True when the caller is already enrolled, so the UI can route straight in. */
+  alreadyMember: boolean;
 }

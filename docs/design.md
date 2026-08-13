@@ -20,10 +20,14 @@ User picks a username and password. JWT token returned. No email required (MVP).
 ### 2. Create a game
 - Set a name, start date, end date, and starting balance (e.g. $100,000)
 - Game status: `pending` until start date, `active` during the trading window, `ended` after end date
-- Share the game ID/link with friends
+- Choose public (listed for everyone) or private (invite-only); public is the default
+- Share the invite link from the game info modal
 
 ### 3. Join a game
-- Any registered user can join any game by ID before it starts (or while active, with caveat: balance starts fresh even if game has been running)
+- Public games are listed for every signed-in user under "Open games" and can be joined with one click
+- Public games can also be joined directly by raw ID; private games require the current invite code (validated server-side on join, not just at lookup) — a public listing seen before the game went private does not grant access
+- Balance starts fresh even if the game has been running
+- Joining is rejected once the game has ended
 
 ### 4. Trade
 - Search for a stock ticker (e.g. "AAPL")
@@ -50,11 +54,16 @@ See the spec for full schema. Summary:
 | Entity | Purpose |
 |---|---|
 | `User` | Account (username + password) |
-| `Game` | A tournament with rules (dates, starting balance) |
+| `Game` | A tournament with rules (dates, starting balance, discoverability) |
 | `GamePlayer` | A user's participation in a game + their cash balance |
 | `Portfolio` | Current stock holdings per player per game |
 | `Trade` | Immutable log of every buy/sell executed |
 | `StockPriceCache` | Short-lived cache of fetched stock prices |
+
+`Game` carries two discoverability fields:
+
+- `visibility` — `public` | `private`. Public games appear in `GET /games/browse`. Defaults to `public`; games created before this field existed were adopted as public.
+- `inviteCode` — short share token behind `/join/:code`. Nullable: pre-existing games mint one on first share. Only ever returned to members; `GET /games/browse` omits it.
 
 ---
 
@@ -99,7 +108,6 @@ After each trade, the server rebroadcasts a `leaderboard_update` event recalcula
 
 These are candidates for future design cycles. None are committed.
 
-- **Game invite codes** — a shareable token instead of a raw UUID
 - **Limit orders** — place an order at a target price, fill when market crosses it
 - **Short selling** — borrow shares to sell, buy back later
 - **Admin tools** — game creator can remove players, extend game end date
@@ -113,7 +121,7 @@ These are candidates for future design cycles. None are committed.
 
 | Question | Status |
 |---|---|
-| Should games be public (discoverable) or private (join by ID only)? | Deferred to post-MVP |
+| Should games be public (discoverable) or private (join by ID only)? | **Resolved 2026-08-13** — both. Public by default with a per-game private opt-out, plus invite links for either. Private games require the invite code to join (enforced server-side on `POST /games/:id/join`, not just at the `/games/by-code/:code` lookup) — raw ID alone is not sufficient once a game is private. |
 | What happens to stock price cache when market is closed? | Use last known price, mark as "stale" |
 | Should there be a rate limit on trades per player per game? | Not in MVP |
 

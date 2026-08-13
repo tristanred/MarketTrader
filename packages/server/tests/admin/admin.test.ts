@@ -180,6 +180,82 @@ describe('admin game ownership transfer', () => {
   });
 });
 
+describe('admin game visibility', () => {
+  it('flips visibility, hides the game from browse, and lists it in the admin table', async () => {
+    const owner = await registerUser(app, 'visibilityOwner');
+    const outsider = await registerUser(app, 'visibilityOutsider');
+
+    const createRes = await app.inject({
+      method: 'POST',
+      url: '/games',
+      headers: { Authorization: `Bearer ${owner.token}` },
+      payload: {
+        name: 'Admin Visibility Game',
+        startDate: '2099-01-01T00:00:00.000Z',
+        endDate: '2099-06-01T00:00:00.000Z',
+        startingBalance: 5000,
+      },
+    });
+    const gameId = createRes.json<{ id: string }>().id;
+
+    const browseBefore = await app.inject({
+      method: 'GET',
+      url: '/games/browse',
+      headers: { Authorization: `Bearer ${outsider.token}` },
+    });
+    expect(browseBefore.json<{ id: string }[]>().some((g) => g.id === gameId)).toBe(true);
+
+    const patch = await app.inject({
+      method: 'PATCH',
+      url: `/admin/games/${gameId}`,
+      headers: { Authorization: `Bearer ${adminToken}` },
+      payload: { visibility: 'private' },
+    });
+    expect(patch.statusCode).toBe(204);
+
+    const browseAfter = await app.inject({
+      method: 'GET',
+      url: '/games/browse',
+      headers: { Authorization: `Bearer ${outsider.token}` },
+    });
+    expect(browseAfter.json<{ id: string }[]>().some((g) => g.id === gameId)).toBe(false);
+
+    const list = await app.inject({
+      method: 'GET',
+      url: '/admin/games?q=Admin Visibility Game',
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    const row = list
+      .json<{ games: { id: string; visibility: string }[] }>()
+      .games.find((g) => g.id === gameId);
+    expect(row?.visibility).toBe('private');
+  });
+
+  it('rejects an unknown visibility value', async () => {
+    const owner = await registerUser(app, 'visibilityBadValue');
+    const createRes = await app.inject({
+      method: 'POST',
+      url: '/games',
+      headers: { Authorization: `Bearer ${owner.token}` },
+      payload: {
+        name: 'Bad Visibility',
+        startDate: '2099-01-01T00:00:00.000Z',
+        endDate: '2099-06-01T00:00:00.000Z',
+        startingBalance: 5000,
+      },
+    });
+    const gameId = createRes.json<{ id: string }>().id;
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/admin/games/${gameId}`,
+      headers: { Authorization: `Bearer ${adminToken}` },
+      payload: { visibility: 'unlisted' },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+});
+
 describe('admin portfolio editing + audit log', () => {
   it('sets cashBalance and records an audit entry', async () => {
     const owner = await registerUser(app, 'cashGameOwner');

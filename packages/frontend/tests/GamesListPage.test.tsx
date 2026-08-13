@@ -13,8 +13,28 @@ const gamesData: Array<{
   endDate: string;
 }> = [];
 
+const browsableData: Array<{
+  id: string;
+  name: string;
+  status: 'pending' | 'active' | 'ended';
+  startingBalance: number;
+  startDate: string;
+  endDate: string;
+  playerCount: number;
+  createdByUsername: string;
+  createdAt: string;
+}> = [];
+
 vi.mock('@/api/games', () => ({
   useGames: () => ({ data: gamesData, isLoading: false, isError: false }),
+  useBrowsableGames: () => ({
+    data: browsableData,
+    isLoading: false,
+    isError: false,
+    isSuccess: true,
+    refetch: vi.fn(),
+  }),
+  useJoinGame: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
 
 vi.mock('@/components/CreateGameDialog', () => ({
@@ -86,5 +106,33 @@ describe('GamesListPage', () => {
     render(wrap(<GamesListPage />));
     const link = screen.getByRole('link', { name: /friday night bloodbath/i });
     expect(link).toHaveAttribute('href', '/games/g1');
+  });
+
+  it('invites the viewer to act when no open games are listed', () => {
+    gamesData.length = 0;
+    browsableData.length = 0;
+    render(wrap(<GamesListPage />));
+    expect(screen.getByText('Open games')).toBeInTheDocument();
+    expect(screen.getByText(/no open games right now/i)).toBeInTheDocument();
+  });
+
+  it('lists each open game with its host, players, and a join action', () => {
+    gamesData.length = 0;
+    browsableData.length = 0;
+    browsableData.push({
+      id: 'b1',
+      name: 'May Weekly Cup',
+      status: 'active',
+      startingBalance: 50000,
+      startDate: '2026-05-01T00:00:00Z',
+      endDate: '2026-05-31T23:59:59Z',
+      playerCount: 3,
+      createdByUsername: 'alice',
+      createdAt: '2026-04-28T00:00:00Z',
+    });
+    render(wrap(<GamesListPage />));
+    expect(screen.getByText('May Weekly Cup')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /join may weekly cup/i })).toBeInTheDocument();
+    expect(screen.getByText('1 listed')).toBeInTheDocument();
   });
 });

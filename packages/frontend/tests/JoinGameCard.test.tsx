@@ -29,7 +29,7 @@ describe('JoinGameCard', () => {
     const onJoined = vi.fn();
     render(wrap(<JoinGameCard gameId="g1" onJoined={onJoined} />));
     await user.click(screen.getByRole('button', { name: /join game/i }));
-    expect(joinMutate).toHaveBeenCalledWith('g1');
+    expect(joinMutate).toHaveBeenCalledWith({ gameId: 'g1' });
     expect(onJoined).toHaveBeenCalled();
   });
 });

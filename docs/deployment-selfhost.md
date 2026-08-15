@@ -216,16 +216,34 @@ Edit `/etc/markettrader/env`, then restart. The full set of variables is documen
 
 ### Changing the nginx site
 
-**Editing `deploy/nginx/markettrader.conf` in the repo does not change the server.** `provision.sh` refuses to overwrite an existing site file on purpose — `certbot --nginx` rewrites the installed copy in place to add the 443 listener and certificate paths, so regenerating it from the repo would silently revert the site to HTTP-only. Unlike the systemd units, deploys don't warn about nginx drift either, because the installed copy legitimately differs (certbot's edits, plus the substituted `server_name`).
+**Editing `deploy/nginx/markettrader.conf` in the repo does not change the server.** This catches people out, so it is worth stating plainly:
 
-So an nginx change is a manual, one-time step: hand-apply the same edit to the installed file, then test and reload.
+- `provision.sh` refuses to overwrite an existing site file *on purpose*. `certbot --nginx` rewrites the installed copy in place to add the 443 listener, the certificate paths and an HTTP→HTTPS redirect block. Regenerating from the repo would revert the site to HTTP-only — and on an HSTS-preloaded TLD like `.app` that takes it off the air entirely.
+- `deploy.sh` does not warn about it either. It compares the systemd units, not the nginx site, because the installed site *legitimately* differs from the repo (certbot's edits plus the substituted `server_name`), so a plain comparison would cry wolf on every deploy.
+
+The result: the repo copy is documentation of intent, and the installed copy is what actually serves. They drift silently. A missing `location /docs` survived this way and made the API docs unreachable in production while looking correct in the repo.
+
+**Detecting drift.** Run this from a checkout on the server — it reports repo location blocks that never made it into the installed file, and ignores certbot's rewrites:
 
 ```bash
+/opt/markettrader/deploy/nginx-check.sh
+```
+
+**Applying a change.** Hand-apply the same edit, then test and reload:
+
+```bash
+sudo cp -a /etc/nginx/sites-available/markettrader /etc/nginx/sites-available/markettrader.bak.$(date +%F)
 sudo nano /etc/nginx/sites-available/markettrader
 sudo nginx -t && sudo systemctl reload nginx
 ```
 
-`nginx -t` before the reload is not optional — a broken config takes the whole site down, and a reload with a bad file leaves the old worker serving until it exits.
+Three things about that sequence:
+
+- **Back up first.** Certbot's edits live only in that file; if you mangle it you cannot regenerate an equivalent from the repo.
+- **`nginx -t` before the reload is not optional.** It is the only thing standing between a typo and the whole site going down.
+- **Put new `location` blocks in the first `server` block** — the one with `server_name markettrader.app` that holds `location /api/`. The second block is certbot's port-80 redirect and anything added there is ignored for real traffic.
+
+Note that `sudo` prompts for a password here. The NOPASSWD rules from `provision.sh` cover only `systemctl restart|start|stop|is-active markettrader` and `backup.sh`, deliberately — they exist so deploys are unattended, not so the host is broadly writable without authentication.
 
 ### Swagger UI
 

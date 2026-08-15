@@ -270,3 +270,18 @@ When adding a consumer, import `buildInfo` from `src/build-info.ts` rather than 
 | Production | Docker: `Dockerfile.server` + Nginx for frontend static files |
 | AWS | Single EC2 instance (t3.micro/small), Docker Compose, Nginx reverse proxy |
 | Self-hosted | systemd + apt nginx + SQLite on one Linux box — `pnpm ship` to deploy. See `docs/deployment-selfhost.md` and ADR-013. Assets in `deploy/`. |
+
+### The nginx site does not deploy itself
+
+`deploy/nginx/markettrader.conf` is **not** what the server serves. `provision.sh` refuses to
+overwrite an existing site file because `certbot --nginx` rewrites the installed copy in place,
+and `deploy.sh` only checks systemd units for drift. So editing the repo config changes nothing
+in production until someone hand-applies it.
+
+If you change that file, say so explicitly in your summary and point at the manual step — it is
+the one class of change `pnpm ship` silently ignores. `deploy/nginx-check.sh` reports repo
+location blocks missing from the installed site; the full procedure is under "Changing the nginx
+site" in `docs/deployment-selfhost.md`.
+
+The same applies to `deploy/systemd/*` — those need a `provision.sh` re-run, though at least
+`deploy.sh` warns about them.

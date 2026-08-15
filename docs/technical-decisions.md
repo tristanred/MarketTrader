@@ -208,3 +208,35 @@ const db = DATABASE_URL.startsWith('postgres')
 - The schema must continue to be maintained in both `schema.sqlite.ts` and `schema.pg.ts`; this ADR does not retire the Postgres path.
 
 **See also:** `docs/deployment-selfhost.md` for the operator runbook.
+
+---
+
+## ADR-014: Changesets for Local Semver Versioning, Build-Injected into the Bundle
+
+**Date:** 2026-08-15
+**Status:** Accepted
+
+**Decision:** The app carries a single semver version, managed locally with `@changesets/cli`. `server`, `frontend`, and `shared` are a changesets `fixed` group, so they never drift. The version, the short git SHA, and the build timestamp are injected into each bundle at build time and served publicly by `GET /version`.
+
+**Context:** The app is now deployed to a real host with real users and releases are getting more frequent, but nothing identified a build. Every package sat at `0.0.1` and had never moved, the repo had zero tags, the Swagger info block hardcoded `'0.0.1'`, Sentry had no `release`, and the runbook's answer to "what's deployed?" was to SSH in and read `git log`.
+
+**Alternatives considered:**
+- **Version in CI on merge** — rejected by requirement. Versioning is a deliberate act performed locally; CI has no release role in this project, and `pnpm ship` deliberately doesn't touch versions.
+- **Independent per-package versions** (changesets' default) — rejected. There is one deployable unit here, not three libraries. Three diverging numbers would raise "which one is the app version?" at exactly the moment you need a quick answer.
+- **Read `package.json` at runtime** — rejected. `tsup` emits a flat `dist/index.js` with no `package.json` beside it, and `Dockerfile.server`'s runner stage copies neither `package.json` nor `.git`. It would work under systemd and silently fail under Docker.
+- **Report only the semver string** — rejected, see below.
+
+**Why the payload carries a SHA:** versioning and shipping are independent, which is a requirement, not an accident. That means several deploys can legitimately carry the same version number, so the version alone does not identify a build. The short SHA does, and `buildTime` distinguishes rebuilds of the same commit.
+
+**Why `fixed` rather than `linked`:** `linked` lets versions drift when packages are bumped separately. `fixed` guarantees all three always read the same, so "the app version" is unambiguous whichever package you look at. `@markettrader/tools-seed-game-history` is a dev-only tool and is `ignore`d.
+
+**Why not `changeset tag`:** in a multi-package repo it emits `@markettrader/server@1.2.0`-style tags. `scripts/ship.mjs` validates its ref against `/^[A-Za-z0-9._/-]+$/` before interpolating it into a remote SSH command, and `@` is not in that set — those tags would be rejected by the deploy path. `privatePackages.tag` is therefore `false`, and `scripts/tag-release.mjs` (`pnpm release:tag`) cuts a plain `vX.Y.Z` tag, which is what the already-documented `pnpm ship --ref v1.2.0` needs.
+
+**Consequences:**
+- The workspace root's `package.json` version is not managed by changesets — the workspace root is not a changesets package. It is vestigial; `packages/server/package.json` is the canonical app version.
+- Three `CHANGELOG.md` files are generated, one per fixed package. Accepted as the cost of a lockstep version.
+- The version reaches production only by being committed and pushed: the server builds from a fresh `git fetch` of `origin/main`. A version bump that isn't pushed simply doesn't ship.
+- `src/build-info.ts` needs a `typeof` guard on the injected globals. Dev runs under `tsx watch`, which has no define step, so a bare reference would throw a `ReferenceError` — dev reports `0.0.0-dev`. `vitest.config.ts` duplicates the tsup `define` block so tests exercise the real values instead of that fallback.
+- `/version` is public, matching `/health`. It exposes a version and a commit SHA to anyone; `/health` and the Swagger UI at `/docs` are already public, so this adds little, and being able to check a deploy with one curl is the point.
+
+**See also:** the "Versioning and Releases" section of `CLAUDE.md` for the operator flow.

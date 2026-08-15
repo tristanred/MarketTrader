@@ -3,8 +3,10 @@ import path from 'node:path';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { visualizer } from 'rollup-plugin-visualizer';
+import { buildInfoDefines, readBuildInfo } from '../../scripts/build-info.mjs';
 
 export default defineConfig({
+  define: buildInfoDefines(readBuildInfo(process.cwd())),
   plugins: [
     react(),
     // Emits dist/stats.html on every build. Open it after `pnpm build` to

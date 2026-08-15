@@ -16,10 +16,12 @@
     "lint": "pnpm -r lint",
     "e2e": "pnpm --filter frontend e2e",
     "ship": "node scripts/ship.mjs",
+    "release:tag": "node scripts/tag-release.mjs",
     "seed:history": "pnpm --filter @markettrader/tools-seed-game-history start",
     "docs:achievements": "pnpm --filter @markettrader/frontend exec node ./scripts/generate-achievement-docs.mjs"
   },
   "devDependencies": {
+    "@changesets/cli": "^3.0.0",
     "@typescript-eslint/eslint-plugin": "^8.60.1",
     "@typescript-eslint/parser": "^8.60.1",
     "eslint": "^9.0.0",

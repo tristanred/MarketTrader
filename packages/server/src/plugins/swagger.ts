@@ -6,6 +6,7 @@ import {
   serializerCompiler,
   validatorCompiler,
 } from 'fastify-type-provider-zod';
+import { buildInfo } from '../build-info.js';
 
 /**
  * Registers Fastify's Zod-aware validator + serializer compilers and mounts
@@ -26,7 +27,7 @@ export async function registerSwagger(app: FastifyInstance): Promise<void> {
           'REST API for the MarketTrader virtual stock trading tournament platform. ' +
           'In addition to the documented HTTP endpoints, a WebSocket endpoint at ' +
           '`/games/:id/live?token=<jwt>` streams price ticks and leaderboard updates.',
-        version: '0.0.1',
+        version: buildInfo.version,
       },
       components: {
         securitySchemes: {

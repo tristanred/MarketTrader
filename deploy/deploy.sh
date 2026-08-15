@@ -16,6 +16,7 @@ APP_DIR="${MARKETTRADER_APP_DIR:-/opt/markettrader}"
 WEB_ROOT="${MARKETTRADER_WEB_ROOT:-/var/www/markettrader}"
 SERVICE=markettrader
 HEALTH_URL=http://127.0.0.1:3000/health
+VERSION_URL=http://127.0.0.1:3000/version
 HEALTH_TIMEOUT=30
 
 log() { echo "[deploy] $*"; }
@@ -104,6 +105,9 @@ fi
 # packages/server/src/index.ts, so the restart below applies them.
 if build_and_restart && wait_for_health; then
   log "deployed $TARGET_SHA — healthy"
+  # Echo the build stamp the new process reports, so a deploy answers "what is
+  # live now?" without a follow-up curl. jq-free, like scripts/smoke.sh.
+  log "running: $(curl -fsS "$VERSION_URL" 2>/dev/null || echo 'version endpoint unavailable')"
   exit 0
 fi
 

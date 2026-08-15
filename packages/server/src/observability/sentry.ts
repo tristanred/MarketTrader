@@ -1,6 +1,7 @@
 import * as Sentry from '@sentry/node';
 import type { FastifyInstance } from 'fastify';
 import { env } from '../env.js';
+import { buildInfo } from '../build-info.js';
 
 let initialized = false;
 
@@ -15,6 +16,7 @@ export function initSentry(): void {
   Sentry.init({
     dsn: env.SENTRY_DSN,
     environment: env.NODE_ENV,
+    release: `markettrader@${buildInfo.version}`,
     tracesSampleRate: 0,
   });
   initialized = true;

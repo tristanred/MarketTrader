@@ -117,11 +117,29 @@ The target defaults to `tristan@192.168.2.117`; override permanently with `MARKE
 4. `pnpm install --frozen-lockfile`, then builds shared → server → frontend.
 5. `rsync`es the SPA into `/var/www/markettrader` — only after a successful build, so nginx never serves a half-written bundle.
 6. Restarts the service. Migrations run automatically at boot via `runMigrations()`.
-7. Polls `/health` for 30s.
+7. Polls `/health` for 30s, then echoes what `/version` reports so the deploy output names the build it just put live.
 
 If the health check fails it **rolls the code back** to the previous SHA, rebuilds, and restarts. The database is deliberately left alone: migrations are additive, so reverting code is normally enough, and an unattended data rollback would discard trades made since the snapshot. The script prints the exact `restore.sh` command if you do need it.
 
 Expect a few seconds of downtime at the restart.
+
+### Checking what's live
+
+```bash
+curl https://markettrader.app/api/version
+```
+
+```json
+{ "version": "0.1.0", "commit": "a1b2c3d", "buildTime": "2026-08-15T18:22:04.113Z" }
+```
+
+The endpoint is public and unauthenticated, like `/health`. The version and the SHA are both baked into the bundle at build time, so they describe the running process rather than whatever the checkout happens to be at now.
+
+Read the SHA, not just the version: shipping is independent of versioning, so several deploys can legitimately report the same version number. `buildTime` tells you when this host last rebuilt.
+
+### Cutting a version
+
+Versions are managed locally with changesets and are **not** produced by a deploy — see the "Versioning and Releases" section of `CLAUDE.md`. The one rule that matters here: `pnpm ship` deploys `origin/main` and the server builds from a fresh `git fetch`, so **push the version commit before shipping** or the deploy will build the old number.
 
 ## 4. Backups
 
@@ -179,7 +197,7 @@ Hits `/api/health`, registers a throwaway user, and makes an authenticated `/api
 | Service status | `systemctl status markettrader` |
 | Tail logs | `journalctl -u markettrader -f` |
 | Restart | `sudo systemctl restart markettrader` |
-| What's deployed? | `git -C /opt/markettrader log -1 --oneline` |
+| What's deployed? | `curl https://markettrader.app/api/version` |
 | Open a SQL shell | `sudo -u markettrader sqlite3 /var/lib/markettrader/app.db` |
 | Force a backup now | `sudo systemctl start markettrader-backup.service` |
 | List snapshots | `deploy/restore.sh --list` |

@@ -9,6 +9,7 @@ import { registerRateLimit } from './plugins/rate-limit.js';
 import { registerWebsocket } from './plugins/websocket.js';
 import { registerSwagger } from './plugins/swagger.js';
 import { healthRoutes } from './routes/health.js';
+import { versionRoutes } from './routes/version.js';
 import { authRoutes } from './routes/auth.js';
 import { gameRoutes } from './routes/games.js';
 import { publicGamesRoutes } from './routes/public-games.js';
@@ -125,6 +126,7 @@ export async function buildApp(
   });
 
   await app.register(healthRoutes);
+  await app.register(versionRoutes);
   await app.register(authRoutes(db));
   await app.register(gameRoutes(db, bus));
   await app.register(publicGamesRoutes(db));

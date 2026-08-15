@@ -1,0 +1,12 @@
+{
+  "$schema": "https://unpkg.com/@changesets/config@4.0.0/schema.json",
+  "changelog": "@changesets/cli/changelog",
+  "commit": false,
+  "fixed": [["@markettrader/server", "@markettrader/frontend", "@markettrader/shared"]],
+  "linked": [],
+  "access": "restricted",
+  "baseBranch": "main",
+  "updateInternalDependencies": "patch",
+  "ignore": ["@markettrader/tools-seed-game-history"],
+  "privatePackages": { "version": true, "tag": false }
+}

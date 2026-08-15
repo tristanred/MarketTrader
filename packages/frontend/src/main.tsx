@@ -10,6 +10,11 @@ import '@fontsource/geist-mono/600.css';
 import '@fontsource/geist-mono/700.css';
 import './index.css';
 import App from './App';
+import { buildInfo } from './build-info';
+
+// No room for a version in the UI, so the build stamp lives in the console —
+// enough to tell whether a browser is holding a stale bundle.
+console.info(`MarketTrader ${buildInfo.version} (${buildInfo.commit})`);
 
 const rootEl = document.getElementById('root');
 if (!rootEl) throw new Error('Root element #root not found in index.html');

@@ -49,6 +49,7 @@ These were chosen deliberately (see `docs/technical-decisions.md` for full ratio
 | Client state | Zustand |
 | WebSocket (client) | Native WebSocket API (no Socket.io) |
 | Auth | JWT (`@fastify/jwt`) + argon2 passwords |
+| Versioning | `@changesets/cli` — run locally, never in CI (ADR-014) |
 
 If a library version is outdated or a better alternative emerges, open an ADR entry in `docs/technical-decisions.md` rather than silently swapping.
 
@@ -199,9 +200,54 @@ pnpm --filter server db:studio     # open Drizzle Studio
 
 ---
 
+## Versioning and Releases
+
+The app has **one version**. `@markettrader/server`, `/frontend`, and `/shared` are a
+changesets `fixed` group, so they always carry the same number — `packages/server/package.json`
+is the canonical copy. Managed entirely locally with `@changesets/cli`; CI has no release role.
+
+**Versioning and shipping are independent.** `pnpm ship` never touches versions, and cutting a
+version never deploys. That means several deploys can carry the same version number, which is
+why the build stamp includes a git SHA.
+
+```bash
+pnpm changeset            # describe a change; commit the generated .changeset/*.md
+pnpm changeset version    # bump all three + write CHANGELOGs, consume the changesets
+git commit -am "release: vX.Y.Z"
+pnpm release:tag          # cuts a bare vX.Y.Z tag (not `changeset tag` — see ADR-014)
+git push --follow-tags
+pnpm ship                 # or: pnpm ship --ref vX.Y.Z
+```
+
+- **Push before you ship.** `pnpm ship` deploys `origin/main` and the server builds from a fresh
+  `git fetch`, so an unpushed version commit simply doesn't reach production.
+- Never run `pnpm changeset publish` — nothing here goes to a registry.
+- If `pnpm changeset version` dirties `pnpm-lock.yaml`, commit it: `deploy.sh` runs
+  `pnpm install --frozen-lockfile` and will fail otherwise. (`workspace:*` specifiers don't
+  embed versions, so normally it doesn't.)
+
+### The build stamp
+
+`GET /version` → `{ version, commit, buildTime }`. Public and unauthenticated, like `/health`;
+reachable at `/api/version` through nginx. `pnpm ship` echoes it after a successful deploy.
+
+Values are **injected at build time**, never read at runtime — `tsup` emits a flat `dist/` with
+no `package.json`, and the Docker runner stage copies neither `package.json` nor `.git`.
+`scripts/build-info.mjs` produces the `define` block consumed by `tsup.config.ts`,
+`vite.config.ts`, and `vitest.config.ts`.
+
+When adding a consumer, import `buildInfo` from `src/build-info.ts` rather than referencing the
+`__APP_VERSION__` globals directly — the server module wraps them in a `typeof` guard because
+`tsx watch` has no define step and a bare reference throws there. Current consumers:
+`routes/version.ts`, `plugins/swagger.ts`, `observability/sentry.ts`, and the frontend's
+`main.tsx`.
+
+---
+
 ## Key Documents to Read
 
 - `docs/technical-decisions.md` — before suggesting a library or architectural change
+- `.changeset/README.md` — the release flow in short form
 - `docs/design.md` — before adding any new entity, endpoint, or feature
 - `docs/superpowers/specs/2026-05-08-markettrader-design.md` — the initial full spec
 

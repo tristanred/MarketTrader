@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
+import type { VersionInfo } from '@markettrader/shared';
 import { buildInfo } from '../build-info.js';
 
 const versionResponseSchema = z.object({
@@ -28,6 +29,7 @@ export async function versionRoutes(app: FastifyInstance): Promise<void> {
         response: { 200: versionResponseSchema },
       },
     },
-    async () => buildInfo,
+    // Annotated so the shared contract and the Zod schema can't drift apart.
+    async (): Promise<VersionInfo> => buildInfo,
   );
 }

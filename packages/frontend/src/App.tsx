@@ -88,6 +88,13 @@ const AchievementToastPreviewPage = lazy(() =>
   import('@/pages/AchievementToastPreviewPage').then((m) => ({ default: m.AchievementToastPreviewPage })),
 );
 
+// Public diagnostic surface. Deliberately outside the protected block: it has
+// to stay reachable when the session is broken, which is when you most want to
+// know which build is running.
+const VersionPage = lazy(() =>
+  import('@/pages/VersionPage').then((m) => ({ default: m.VersionPage })),
+);
+
 function RouteLoader() {
   return (
     <main className="mx-auto max-w-6xl p-6">
@@ -125,6 +132,7 @@ function App() {
               }
             />
             <Route path="/__toast-preview" element={<AchievementToastPreviewPage />} />
+            <Route path="/version" element={<VersionPage />} />
             <Route
               element={
                 <ProtectedRoute>

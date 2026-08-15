@@ -230,6 +230,14 @@ pnpm ship                 # or: pnpm ship --ref vX.Y.Z
 
 `GET /version` → `{ version, commit, buildTime }`. Public and unauthenticated, like `/health`;
 reachable at `/api/version` through nginx. `pnpm ship` echoes it after a successful deploy.
+The shape is `VersionInfo` in `packages/shared`; the route handler is annotated with it so the
+Zod schema and the shared contract can't drift.
+
+The SPA has a matching page at **`/version`** (`pages/VersionPage.tsx`) — a public route outside
+the protected block, so it stays reachable when the session is broken. It shows this bundle's
+build next to the server's and names the difference when they disagree, which is the stale-cache
+case behind the chunk-load error in `App.tsx`. Note `/version` on the SPA and `/api/version` on
+the API are different things and do not collide.
 
 Values are **injected at build time**, never read at runtime — `tsup` emits a flat `dist/` with
 no `package.json`, and the Docker runner stage copies neither `package.json` nor `.git`.

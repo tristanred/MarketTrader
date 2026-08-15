@@ -137,6 +137,8 @@ The endpoint is public and unauthenticated, like `/health`. The version and the 
 
 Read the SHA, not just the version: shipping is independent of versioning, so several deploys can legitimately report the same version number. `buildTime` tells you when this host last rebuilt.
 
+For a player reporting something odd, send them `https://markettrader.app/version` instead. That page compares the build their browser is running against the server's and tells them to reload if the bundle is stale — the usual cause of "it broke right after you deployed".
+
 ### Cutting a version
 
 Versions are managed locally with changesets and are **not** produced by a deploy — see the "Versioning and Releases" section of `CLAUDE.md`. The one rule that matters here: `pnpm ship` deploys `origin/main` and the server builds from a fresh `git fetch`, so **push the version commit before shipping** or the deploy will build the old number.
@@ -199,6 +201,7 @@ Hits `/api/health`, registers a throwaway user, and makes an authenticated `/api
 | Restart | `sudo systemctl restart markettrader` |
 | What's deployed? | `curl https://markettrader.app/api/version` |
 | Browse the API docs | `https://markettrader.app/docs` |
+| Check a player's build | send them `https://markettrader.app/version` |
 | Open a SQL shell | `sudo -u markettrader sqlite3 /var/lib/markettrader/app.db` |
 | Force a backup now | `sudo systemctl start markettrader-backup.service` |
 | List snapshots | `deploy/restore.sh --list` |

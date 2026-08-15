@@ -72,7 +72,7 @@ function recoverYahooValidationResult(err: unknown): unknown {
 }
 
 /**
- * {@link StockProvider} backed by Yahoo Finance via the `yahoo-finance2` package (v3).
+ * {@link StockProvider} backed by Yahoo Finance via the `yahoo-finance2` package (v4).
  * Requires no API key and is the default provider (`STOCK_PROVIDER=yahoo`).
  *
  * Detects upstream HTTP 429 responses and:

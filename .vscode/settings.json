@@ -40,5 +40,6 @@
     "esbenp.prettier-vscode",
     "humao.rest-client",
     "github.vscode-pull-request-github"
-  ]
+  ],
+  "codeQL.githubDatabase.download": "never"
 }

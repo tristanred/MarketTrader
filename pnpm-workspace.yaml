@@ -1,14 +1,21 @@
 packages:
   - 'packages/*'
   - 'tools/*'
+# Both overrides exist because a build-time dependency pins a vulnerable esbuild
+# and cannot reach the fix within its own range. A single global esbuild override
+# is not possible: the four consumers sit on four different minors
+# (@esbuild-kit ~0.18, vite ^0.25, tsup ^0.27, tsx ~0.28), and forcing one of them
+# across a minor risks breaking the build for no security gain.
 overrides:
-  vite: '6.4.2'
-  ws: '^8.20.1'
-  # @esbuild-kit/core-utils (deprecated, pulled transitively by drizzle-kit)
-  # pins esbuild ~0.18.20, which carries GHSA-67mh-4wv8-2f99. Force the safe,
-  # already-resolved 0.25.x only within that subtree (a global esbuild override
-  # is impossible: tsx/tsup require ~0.27 while vite requires ^0.25).
+  # @esbuild-kit/core-utils (deprecated, pulled transitively by drizzle-kit's
+  # @esbuild-kit/esm-loader) pins esbuild ~0.18.20, which carries
+  # GHSA-67mh-4wv8-2f99. drizzle-kit 0.31.10 is current and still ships this, so
+  # there is no upstream fix to wait for. 0.25.12 is the copy vite already
+  # resolves, so this costs no extra install.
   '@esbuild-kit/core-utils>esbuild': '0.25.12'
+  # tsup depends on esbuild ^0.27, which cannot reach the 0.28.1 that fixes
+  # GHSA-g7r4-m6w7-qqqr. Used only to load tsup.config.ts and bundle the server.
+  'tsup>esbuild': '^0.28.1'
 allowBuilds:
   better-sqlite3: true
   esbuild: true

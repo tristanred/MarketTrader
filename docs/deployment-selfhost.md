@@ -198,6 +198,7 @@ Hits `/api/health`, registers a throwaway user, and makes an authenticated `/api
 | Tail logs | `journalctl -u markettrader -f` |
 | Restart | `sudo systemctl restart markettrader` |
 | What's deployed? | `curl https://markettrader.app/api/version` |
+| Browse the API docs | `https://markettrader.app/docs` |
 | Open a SQL shell | `sudo -u markettrader sqlite3 /var/lib/markettrader/app.db` |
 | Force a backup now | `sudo systemctl start markettrader-backup.service` |
 | List snapshots | `deploy/restore.sh --list` |
@@ -209,6 +210,25 @@ Hits `/api/health`, registers a throwaway user, and makes an authenticated `/api
 ### Changing configuration
 
 Edit `/etc/markettrader/env`, then restart. The full set of variables is documented in `packages/server/src/env.ts` and `.env.example`.
+
+### Changing the nginx site
+
+**Editing `deploy/nginx/markettrader.conf` in the repo does not change the server.** `provision.sh` refuses to overwrite an existing site file on purpose — `certbot --nginx` rewrites the installed copy in place to add the 443 listener and certificate paths, so regenerating it from the repo would silently revert the site to HTTP-only. Unlike the systemd units, deploys don't warn about nginx drift either, because the installed copy legitimately differs (certbot's edits, plus the substituted `server_name`).
+
+So an nginx change is a manual, one-time step: hand-apply the same edit to the installed file, then test and reload.
+
+```bash
+sudo nano /etc/nginx/sites-available/markettrader
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+`nginx -t` before the reload is not optional — a broken config takes the whole site down, and a reload with a bad file leaves the old worker serving until it exits.
+
+### Swagger UI
+
+The API docs are at `https://markettrader.app/docs` — served by the API server, **not** under `/api`. This needs the `location /docs` block from `deploy/nginx/markettrader.conf`; without it `/docs` falls through to the SPA and the catch-all route redirects to `/`. If you provisioned before that block existed, apply it using the manual step above.
+
+Note that this makes the full API schema publicly readable.
 
 ```bash
 sudo nano /etc/markettrader/env && sudo systemctl restart markettrader

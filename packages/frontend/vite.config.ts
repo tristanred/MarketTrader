@@ -26,9 +26,10 @@ export default defineConfig({
     port: 5173,
     host: '0.0.0.0',
     proxy: {
-      // Swagger UI is served by the API server. In production the SPA and API
-      // share an origin so `/docs` resolves naturally; in dev we have to proxy
-      // it explicitly or the SPA's catch-all route would intercept it.
+      // Swagger UI is served by the API server. Both here and in production
+      // it needs an explicit proxy rule, or the SPA's catch-all route
+      // intercepts /docs and redirects to /. The production equivalents are
+      // the `location /docs` blocks in nginx.conf and deploy/nginx/.
       '/docs': {
         target: 'http://localhost:3000',
         changeOrigin: true,

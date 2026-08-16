@@ -23,7 +23,9 @@ const schema = z
     name: z.string().min(1, 'Required').max(100),
     startDate: z.string().min(1, 'Required'),
     endDate: z.string().min(1, 'Required'),
-    startingBalance: z.coerce.number().positive('Must be > 0'),
+    // Explicit input generic: zod v4 types z.coerce.* input as `unknown`, which
+    // would make FormValues (z.input) unusable as react-hook-form field values.
+    startingBalance: z.coerce.number<number>().positive('Must be > 0'),
     allowShortSelling: z.boolean(),
     /**
      * Single bundled toggle: when on, the frontend sends all four backend

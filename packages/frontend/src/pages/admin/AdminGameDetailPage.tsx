@@ -30,7 +30,9 @@ const editSchema = z.object({
   name: z.string().min(1).max(80),
   startDate: z.string().min(1),
   endDate: z.string().min(1),
-  startingBalance: z.coerce.number().positive(),
+  // Explicit input generic: zod v4 types z.coerce.* input as `unknown`, which
+  // would widen every consumer of z.infer/z.input for this field.
+  startingBalance: z.coerce.number<number>().positive(),
   allowShortSelling: z.boolean(),
   allowLimitOrders: z.boolean(),
   allowStopOrders: z.boolean(),

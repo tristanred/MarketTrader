@@ -81,6 +81,7 @@ describe('GET /games/:id/live (WebSocket)', () => {
   let app: FastifyInstance;
   let port: number;
   let token: string;
+  let userId: string;
   let gameId: string;
 
   beforeAll(async () => {
@@ -90,7 +91,7 @@ describe('GET /games/:id/live (WebSocket)', () => {
     app = await buildApp({ db, provider, logger: false, disablePoller: true, leaderboardThrottleMs: 0 });
     await app.listen({ port: 0, host: '127.0.0.1' });
     port = (app.server.address() as AddressInfo).port;
-    ({ token } = await registerUser(app, 'wsuser1'));
+    ({ token, userId } = await registerUser(app, 'wsuser1'));
     ({ id: gameId } = await createActiveGame(app, token));
   });
 
@@ -126,6 +127,16 @@ describe('GET /games/:id/live (WebSocket)', () => {
       { expiresIn: '7d' },
     );
     const ws = connectWs(port, gameId, refreshToken);
+    const code = await waitForClose(ws);
+    expect(code).toBe(1008);
+  });
+
+  it('closes with code 1008 when the token carries no type claim', async () => {
+    // Shape of every access token minted before the type claim existed. Names
+    // the real member so game membership cannot be what rejects it — the
+    // missing type claim has to be, and an unstamped token fails closed.
+    const untyped = app.jwt.sign({ id: userId, username: 'wsuser1' }, { expiresIn: '15m' });
+    const ws = connectWs(port, gameId, untyped);
     const code = await waitForClose(ws);
     expect(code).toBe(1008);
   });

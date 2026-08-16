@@ -5,6 +5,7 @@ import { schema } from '../db/index.js';
 import type { GameClientRegistry } from './registry.js';
 import type { AchievementEngine } from '../achievements/engine.js';
 import type { WsClientEvent, WsSubscribeEvent } from '@markettrader/shared';
+import { ACCESS_TOKEN_TYPE } from '../plugins/jwt.js';
 
 /**
  * Registers the WebSocket upgrade route for live game events.
@@ -34,11 +35,12 @@ export function liveRoute(db: Db, registry: GameClientRegistry, engine: Achievem
           return;
         }
 
-        // Reject the long-lived (7-day) refresh token as a socket credential —
-        // only the 15-minute access token should authenticate connections. The
+        // Only the 15-minute access token may authenticate a connection. The
         // token rides in the URL query string (proxy logs, browser history), so
-        // a refresh token there would be a long-lived credential in a bad place.
-        if (payload.type === 'refresh') {
+        // the long-lived (7-day) refresh token there would be a durable
+        // credential in a bad place. Demanding a positive `access` claim rather
+        // than denying `refresh` also fails closed on an unstamped token.
+        if (payload.type !== ACCESS_TOKEN_TYPE) {
           socket.close(1008, 'Invalid token');
           return;
         }

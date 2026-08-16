@@ -1,4 +1,5 @@
 import { eq, inArray } from 'drizzle-orm';
+import { SpanStatusCode } from '@opentelemetry/api';
 import type {
   MarketState,
   StockDetails,
@@ -12,6 +13,7 @@ import { schema } from '../db/index.js';
 import type { StockProvider } from './interface.js';
 import { StockProviderError } from './interface.js';
 import { env } from '../env.js';
+import { meters, tracer } from '../observability/telemetry.js';
 
 /**
  * How many leading search rows get a live change%. Covers {@link SymbolSearch}'s
@@ -61,6 +63,48 @@ export class CachedProvider implements StockProvider {
     private readonly inner: StockProvider,
   ) {}
 
+  /**
+   * Wraps a call to the wrapped provider in a span and records its latency and
+   * outcome. Rate limiting gets its own `outcome` value rather than being
+   * lumped in with `error`: it is the failure mode this app actually hits, and
+   * the one whose rate should drive a dashboard.
+   *
+   * The undici instrumentation already spans the raw HTTP request; this layer
+   * adds the thing that request cannot know — which provider operation it was
+   * serving, and whether the surrounding retry/fallback logic ended up happy.
+   */
+  private async upstream<T>(
+    operation: string,
+    symbol: string | undefined,
+    call: () => Promise<T>,
+  ): Promise<T> {
+    const provider = env.STOCK_PROVIDER;
+    const startedAt = Date.now();
+
+    return tracer.startActiveSpan(
+      `provider.${operation}`,
+      { attributes: { 'provider.name': provider, ...(symbol && { 'provider.symbol': symbol }) } },
+      async (span) => {
+        let outcome = 'ok';
+        try {
+          return await call();
+        } catch (err) {
+          outcome =
+            err instanceof StockProviderError && err.code === 'RATE_LIMITED'
+              ? 'rate_limited'
+              : 'error';
+          span.recordException(err instanceof Error ? err : new Error(String(err)));
+          span.setStatus({ code: SpanStatusCode.ERROR });
+          throw err;
+        } finally {
+          meters.providerRequests.add(1, { provider, operation, outcome });
+          meters.providerDuration.record(Date.now() - startedAt, { provider, operation });
+          span.end();
+        }
+      },
+    );
+  }
+
   async getQuote(symbol: string): Promise<StockQuote> {
     const [cached] = await this.db
       .select()
@@ -72,6 +116,7 @@ export class CachedProvider implements StockProvider {
     const ageMs = Date.now() - cachedAt;
 
     if (cached && ageMs < env.STOCK_CACHE_TTL_MS) {
+      meters.quoteCacheLookups.add(1, { result: 'hit' });
       const marketState = this.marketStateBySymbol.get(symbol);
       return {
         symbol,
@@ -87,9 +132,11 @@ export class CachedProvider implements StockProvider {
       };
     }
 
+    meters.quoteCacheLookups.add(1, { result: 'miss' });
+
     let quote: StockQuote;
     try {
-      quote = await this.inner.getQuote(symbol);
+      quote = await this.upstream('getQuote', symbol, () => this.inner.getQuote(symbol));
     } catch (err) {
       // Graceful degradation: if the upstream is rate-limited and we have a
       // not-too-old cache row, serve that with stale:true. Older rows or other
@@ -100,6 +147,9 @@ export class CachedProvider implements StockProvider {
         cached &&
         ageMs <= env.STOCK_STALE_PRICE_MAX_AGE_MS
       ) {
+        // Serving a stale price is the app degrading, not failing. It needs its
+        // own bucket — folding it into `hit` would hide a rate-limit outage.
+        meters.quoteCacheLookups.add(1, { result: 'stale' });
         const marketState = this.marketStateBySymbol.get(symbol);
         return {
           symbol,
@@ -162,7 +212,9 @@ export class CachedProvider implements StockProvider {
     if (hit && Date.now() - hit.fetchedAt < env.STOCK_HISTORY_CACHE_TTL_MS) {
       return hit.bars;
     }
-    const bars = await this.inner.getHistory(symbol, range);
+    const bars = await this.upstream('getHistory', symbol, () =>
+      this.inner.getHistory(symbol, range),
+    );
     this.historyCache.set(key, { bars, fetchedAt: Date.now() });
     return bars;
   }
@@ -176,7 +228,7 @@ export class CachedProvider implements StockProvider {
 
     let details: StockDetails;
     try {
-      details = await this.inner.getDetails(symbol);
+      details = await this.upstream('getDetails', symbol, () => this.inner.getDetails(symbol));
     } catch (err) {
       if (
         err instanceof StockProviderError &&
@@ -207,7 +259,9 @@ export class CachedProvider implements StockProvider {
     } else {
       // A search-path rate-limit must still surface as 429 — keep this OUTSIDE
       // the best-effort enrichment try/catch.
-      base = await this.inner.searchSymbols(query);
+      base = await this.upstream('searchSymbols', undefined, () =>
+        this.inner.searchSymbols(query),
+      );
       this.searchCache.set(key, { results: base, fetchedAt: Date.now() });
     }
 

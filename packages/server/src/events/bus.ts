@@ -1,5 +1,6 @@
 import type { FastifyBaseLogger } from 'fastify';
 import type { DomainEvent, DomainEventType, DomainEventOf } from './types.js';
+import { meters } from '../observability/telemetry.js';
 
 export type DomainEventHandler<T extends DomainEventType> = (
   event: DomainEventOf<T>,
@@ -43,6 +44,10 @@ export class EventBus {
    * without waiting for the engine.
    */
   async emit(event: DomainEvent): Promise<void> {
+    // Counted before the early return, so the metric reflects what the app
+    // published rather than what happened to have a listener.
+    meters.eventsEmitted.add(1, { type: event.type });
+
     const set = this.handlers.get(event.type);
     if (!set || set.size === 0) return;
     const runs = [...set].map(async (h) => {

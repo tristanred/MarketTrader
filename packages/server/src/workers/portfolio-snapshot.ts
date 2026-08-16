@@ -38,6 +38,7 @@ export function startPortfolioSnapshotWorker(deps: {
 }): IntervalWorker {
   const intervalMs = deps.intervalMs ?? env.PORTFOLIO_SNAPSHOT_INTERVAL_MS;
   return startIntervalWorker(
+    'portfolio-snapshot',
     () => runPortfolioSnapshotTick(deps),
     intervalMs,
     (err) => deps.logger?.error({ err }, 'portfolio-snapshot tick failed'),

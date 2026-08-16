@@ -20,3 +20,7 @@ allowBuilds:
   better-sqlite3: true
   esbuild: true
   argon2: true
+  # Pulled in by @opentelemetry/otlp-transformer. Its install script only
+  # matters for the protobuf-encoded OTLP exporters; the `-http` exporters this
+  # project uses encode as JSON, so the script is dead weight.
+  protobufjs: false

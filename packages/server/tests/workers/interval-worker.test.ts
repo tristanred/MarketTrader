@@ -16,7 +16,7 @@ describe('startIntervalWorker', () => {
       events.push('tick-end');
     };
 
-    const worker = startIntervalWorker(tick, 5);
+    const worker = startIntervalWorker('test-inflight', tick, 5);
     // Let the interval fire so a tick is in flight (blocked on the gate).
     await sleep(25);
     expect(events).toEqual(['tick-start']);
@@ -39,14 +39,14 @@ describe('startIntervalWorker', () => {
 
   it('stop() resolves immediately when no tick is in flight', async () => {
     const tick = vi.fn(async () => {});
-    const worker = startIntervalWorker(tick, 1000);
+    const worker = startIntervalWorker('test-idle', tick, 1000);
     await worker.stop();
     expect(tick).not.toHaveBeenCalled();
   });
 
   it('runs no further ticks after stop()', async () => {
     const tick = vi.fn(async () => {});
-    const worker = startIntervalWorker(tick, 10);
+    const worker = startIntervalWorker('test-stopped', tick, 10);
     await sleep(25);
     await worker.stop();
     const callsAtStop = tick.mock.calls.length;
@@ -64,7 +64,7 @@ describe('startIntervalWorker', () => {
       await sleep(30);
       inFlight--;
     };
-    const worker = startIntervalWorker(tick, 5);
+    const worker = startIntervalWorker('test-reentrancy', tick, 5);
     await sleep(80);
     await worker.stop();
     expect(maxConcurrent).toBe(1);
@@ -78,7 +78,7 @@ describe('startIntervalWorker', () => {
       calls++;
       throw err;
     };
-    const worker = startIntervalWorker(tick, 10, (e) => {
+    const worker = startIntervalWorker('test-onerror', tick, 10, (e: unknown) => {
       caught = e;
     });
     await sleep(45);

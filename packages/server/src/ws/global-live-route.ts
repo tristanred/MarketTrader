@@ -12,7 +12,11 @@ export function globalLiveRoute(registry: GlobalClientRegistry) {
   return async function (app: FastifyInstance): Promise<void> {
     app.get<{ Querystring: { token?: string } }>(
       '/ws/live',
-      { websocket: true, config: { rateLimit: { max: 20, timeWindow: '1 minute' } } },
+      // otel:false — see the note in live-route.ts; the upgrade is long-lived.
+      {
+        websocket: true,
+        config: { rateLimit: { max: 20, timeWindow: '1 minute' }, otel: false },
+      },
       async (socket, request: FastifyRequest<{ Querystring: { token?: string } }>) => {
         const { token } = request.query;
         if (!token) {

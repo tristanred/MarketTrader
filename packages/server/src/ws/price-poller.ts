@@ -106,6 +106,7 @@ export function startPricePoller(
   registry: GameClientRegistry,
 ): IntervalWorker {
   return startIntervalWorker(
+    'price-poller',
     () => pollPrices(db, provider, registry),
     POLL_INTERVAL_MS,
   );

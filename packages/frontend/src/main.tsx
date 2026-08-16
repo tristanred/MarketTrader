@@ -24,3 +24,11 @@ createRoot(rootEl).render(
     <App />
   </StrictMode>,
 );
+
+// Loaded dynamically, and after render, so the OTel browser SDK lands in its own
+// chunk instead of the entry bundle — it is a substantial download and nothing
+// on the critical path needs it. Failure to load is deliberately swallowed:
+// telemetry must never be the reason the app doesn't start.
+void import('./observability/otel')
+  .then(({ initBrowserTelemetry }) => initBrowserTelemetry())
+  .catch(() => {});

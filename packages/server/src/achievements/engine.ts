@@ -7,6 +7,7 @@ import type { DomainEvent, DomainEventType } from '../events/types.js';
 import type { GameClientRegistry } from '../ws/registry.js';
 import type { SystemSettingsService } from '../services/system-settings.js';
 import type { AchievementContext, AnyAchievementDefinition } from './define.js';
+import { meters } from '../observability/telemetry.js';
 
 /**
  * Resolves a `gameId` from any {@link DomainEvent}. The `engine.tick` event
@@ -320,6 +321,12 @@ export class AchievementEngine {
     }
 
     if (unlocked) {
+      // Counted here rather than per-op: all three branches converge on this
+      // guard, and it is the only place a genuine unlock transition is known
+      // (the DB writes are conditional on `unlockedAt IS NULL`, so a repeat
+      // call updates nothing and must not count).
+      meters.achievementsUnlocked.add(1, { achievement: def.key, rarity: def.rarity });
+
       // Reuse the same `now` so the DB row and the WS payload agree.
       this.registry.broadcast(gameId, {
         event: 'achievement_unlocked',

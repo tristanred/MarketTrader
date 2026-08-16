@@ -240,3 +240,52 @@ const db = DATABASE_URL.startsWith('postgres')
 - `/version` is public, matching `/health`. It exposes a version and a commit SHA to anyone; `/health` and the Swagger UI at `/docs` are already public, so this adds little, and being able to check a deploy with one curl is the point.
 
 **See also:** the "Versioning and Releases" section of `CLAUDE.md` for the operator flow.
+
+---
+
+## ADR-015: OpenTelemetry for Traces, Metrics, and Logs; Sentry Retired
+
+**Date:** 2026-08-15
+**Status:** Accepted
+**Supersedes:** the Sentry integration introduced alongside ADR-014
+
+**Decision:** The app emits OpenTelemetry traces, metrics, and logs over OTLP to an OpenTelemetry Collector, from both the server and the browser. Instrumentation is **patch-free by design** — no module monkey-patching anywhere. Sentry is removed. All telemetry is disabled unless `OTEL_EXPORTER_OTLP_ENDPOINT` is set.
+
+**Context:** The app runs a real multi-month tournament on a single self-hosted box (ADR-013), and the only observability was pino to journald plus Sentry 5xx capture. There were no metrics and no traces, so questions like "why was that trade slow?", "how often is Yahoo rate-limiting us?", and "how many WebSocket clients are actually connected?" could only be answered by SSHing in and reading logs.
+
+**Why patch-free is the load-bearing decision.** The standard OTel Node setup patches modules as they load, which requires the SDK to start before any instrumented module is imported. Under ESM that needs an `import-in-the-middle` loader hook, and under a **bundler** it needs a separate entry point launched with `node --import ...` — because esbuild hoists every external `import` to the top of the output file, so no import ordering inside `src/` can win. That would have meant editing the `dev` script, `Dockerfile.server`'s `CMD`, **and** `deploy/systemd/markettrader.service`'s `ExecStart`. The last one requires a `provision.sh` re-run that `deploy.sh` only *warns* about, so forgetting it yields a production process that silently emits nothing.
+
+None of it is necessary here, because every signal has a real registration point:
+
+| Concern | Mechanism | Patching |
+|---|---|---|
+| HTTP server spans, route names, context extraction | `@fastify/otel`, registered as an ordinary Fastify plugin | no |
+| Outbound HTTP spans | `@opentelemetry/instrumentation-undici` via `diagnostics_channel` | no |
+| Log ↔ trace correlation | a pino `mixin` reading the active span | no |
+| Logs → OTLP | a pino `transport` target | no |
+| Domain metrics and spans | explicit calls in our own code | no |
+
+The undici piece holds for a structural reason: every outbound call in this codebase is global `fetch` (`providers/alpaca.ts`, `providers/market-status/alpaca.ts`, and `yahoo-finance2` v3 internally). `fetch` is a global, not a module import, so no patching scheme *could* reach it — `diagnostics_channel` is the only mechanism, and it behaves identically under `tsx`, under tsup's bundle, and in Docker.
+
+The cost is nil: `instrumentation-http` would only have added a lower-level span beneath the Fastify one, and `@fastify/otel` supersedes `instrumentation-fastify` outright. Route templates come out *better*, because the plugin reads Fastify's own routing table instead of inferring it.
+
+**If a future instrumentation genuinely requires patching**, it will need the `--import` bootstrap described above, including the systemd change. Weigh that against writing a manual span first.
+
+**Alternatives considered:**
+- **`@opentelemetry/auto-instrumentations-node`** — rejected. ~40 transitive packages instrumenting libraries this project does not use, right after a Dependabot cleanup, and it drags in the patching bootstrap for no coverage this app needs.
+- **Prometheus `/metrics` scrape endpoint on the server** — rejected. Push-to-collector is one pipeline for all three signals; a scrape endpoint would be a second, separate path with its own exposure and firewall story.
+- **Keeping Sentry alongside OTel** — rejected as duplicate error reporting with two systems to run. See the consequence below.
+
+**Two implementation traps worth recording:**
+
+1. **Metric instruments must be created lazily.** `metrics.getMeter()` returns whatever provider is registered *at call time*, and unlike the trace API there is no proxy that back-fills a real provider later. Because `observability/telemetry.ts` is imported through `app.ts` before `initTelemetry()` runs, building instruments at module load binds every one of them to the no-op meter for the life of the process — and every metric silently reads zero. `telemetry.ts` therefore defers construction to first use; `tests/observability/telemetry.test.ts` encodes the import order that broke.
+2. **The pino OTLP transport runs in a worker thread** and inherits nothing from the in-process SDK, so the resource attributes must be passed to it explicitly. Otherwise every log record arrives tagged `service_name="unknown_service"` and cannot be joined to its trace.
+
+**Consequences:**
+- **No error alerting until a Grafana/Prometheus server exists.** Errors are not lost — they stay in journald with trace ids attached — but nothing pages anyone. This is the accepted cost of retiring Sentry and the strongest reason to stand up the collector promptly.
+- Retiring Sentry fixed a latent bug in the code it replaced: the old `attachSentry` hook read `reply.statusCode` in `onError`, where Fastify has not applied the status yet and it is still 200. Its `>= 400 ? … : 500` fallback therefore classified *every* thrown error as a 5xx, 4xx validation failures included. `attachErrorCapture` reads `err.statusCode` first.
+- `/otel` is a public, unauthenticated write path into the telemetry store — the SPA posts to it before anyone signs in. The nginx blocks cap body size and rate; removing those caps makes it a trivial flood vector.
+- The nginx change does not deploy itself (see "The nginx site does not deploy itself" in `CLAUDE.md`). Browser telemetry 404s silently until the location block is hand-applied.
+- `vite.config.ts` now sets `envDir` to the workspace root so the single root `.env` feeds both packages. Only `VITE_`-prefixed variables reach the bundle, so server secrets in that file are not exposed.
+
+**See also:** `docs/observability.md` for the operator runbook and the metric catalogue.

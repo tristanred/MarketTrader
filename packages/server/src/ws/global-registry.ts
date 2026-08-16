@@ -1,5 +1,6 @@
 import type { WebSocket } from 'ws';
 import type { LiveWsMessage } from '@markettrader/shared';
+import { meters } from '../observability/telemetry.js';
 
 /**
  * Per-app-instance registry of clients connected to the global `/ws/live`
@@ -14,11 +15,14 @@ export class GlobalClientRegistry {
   }
 
   add(userId: string, socket: WebSocket): void {
+    // See the note in registry.ts: only a socket that is actually new moves the
+    // gauge, otherwise a reconnect double-counts.
+    if (!this.clients.has(socket)) meters.wsClients.add(1, { scope: 'global' });
     this.clients.set(socket, { userId });
   }
 
   remove(socket: WebSocket): void {
-    this.clients.delete(socket);
+    if (this.clients.delete(socket)) meters.wsClients.add(-1, { scope: 'global' });
   }
 
   broadcast(message: LiveWsMessage): void {

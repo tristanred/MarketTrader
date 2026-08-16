@@ -74,13 +74,23 @@ Browser (React SPA)
     │
     ├── REST (JSON) ────────────→ Fastify Server
     │                                   │
-    └── WebSocket ──────────────────────┤
-                                        ├── PostgreSQL / SQLite (Drizzle)
-                                        └── Stock Price Provider (pluggable)
-                                                ├── Yahoo Finance (default)
-                                                ├── Alpaca Markets
-                                                └── Polygon.io
+    ├── WebSocket ──────────────────────┤
+    │                                   ├── PostgreSQL / SQLite (Drizzle)
+    │                                   ├── Stock Price Provider (pluggable)
+    │                                   │       ├── Yahoo Finance (default)
+    │                                   │       ├── Alpaca Markets
+    │                                   │       └── Polygon.io
+    │                                   │
+    └── OTLP /otel ─────────→ OpenTelemetry Collector ←── OTLP (traces/metrics/logs)
+                                        │
+                                        └── Prometheus / Tempo / Loki → Grafana
 ```
+
+Both the SPA and the server emit OpenTelemetry over OTLP. The browser's path goes through a
+relative `/otel` proxied by nginx (Vite in dev), and trace context propagates from the browser
+into the server because API calls are same-origin — a single trace covers a click through to the
+upstream price fetch. All of it is inert unless a collector endpoint is configured. See
+`docs/observability.md` and ADR-015.
 
 ---
 

@@ -13,6 +13,10 @@ export async function registerRateLimit(
   app: FastifyInstance,
   opts: { disabled?: boolean } = {},
 ): Promise<void> {
+  // No keyGenerator on purpose. The default is `req.ip`, which is only as
+  // trustworthy as Fastify's `trustProxy` — bounded by TRUST_PROXY (see env.ts).
+  // Keying on X-Real-IP instead would be strictly weaker: that header is just as
+  // client-settable whenever the app is reached without going through the proxy.
   await app.register(fastifyRateLimit, {
     global: false, // opt-in per route; avoids rate-limiting /health and future public endpoints
     // `allowList: () => true` bypasses the limiter for every request, including

@@ -1,8 +1,11 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
-import { createTestApp, createTestAppWithDb } from './helpers/app.js';
+import { createTestApp, createTestAppWithDb, createTestDb } from './helpers/app.js';
 import { schema } from '../src/db/index.js';
+import { buildApp } from '../src/app.js';
+import { MockStockProvider } from './helpers/mock-provider.js';
+import { MockMarketStatusProvider } from './helpers/mock-market-status.js';
 
 describe('POST /auth/register', () => {
   let app: FastifyInstance;
@@ -173,6 +176,76 @@ describe('POST /auth/login', () => {
       payload: {},
     });
     expect(res.statusCode).toBe(400);
+  });
+});
+
+describe('POST /auth/login — per-account throttle', () => {
+  let app: FastifyInstance;
+
+  const login = (username: string, password: string) =>
+    app.inject({ method: 'POST', url: '/auth/login', payload: { username, password } });
+
+  beforeAll(async () => {
+    // The IP limiter stays off so these assert the account throttle alone; it
+    // would otherwise fire first, at 5/min.
+    app = await buildApp({
+      logger: false,
+      db: await createTestDb(),
+      provider: new MockStockProvider(),
+      marketStatusProvider: new MockMarketStatusProvider(),
+      disablePoller: true,
+      disableRateLimit: true,
+      loginThrottle: { maxAttempts: 3, windowMs: 60_000, lockoutMs: 300_000 },
+      leaderboardThrottleMs: 0,
+    });
+    for (const username of ['throttle-a', 'throttle-b']) {
+      await app.inject({
+        method: 'POST',
+        url: '/auth/register',
+        payload: { username, password: 'password123' },
+      });
+    }
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  it('answers 429 with Retry-After once the account hits the threshold', async () => {
+    for (let i = 0; i < 3; i++) {
+      expect((await login('throttle-a', 'wrong')).statusCode).toBe(401);
+    }
+
+    const throttled = await login('throttle-a', 'wrong');
+    expect(throttled.statusCode).toBe(429);
+    expect(Number(throttled.headers['retry-after'])).toBe(300);
+
+    // Still throttled even with the correct password — the point is that the
+    // attacker cannot keep guessing, so the check runs before verification.
+    expect((await login('throttle-a', 'password123')).statusCode).toBe(429);
+  });
+
+  it('leaves other accounts alone', async () => {
+    expect((await login('throttle-b', 'password123')).statusCode).toBe(200);
+  });
+
+  it('clears the count after a successful login', async () => {
+    expect((await login('throttle-b', 'wrong')).statusCode).toBe(401);
+    expect((await login('throttle-b', 'wrong')).statusCode).toBe(401);
+    expect((await login('throttle-b', 'password123')).statusCode).toBe(200);
+
+    // Two more failures would have tripped the threshold had it not reset.
+    expect((await login('throttle-b', 'wrong')).statusCode).toBe(401);
+    expect((await login('throttle-b', 'wrong')).statusCode).toBe(401);
+    expect((await login('throttle-b', 'password123')).statusCode).toBe(200);
+  });
+
+  it('counts failures for usernames that do not exist', async () => {
+    // Behaving differently here would make the throttle an existence oracle.
+    for (let i = 0; i < 3; i++) {
+      expect((await login('throttle-ghost', 'wrong')).statusCode).toBe(401);
+    }
+    expect((await login('throttle-ghost', 'wrong')).statusCode).toBe(429);
   });
 });
 

@@ -39,11 +39,12 @@ try {
   await runMigrations();
   const app = await buildApp({
     logger: loggerOptions,
-    trustProxy: true,
+    trustProxy: env.TRUST_PROXY,
     // In test mode the e2e suite burns through /auth/register's 10/min cap
     // when running multiple specs back-to-back. The infra is already in place
     // (disableRateLimit → allowList) — flip it on for tests only.
     disableRateLimit: env.NODE_ENV === 'test',
+    loginThrottle: { disabled: env.NODE_ENV === 'test' },
   });
   await app.listen({ port: env.PORT, host: '0.0.0.0' });
 

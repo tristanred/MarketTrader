@@ -46,6 +46,8 @@ By default it forwards SSH only from `192.168.2.0/24` — pass `--lan-cidr` if y
 
 `/etc/markettrader/env` is **never regenerated** on a re-run. Rotating `JWT_SECRET` would invalidate every active session, so it's written once and left alone.
 
+That also means new variables never reach an existing install. `TRUST_PROXY` was added after the first provision runs; it defaults to `loopback`, which is correct here, so hosts provisioned earlier behave correctly without the line. Add it explicitly only if something other than local nginx fronts the app.
+
 ## 2. DNS and TLS
 
 TLS is not optional. The refresh cookie is issued with the `Secure` flag whenever `NODE_ENV=production` (`packages/server/src/routes/auth.ts`), so over plain HTTP browsers discard it and every session dies the moment the 15-minute access token expires.
@@ -227,6 +229,21 @@ The result: the repo copy is documentation of intent, and the installed copy is 
 
 ```bash
 /opt/markettrader/deploy/nginx-check.sh
+```
+
+It only compares `location` directives, though. A change *inside* an existing block — a
+`proxy_set_header` line, a timeout, a rewrite — is invisible to it, so those have to be
+tracked by hand.
+
+**Outstanding manual change: `X-Forwarded-For`.** Every proxy block in the repo site now
+sends `proxy_set_header X-Forwarded-For $remote_addr` instead of
+`$proxy_add_x_forwarded_for`. The old form prepends whatever the client sent, letting a
+caller forge the value the app keys its rate limits on. Since this is an edit inside
+existing blocks, neither `deploy.sh` nor `nginx-check.sh` reports it — check the installed
+file and apply it if it still says `$proxy_add_x_forwarded_for`:
+
+```bash
+grep -n 'X-Forwarded-For' /etc/nginx/sites-available/markettrader
 ```
 
 **Applying a change.** Hand-apply the same edit, then test and reload:

@@ -36,9 +36,11 @@ export function LoginPage() {
   const errorMessage =
     login.error instanceof ApiError && login.error.status === 401
       ? 'Invalid username or password'
-      : login.error
-        ? 'Login failed. Try again.'
-        : null;
+      : login.error instanceof ApiError && login.error.status === 429
+        ? 'Too many failed attempts. Try again in a few minutes.'
+        : login.error
+          ? 'Login failed. Try again.'
+          : null;
 
   return (
     <main className="grid min-h-screen bg-bg text-text lg:grid-cols-[3fr_2fr]">

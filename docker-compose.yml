@@ -30,6 +30,11 @@ services:
       PORT: 3000
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost}
       NODE_ENV: production
+      # The `web` container proxies over the compose bridge, so it is not a
+      # loopback peer and the server's default would collapse every client into
+      # one rate-limit bucket. Port 3000 is only `expose`d, never published, so
+      # nothing outside the bridge can reach the app to forge the header.
+      TRUST_PROXY: ${TRUST_PROXY:-uniquelocal}
       SENTRY_DSN: ${SENTRY_DSN:-}
       STOCK_PROVIDER: ${STOCK_PROVIDER:-yahoo}
       ALPACA_API_KEY: ${ALPACA_API_KEY:-}

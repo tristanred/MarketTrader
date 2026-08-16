@@ -8,6 +8,7 @@ import { schema } from '../db/index.js';
 import { isUniqueConstraintError } from '../db/errors.js';
 import { env } from '../env.js';
 import { ADMIN_GROUP_ID } from '../constants/groups.js';
+import type { FailedLoginTracker } from '../services/failed-login.js';
 
 const REFRESH_COOKIE_PATH = '/auth/refresh';
 const REFRESH_TOKEN_MAX_AGE_S = 7 * 24 * 60 * 60;
@@ -52,7 +53,9 @@ const loginSchema = z.object({
  * - `POST /auth/refresh`  — exchange the refresh-token cookie for a new access token.
  * - `POST /auth/logout`   — clear the refresh-token cookie (idempotent, no auth required).
  *
- * Rate limits are applied per-route to slow brute-force attempts.
+ * Rate limits are applied per-route to slow brute-force attempts. Login is
+ * additionally throttled per account by {@link FailedLoginTracker}, which does
+ * not depend on `request.ip` and so survives an attacker rotating addresses.
  * Passwords are hashed with argon2; never bcrypt.
  */
 /**
@@ -70,10 +73,18 @@ async function loadUserGroups(db: Db, userId: string): Promise<string[]> {
   return rows.map((r) => r.name);
 }
 
-export function authRoutes(db: Db) {
+export function authRoutes(db: Db, loginThrottle: FailedLoginTracker) {
   return async function (rawApp: FastifyInstance): Promise<void> {
     const app = rawApp.withTypeProvider<ZodTypeProvider>();
     const { users, userGroups } = schema;
+
+    // Logged once when the throttle engages, not on every subsequent rejection —
+    // a locked account under sustained attack would otherwise flood the log.
+    const recordFailedLogin = (username: string): void => {
+      if (loginThrottle.recordFailure(username)) {
+        app.log.warn({ username }, 'login throttled after repeated failures');
+      }
+    };
 
     app.post('/auth/register', {
       config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
@@ -151,6 +162,14 @@ export function authRoutes(db: Db) {
     }, async (request, reply) => {
       const { username, password } = request.body;
 
+      const retryAfterMs = loginThrottle.retryAfterMs(username);
+      if (retryAfterMs !== null) {
+        reply.header('Retry-After', Math.ceil(retryAfterMs / 1000));
+        return reply.status(429).send({
+          error: 'Too many failed login attempts for this account. Try again later.',
+        });
+      }
+
       const [user] = await db
         .select({
           id: users.id,
@@ -162,18 +181,24 @@ export function authRoutes(db: Db) {
         .where(eq(users.username, username))
         .limit(1);
 
+      // Unknown usernames are counted too — skipping them would make the
+      // throttle an account-existence oracle.
       if (!user) {
+        recordFailedLogin(username);
         return reply.status(401).send({ error: 'Invalid credentials' });
       }
 
       const valid = await verify(user.passwordHash, password);
       if (!valid) {
+        recordFailedLogin(username);
         return reply.status(401).send({ error: 'Invalid credentials' });
       }
 
       if (user.disabled) {
         return reply.status(403).send({ error: 'Account disabled' });
       }
+
+      loginThrottle.reset(username);
 
       const accessToken = app.jwt.sign(
         { id: user.id, username: user.username },

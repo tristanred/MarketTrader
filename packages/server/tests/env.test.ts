@@ -1,10 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { validateProductionEnv, type ProductionEnvCheck } from '../src/env.js';
+import { validateProductionEnv, parseTrustProxy, type ProductionEnvCheck } from '../src/env.js';
 
 const valid: ProductionEnvCheck = {
   JWT_SECRET: 'a'.repeat(32),
   CORS_ORIGIN: 'https://prod.example.com',
   DATABASE_URL: 'postgres://user:pw@db:5432/markettrader',
+  TRUST_PROXY: 'loopback',
   STOCK_PROVIDER: 'yahoo',
   MARKET_STATUS_PROVIDER: 'yahoo',
   ALPACA_API_KEY_ID: '',
@@ -98,12 +99,26 @@ describe('validateProductionEnv', () => {
     ).not.toThrow();
   });
 
+  it('rejects TRUST_PROXY=true', () => {
+    // Trusting every hop puts request.ip under client control, which is the
+    // default rate-limit key — it lifts the cap on every throttled route.
+    expect(() => validateProductionEnv({ ...valid, TRUST_PROXY: true }))
+      .toThrow(/TRUST_PROXY/);
+  });
+
+  it('accepts a bounded TRUST_PROXY', () => {
+    for (const trust of ['loopback', 'uniquelocal', '10.0.0.0/8', 1, false] as const) {
+      expect(() => validateProductionEnv({ ...valid, TRUST_PROXY: trust })).not.toThrow();
+    }
+  });
+
   it('reports all errors at once', () => {
     expect(() =>
       validateProductionEnv({
         JWT_SECRET: 'x',
         CORS_ORIGIN: 'http://localhost:5173',
         DATABASE_URL: ':memory:',
+        TRUST_PROXY: 'loopback',
         STOCK_PROVIDER: 'alpaca',
         MARKET_STATUS_PROVIDER: 'yahoo',
         ALPACA_API_KEY_ID: '',
@@ -111,6 +126,51 @@ describe('validateProductionEnv', () => {
         SENTRY_DSN: '',
       }),
     ).toThrow(/JWT_SECRET[\s\S]*CORS_ORIGIN[\s\S]*DATABASE_URL[\s\S]*ALPACA/);
+  });
+});
+
+describe('parseTrustProxy', () => {
+  it('treats false and empty as trusting nothing', () => {
+    expect(parseTrustProxy('false')).toBe(false);
+    expect(parseTrustProxy('FALSE')).toBe(false);
+    expect(parseTrustProxy('')).toBe(false);
+    expect(parseTrustProxy('   ')).toBe(false);
+  });
+
+  it('parses true, which validateProductionEnv then refuses in production', () => {
+    expect(parseTrustProxy('true')).toBe(true);
+  });
+
+  it('parses a hop count as a number', () => {
+    expect(parseTrustProxy('1')).toBe(1);
+    expect(parseTrustProxy('0')).toBe(0);
+  });
+
+  it('accepts the proxy-addr presets', () => {
+    expect(parseTrustProxy('loopback')).toBe('loopback');
+    expect(parseTrustProxy('uniquelocal')).toBe('uniquelocal');
+    expect(parseTrustProxy('linklocal')).toBe('linklocal');
+  });
+
+  it('accepts addresses and CIDR subnets, in either family', () => {
+    expect(parseTrustProxy('127.0.0.1')).toBe('127.0.0.1');
+    expect(parseTrustProxy('10.0.0.0/8')).toBe('10.0.0.0/8');
+    expect(parseTrustProxy('::1/128')).toBe('::1/128');
+  });
+
+  it('accepts a mixed comma-separated list and normalizes the spacing', () => {
+    expect(parseTrustProxy('loopback,10.0.0.0/8 , 192.168.1.4')).toBe(
+      'loopback, 10.0.0.0/8, 192.168.1.4',
+    );
+  });
+
+  it('throws at boot on an unparseable value', () => {
+    // proxy-addr compiles its trust list lazily, so without this the process
+    // boots clean and only misresolves request.ip once traffic arrives.
+    expect(() => parseTrustProxy('lookback')).toThrow(/TRUST_PROXY/);
+    expect(() => parseTrustProxy('10.0.0.999')).toThrow(/TRUST_PROXY/);
+    expect(() => parseTrustProxy('10.0.0.0/33')).toThrow(/TRUST_PROXY/);
+    expect(() => parseTrustProxy('loopback,nonsense')).toThrow(/TRUST_PROXY/);
   });
 });
 
@@ -129,5 +189,23 @@ describe('env', () => {
     vi.stubEnv('JWT_SECRET', 'x'.repeat(32));
     const mod = await import('../src/env.js');
     expect(mod.env.STOCK_PROVIDER).toBe('mock');
+  });
+
+  it('defaults TRUST_PROXY to loopback', async () => {
+    // This default is what src/index.ts ships with, and that file has no test
+    // of its own — pin the value here.
+    vi.stubEnv('TRUST_PROXY', undefined);
+    vi.stubEnv('DATABASE_URL', ':memory:');
+    vi.stubEnv('JWT_SECRET', 'x'.repeat(32));
+    const mod = await import('../src/env.js');
+    expect(mod.env.TRUST_PROXY).toBe('loopback');
+  });
+
+  it('reads TRUST_PROXY from the environment', async () => {
+    vi.stubEnv('TRUST_PROXY', 'uniquelocal');
+    vi.stubEnv('DATABASE_URL', ':memory:');
+    vi.stubEnv('JWT_SECRET', 'x'.repeat(32));
+    const mod = await import('../src/env.js');
+    expect(mod.env.TRUST_PROXY).toBe('uniquelocal');
   });
 });

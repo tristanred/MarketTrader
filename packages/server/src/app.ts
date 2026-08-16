@@ -42,6 +42,7 @@ import { EventBus } from './events/bus.js';
 import { AchievementEngine } from './achievements/engine.js';
 import { achievements as achievementDefinitions } from './achievements/definitions/index.js';
 import { achievementsRoutes } from './routes/achievements.js';
+import { FailedLoginTracker, type FailedLoginOptions } from './services/failed-login.js';
 import { adminAchievementsRoutes } from './routes/admin/achievements.js';
 
 export async function buildApp(
@@ -52,6 +53,8 @@ export async function buildApp(
     disablePoller?: boolean;
     /** When true, registers the rate-limit plugin with no real ceiling. Tests only. */
     disableRateLimit?: boolean;
+    /** Overrides for the per-account login throttle. Pass `{ disabled: true }` in tests. */
+    loginThrottle?: FailedLoginOptions;
     /** Override leaderboard broadcast throttle in ms. Defaults to 1000. Pass 0 in tests. */
     leaderboardThrottleMs?: number;
   } = {},
@@ -62,6 +65,7 @@ export async function buildApp(
     marketStatusProvider: injectedMarketStatus,
     disablePoller = false,
     disableRateLimit = false,
+    loginThrottle,
     leaderboardThrottleMs,
     ...fastifyOpts
   } = opts;
@@ -127,7 +131,7 @@ export async function buildApp(
 
   await app.register(healthRoutes);
   await app.register(versionRoutes);
-  await app.register(authRoutes(db));
+  await app.register(authRoutes(db, new FailedLoginTracker(loginThrottle)));
   await app.register(gameRoutes(db, bus));
   await app.register(publicGamesRoutes(db));
   await app.register(stockRoutes(db, provider));

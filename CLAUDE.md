@@ -116,6 +116,11 @@ Every exported function, class, and interface must have a JSDoc comment unless t
 - Password hashing: argon2 via `@node-rs/argon2` (not bcrypt)
 - JWT secret: any string ≥ 32 chars (enforced in production by `validateProductionEnv` in `env.ts`)
 - WebSocket auth: `ws://host/games/:id/live?token=<access_token>`
+- Login brute-force controls are deliberately two independent layers: the per-IP
+  `@fastify/rate-limit` cap (5/min), and `FailedLoginTracker` in
+  `services/failed-login.ts`, which counts failures per *username* so the control
+  holds even when `request.ip` cannot be trusted. Don't remove one on the grounds
+  that the other exists.
 
 ---
 
@@ -141,12 +146,20 @@ ALPACA_API_SECRET_KEY= # required alongside the key ID
 PORT=3000
 CORS_ORIGIN=           # frontend URL (e.g. http://localhost:5173)
 NODE_ENV=development   # development | production | test
+TRUST_PROXY=loopback   # which hops may set X-Forwarded-For; `true` is refused in prod
 ```
+
+`TRUST_PROXY` decides `request.ip`, which is the key every per-route rate limit is
+bucketed on. Trusting every hop (`true`) makes that value client-controlled and lifts
+every cap, so `validateProductionEnv` rejects it. Accepts `false`, a hop count, the
+`loopback`/`linklocal`/`uniquelocal` presets, or a comma-separated IP/CIDR list; parsed
+and validated at boot by `parseTrustProxy` in `env.ts`.
 
 Additional vars rarely need touching (defined in `env.ts`, most also documented
 in `.env.example`): the `MARKET_*` family (hours mode, status provider, extended
 hours), the `STOCK_*_MS` resilience tunables (cache TTLs, rate-limit backoff,
-stale-trade policy), `PENDING_ORDERS_TICK_MS`, `PORTFOLIO_SNAPSHOT_INTERVAL_MS`,
+stale-trade policy), the `LOGIN_*` family (per-account login throttle),
+`PENDING_ORDERS_TICK_MS`, `PORTFOLIO_SNAPSHOT_INTERVAL_MS`,
 and `SENTRY_DSN`. `env.ts` is the source of truth for the full set.
 
 ---

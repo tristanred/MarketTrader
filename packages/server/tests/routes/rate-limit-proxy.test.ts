@@ -14,6 +14,8 @@ async function buildAppWithTrust(trustProxy: boolean | string): Promise<FastifyI
     marketStatusProvider: new MockMarketStatusProvider(),
     disablePoller: true,
     disableRateLimit: false,
+    // Off, so what these assert is the IP-keyed limiter and nothing else.
+    loginThrottle: { disabled: true },
     leaderboardThrottleMs: 0,
     trustProxy,
   });

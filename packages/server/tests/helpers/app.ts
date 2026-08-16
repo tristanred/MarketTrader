@@ -54,6 +54,10 @@ export async function createTestAppWithDb(
     marketStatusProvider: marketStatusProvider ?? new MockMarketStatusProvider(),
     disablePoller: true,
     disableRateLimit: true,
+    // Same reasoning as disableRateLimit: shared fixtures make repeated bad-password
+    // calls that would otherwise trip the per-account throttle. Tests that exercise
+    // it build their own app.
+    loginThrottle: { disabled: true },
     leaderboardThrottleMs: 0,
   });
   return { app, db };

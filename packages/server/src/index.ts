@@ -44,6 +44,7 @@ try {
     // when running multiple specs back-to-back. The infra is already in place
     // (disableRateLimit → allowList) — flip it on for tests only.
     disableRateLimit: env.NODE_ENV === 'test',
+    loginThrottle: { disabled: env.NODE_ENV === 'test' },
   });
   await app.listen({ port: env.PORT, host: '0.0.0.0' });
 

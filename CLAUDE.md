@@ -113,6 +113,15 @@ Every exported function, class, and interface must have a JSDoc comment unless t
 
 - Access token: 15-minute JWT, `Authorization: Bearer <token>` header on REST requests
 - Refresh token: 7-day token, HttpOnly cookie
+- Both are signed with `JWT_SECRET` and separated **only** by a `type` claim (`access` / `refresh`).
+  Mint them through `signAccessToken` / `signRefreshToken` in `plugins/jwt.ts` — never `app.jwt.sign`
+  directly — so the claim cannot be forgotten. Every credential check requires a positive
+  `type === 'access'`, so a token carrying no claim at all fails closed:
+  `verifyAccessToken` (`plugins/jwt.ts`) behind both `authenticate` and `requireAdmin`, and the two
+  WS upgrade handlers. Only `POST /auth/refresh` accepts a `refresh` token.
+- `verifyAccessToken` also re-reads the `users` row on every request, so disabling or deleting an
+  account takes effect on the *next* REST call rather than at the next token expiry. Live
+  WebSockets are not re-checked — authorization there is still decided once at upgrade.
 - Password hashing: argon2 via `@node-rs/argon2` (not bcrypt)
 - JWT secret: any string ≥ 32 chars (enforced in production by `validateProductionEnv` in `env.ts`)
 - WebSocket auth: `ws://host/games/:id/live?token=<access_token>`

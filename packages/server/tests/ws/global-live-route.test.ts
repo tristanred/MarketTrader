@@ -79,6 +79,13 @@ describe('GET /ws/live (global socket)', () => {
     expect(code).toBe(1008);
   });
 
+  it('rejects a token with no type claim (close 1008)', async () => {
+    const untyped = app.jwt.sign({ id: 'whoever', username: 'global-ws-user' }, { expiresIn: '15m' });
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/ws/live?token=${untyped}`);
+    const code = await waitForClose(ws);
+    expect(code).toBe(1008);
+  });
+
   it('accepts a valid token and stays open', async () => {
     const ws = new WebSocket(`ws://127.0.0.1:${port}/ws/live?token=${token}`);
     await waitForOpen(ws);

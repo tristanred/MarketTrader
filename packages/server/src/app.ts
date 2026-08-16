@@ -85,7 +85,7 @@ export async function buildApp(
   await registerHelmet(app);
   await registerSensible(app);
   await registerCookie(app);
-  await registerJwt(app);
+  await registerJwt(app, db);
   await registerRateLimit(app, { disabled: disableRateLimit });
   await registerSwagger(app);
 

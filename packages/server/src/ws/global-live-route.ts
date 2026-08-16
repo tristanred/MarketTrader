@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { GlobalClientRegistry } from './global-registry.js';
+import { ACCESS_TOKEN_TYPE } from '../plugins/jwt.js';
 
 /**
  * Registers `/ws/live` — a global authenticated socket used for app-wide
@@ -26,11 +27,12 @@ export function globalLiveRoute(registry: GlobalClientRegistry) {
           socket.close(1008, 'Invalid token');
           return;
         }
-        // Reject the long-lived (7-day) refresh token as a socket credential —
-        // only the 15-minute access token should authenticate connections. The
+        // Only the 15-minute access token may authenticate a connection. The
         // token rides in the URL query string (proxy logs, browser history), so
-        // a refresh token there would be a long-lived credential in a bad place.
-        if (payload.type === 'refresh') {
+        // the long-lived (7-day) refresh token there would be a durable
+        // credential in a bad place. Demanding a positive `access` claim rather
+        // than denying `refresh` also fails closed on an unstamped token.
+        if (payload.type !== ACCESS_TOKEN_TYPE) {
           socket.close(1008, 'Invalid token');
           return;
         }

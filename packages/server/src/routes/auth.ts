@@ -9,6 +9,7 @@ import { isUniqueConstraintError } from '../db/errors.js';
 import { env } from '../env.js';
 import { ADMIN_GROUP_ID } from '../constants/groups.js';
 import type { FailedLoginTracker } from '../services/failed-login.js';
+import { REFRESH_TOKEN_TYPE, signAccessToken, signRefreshToken } from '../plugins/jwt.js';
 
 const REFRESH_COOKIE_PATH = '/auth/refresh';
 const REFRESH_TOKEN_MAX_AGE_S = 7 * 24 * 60 * 60;
@@ -23,10 +24,7 @@ function issueRefreshCookie(
   reply: FastifyReply,
   payload: { id: string; username: string },
 ): void {
-  const refreshToken = app.jwt.sign(
-    { ...payload, type: 'refresh' as const },
-    { expiresIn: '7d' },
-  );
+  const refreshToken = signRefreshToken(app, payload);
   reply.setCookie('refreshToken', refreshToken, {
     httpOnly: true,
     secure: env.NODE_ENV === 'production',
@@ -134,10 +132,7 @@ export function authRoutes(db: Db, loginThrottle: FailedLoginTracker) {
         return reply.status(500).send({ error: 'Failed to create user' });
       }
 
-      const token = app.jwt.sign(
-        { id: user.id, username: user.username },
-        { expiresIn: '15m' },
-      );
+      const token = signAccessToken(app, { id: user.id, username: user.username });
 
       // Issue the refresh cookie on register too: same-name/path overwrite
       // evicts any leftover cookie from a previous user on this device,
@@ -200,10 +195,7 @@ export function authRoutes(db: Db, loginThrottle: FailedLoginTracker) {
 
       loginThrottle.reset(username);
 
-      const accessToken = app.jwt.sign(
-        { id: user.id, username: user.username },
-        { expiresIn: '15m' },
-      );
+      const accessToken = signAccessToken(app, { id: user.id, username: user.username });
 
       issueRefreshCookie(app, reply, { id: user.id, username: user.username });
 
@@ -247,7 +239,7 @@ export function authRoutes(db: Db, loginThrottle: FailedLoginTracker) {
         return reply.status(401).send({ error: 'Invalid refresh token' });
       }
 
-      if (payload.type !== 'refresh') {
+      if (payload.type !== REFRESH_TOKEN_TYPE) {
         return reply.status(401).send({ error: 'Invalid refresh token' });
       }
 
@@ -267,10 +259,7 @@ export function authRoutes(db: Db, loginThrottle: FailedLoginTracker) {
         return reply.status(401).send({ error: 'Invalid refresh token' });
       }
 
-      const accessToken = app.jwt.sign(
-        { id: current.id, username: current.username },
-        { expiresIn: '15m' },
-      );
+      const accessToken = signAccessToken(app, { id: current.id, username: current.username });
 
       const groups = await loadUserGroups(db, current.id);
       return reply.status(200).send({

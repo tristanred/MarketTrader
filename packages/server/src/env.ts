@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { isIP } from 'node:net';
 
 // TODO(polygon-provider): add 'polygon' once PolygonProvider is implemented
 const VALID_PROVIDERS = ['yahoo', 'alpaca', 'mock'] as const;
@@ -32,6 +33,54 @@ function parsePositiveInt(name: string, raw: string): number {
 
 function parseBool(raw: string): boolean {
   return raw.trim().toLowerCase() === 'true';
+}
+
+/** Named address ranges `proxy-addr` understands, accepted verbatim by Fastify. */
+const TRUST_PROXY_PRESETS = ['loopback', 'linklocal', 'uniquelocal'] as const;
+
+/** True for `10.0.0.0/8`, `::1/128`, and bare addresses in either family. */
+function isAddressOrSubnet(token: string): boolean {
+  const slash = token.indexOf('/');
+  if (slash === -1) return isIP(token) !== 0;
+  const address = token.slice(0, slash);
+  const prefix = token.slice(slash + 1);
+  const family = isIP(address);
+  if (family === 0 || !/^\d+$/.test(prefix)) return false;
+  return Number(prefix) <= (family === 4 ? 32 : 128);
+}
+
+/**
+ * Parses `TRUST_PROXY` into Fastify's `trustProxy` option: `false`, a hop count,
+ * a {@link TRUST_PROXY_PRESETS} name, or a comma-separated list of addresses and
+ * CIDR subnets.
+ *
+ * Anything Fastify would accept but that is not one of those forms is rejected
+ * here rather than at request time. `proxy-addr` compiles its trust list lazily,
+ * so a typo would otherwise boot cleanly and only misresolve `request.ip` under
+ * traffic — which silently keys every rate limit on the wrong value.
+ *
+ * `true` parses (some operators genuinely front the app with a chain they
+ * control) but {@link validateProductionEnv} refuses it in production.
+ */
+export function parseTrustProxy(raw: string): boolean | number | string {
+  const value = raw.trim();
+  if (value === '' || value.toLowerCase() === 'false') return false;
+  if (value.toLowerCase() === 'true') return true;
+  if (/^\d+$/.test(value)) return Number(value);
+
+  const tokens = value.split(',').map((t) => t.trim());
+  const valid = tokens.every(
+    (t) =>
+      (TRUST_PROXY_PRESETS as readonly string[]).includes(t) || isAddressOrSubnet(t),
+  );
+  if (!valid) {
+    throw new Error(
+      `Invalid TRUST_PROXY: "${raw}". Must be true, false, a hop count, ` +
+        `one of ${TRUST_PROXY_PRESETS.join(', ')}, or a comma-separated list of ` +
+        `IP addresses and CIDR subnets.`,
+    );
+  }
+  return tokens.join(', ');
 }
 
 function validatedProvider(): StockProvider {
@@ -101,6 +150,16 @@ export const env = {
   JWT_SECRET: required('JWT_SECRET'),
   PORT: parsePort(optional('PORT', '3000')),
   CORS_ORIGIN: optional('CORS_ORIGIN', 'http://localhost:5173'),
+  /**
+   * Which upstream hops may set `X-Forwarded-For`. Feeds Fastify's `trustProxy`,
+   * which decides `request.ip` — and `request.ip` is the key every per-route
+   * rate limit is bucketed on, so trusting too much makes them all bypassable.
+   *
+   * Defaults to `loopback`: the shipped nginx site proxies from 127.0.0.1. The
+   * container path puts nginx on a bridge network instead and sets
+   * `uniquelocal` in `docker-compose.yml`. See {@link parseTrustProxy}.
+   */
+  TRUST_PROXY: parseTrustProxy(optional('TRUST_PROXY', 'loopback')),
   STOCK_PROVIDER: stockProvider,
   /**
    * Alpaca API key ID (the `APCA-API-KEY-ID` header). Falls back to the legacy
@@ -181,6 +240,27 @@ export const env = {
   ),
 
   /**
+   * Consecutive failed logins for one username before `POST /auth/login` starts
+   * answering 429 for {@link env.LOGIN_LOCKOUT_MS}. Counted per account rather
+   * than per IP so the control survives an attacker rotating source addresses.
+   */
+  LOGIN_MAX_FAILED_ATTEMPTS: parsePositiveInt(
+    'LOGIN_MAX_FAILED_ATTEMPTS',
+    optional('LOGIN_MAX_FAILED_ATTEMPTS', '10'),
+  ),
+  /** Failures older than this stop counting toward the threshold. */
+  LOGIN_FAILURE_WINDOW_MS: parsePositiveInt(
+    'LOGIN_FAILURE_WINDOW_MS',
+    optional('LOGIN_FAILURE_WINDOW_MS', '900000'),
+  ),
+  /**
+   * How long an account stays throttled once the threshold trips. Kept short on
+   * purpose: anyone can trigger it for any username, so a long value would hand
+   * an attacker a denial-of-service against a chosen account.
+   */
+  LOGIN_LOCKOUT_MS: parsePositiveInt('LOGIN_LOCKOUT_MS', optional('LOGIN_LOCKOUT_MS', '900000')),
+
+  /**
    * Sentry DSN. When set, the server initializes @sentry/node and forwards
    * 5xx errors to Sentry. Empty string disables Sentry entirely (no-op).
    */
@@ -191,6 +271,7 @@ export interface ProductionEnvCheck {
   JWT_SECRET: string;
   CORS_ORIGIN: string;
   DATABASE_URL: string;
+  TRUST_PROXY: boolean | number | string;
   STOCK_PROVIDER: string;
   MARKET_STATUS_PROVIDER: string;
   ALPACA_API_KEY_ID: string;
@@ -245,6 +326,17 @@ export function validateProductionEnv(cfg: ProductionEnvCheck = env): void {
   if (cfg.CORS_ORIGIN === 'http://localhost:5173') {
     errors.push(
       'CORS_ORIGIN must be set to your production frontend URL; the dev default is not allowed.',
+    );
+  }
+
+  // Trusting every hop makes request.ip the leftmost X-Forwarded-For entry —
+  // a value the client writes. Since that is the default rate-limit key, it
+  // lifts the cap on every throttled route, login included.
+  if (cfg.TRUST_PROXY === true) {
+    errors.push(
+      'TRUST_PROXY must not be true in production: it trusts every hop, so a client-supplied ' +
+        'X-Forwarded-For becomes request.ip and every per-IP rate limit is bypassable. ' +
+        'Use "loopback", "uniquelocal", a hop count, or an explicit address list.',
     );
   }
 

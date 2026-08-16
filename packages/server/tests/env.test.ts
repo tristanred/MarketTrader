@@ -190,4 +190,22 @@ describe('env', () => {
     const mod = await import('../src/env.js');
     expect(mod.env.STOCK_PROVIDER).toBe('mock');
   });
+
+  it('defaults TRUST_PROXY to loopback', async () => {
+    // This default is what src/index.ts ships with, and that file has no test
+    // of its own — pin the value here.
+    vi.stubEnv('TRUST_PROXY', undefined);
+    vi.stubEnv('DATABASE_URL', ':memory:');
+    vi.stubEnv('JWT_SECRET', 'x'.repeat(32));
+    const mod = await import('../src/env.js');
+    expect(mod.env.TRUST_PROXY).toBe('loopback');
+  });
+
+  it('reads TRUST_PROXY from the environment', async () => {
+    vi.stubEnv('TRUST_PROXY', 'uniquelocal');
+    vi.stubEnv('DATABASE_URL', ':memory:');
+    vi.stubEnv('JWT_SECRET', 'x'.repeat(32));
+    const mod = await import('../src/env.js');
+    expect(mod.env.TRUST_PROXY).toBe('uniquelocal');
+  });
 });

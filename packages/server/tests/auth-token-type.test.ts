@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
-import { createTestAppWithDb } from './helpers/app.js';
+import { createTestApp, createTestAppWithDb } from './helpers/app.js';
 import { schema } from '../src/db/index.js';
 
 /**
@@ -12,7 +12,6 @@ import { schema } from '../src/db/index.js';
  */
 describe('REST bearer tokens — only a live access token authenticates', () => {
   let app: FastifyInstance;
-  let db: Awaited<ReturnType<typeof createTestAppWithDb>>['db'];
 
   // The first registrant is bootstrapped into the admin group, so this account
   // reaches both guards: `authenticate` and `requireAdmin`.
@@ -41,7 +40,7 @@ describe('REST bearer tokens — only a live access token authenticates', () => 
     app.inject({ method: 'GET', url: '/admin/users', headers: { Authorization: `Bearer ${token}` } });
 
   beforeAll(async () => {
-    ({ app, db } = await createTestAppWithDb());
+    app = await createTestApp();
     const admin = await register('tokentype-admin');
     adminToken = admin.token;
     adminRefreshToken = admin.refreshToken;

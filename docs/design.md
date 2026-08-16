@@ -150,3 +150,17 @@ already gone. Consequence:
 Acceptable for now; revisit by capturing the cost basis at placement time
 (e.g. snapshot `avgCostBasis` onto the working/pending `trades` row) once
 resting orders become more common.
+
+### Login throttle state is per-process
+
+`FailedLoginTracker` (`services/failed-login.ts`) counts failed logins per
+username in memory, so:
+
+- a restart clears every counter, and an attacker who can trigger restarts could
+  use that to reset one;
+- the counters are not shared between instances, so the effective threshold
+  multiplies by the instance count.
+
+Neither matters at the current single-process deployment. Moving to more than one
+server instance means moving this state to the database or a shared cache — the
+per-IP limiter (`@fastify/rate-limit`, also in-process) has the same constraint.

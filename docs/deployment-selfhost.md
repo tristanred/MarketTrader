@@ -46,6 +46,8 @@ By default it forwards SSH only from `192.168.2.0/24` — pass `--lan-cidr` if y
 
 `/etc/markettrader/env` is **never regenerated** on a re-run. Rotating `JWT_SECRET` would invalidate every active session, so it's written once and left alone.
 
+That also means new variables never reach an existing install. `TRUST_PROXY` was added after the first provision runs; it defaults to `loopback`, which is correct here, so hosts provisioned earlier behave correctly without the line. Add it explicitly only if something other than local nginx fronts the app.
+
 ## 2. DNS and TLS
 
 TLS is not optional. The refresh cookie is issued with the `Secure` flag whenever `NODE_ENV=production` (`packages/server/src/routes/auth.ts`), so over plain HTTP browsers discard it and every session dies the moment the 15-minute access token expires.

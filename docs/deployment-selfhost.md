@@ -229,6 +229,21 @@ The result: the repo copy is documentation of intent, and the installed copy is 
 /opt/markettrader/deploy/nginx-check.sh
 ```
 
+It only compares `location` directives, though. A change *inside* an existing block — a
+`proxy_set_header` line, a timeout, a rewrite — is invisible to it, so those have to be
+tracked by hand.
+
+**Outstanding manual change: `X-Forwarded-For`.** Every proxy block in the repo site now
+sends `proxy_set_header X-Forwarded-For $remote_addr` instead of
+`$proxy_add_x_forwarded_for`. The old form prepends whatever the client sent, letting a
+caller forge the value the app keys its rate limits on. Since this is an edit inside
+existing blocks, neither `deploy.sh` nor `nginx-check.sh` reports it — check the installed
+file and apply it if it still says `$proxy_add_x_forwarded_for`:
+
+```bash
+grep -n 'X-Forwarded-For' /etc/nginx/sites-available/markettrader
+```
+
 **Applying a change.** Hand-apply the same edit, then test and reload:
 
 ```bash

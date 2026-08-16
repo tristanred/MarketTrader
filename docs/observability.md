@@ -38,6 +38,20 @@ admin, no login. `pnpm observability:down` tears it down; the data does not surv
 
 ### What to look at
 
+Four dashboards are provisioned automatically, in Grafana's **MarketTrader** folder:
+
+| Dashboard | Answers |
+|---|---|
+| Service Health | Is the API up and fast? Are the three workers ticking? Is the provider throttling us? |
+| Trading Activity | Fills by side and mode, rejections by reason, order settlement, achievement unlocks |
+| Frontend / RUM | Core Web Vitals, browser spans, uncaught JavaScript errors |
+| Logs & Traces | Error logs with a one-click pivot to the trace; slowest traces; per-symbol trade rate |
+
+They live in `deploy/grafana/` and are bind-mounted into the container — see the README there
+for how the provisioning is wired and how to edit a panel. Nothing about them reaches production.
+
+For ad-hoc digging outside the dashboards:
+
 - **Tempo** — a browser click produces one trace spanning the SPA's `fetch` span, the server's
   `GET /games/:id` span, the `handler` span, `trade.execute`, and the undici span for the
   upstream quote fetch.
@@ -85,8 +99,30 @@ Every signal carries the ADR-014 build stamp as resource attributes — `service
 | `markettrader.events.emitted` | Counter | `type` |
 | `markettrader.web_vitals.{lcp,cls,inp,fcp,ttfb}` | Histogram | `rating` |
 
-Prometheus renders the dots as underscores and appends `_total` to counters, so
-`markettrader.trades.executed` is queried as `markettrader_trades_executed_total`.
+### Querying these in Prometheus
+
+Dots become underscores, counters gain `_total`, histograms split into `_bucket`/`_sum`/`_count`
+— **and the unit is appended to the name**. That last part is easy to miss and is the usual
+reason a hand-written query returns nothing:
+
+| Instrument shape | Series |
+|---|---|
+| Counter, no unit | `markettrader_trades_executed_total` |
+| Histogram, unit `ms` | `markettrader_trade_duration_milliseconds_{bucket,sum,count}` |
+| UpDownCounter | `markettrader_ws_clients` — a plain gauge, no `_total`, never `rate()` it |
+| Histogram, unit `1` (CLS only) | `markettrader_web_vitals_cls_{bucket,sum,count}` — no suffix |
+
+Resource attributes are promoted to real labels, so `service_name`, `service_version` and
+`deployment_environment_name` can be matched directly with no `target_info` join. `git_commit` is
+the exception — it lives on `target_info` only.
+
+**There is no HTTP server metric.** `@fastify/otel` emits spans and never touches the metrics
+API. Request rate, error rate and latency for inbound HTTP therefore come from Tempo's
+`span-metrics` generator: `traces_spanmetrics_calls_total` and `traces_spanmetrics_latency_bucket`,
+labelled `service` / `span_name` / `span_kind` / `status_code`. Two traps follow from that:
+
+- Those series use **`service`**, while every application metric uses **`service_name`**.
+- Span metrics and undici are in **seconds**; every application histogram is in **milliseconds**.
 
 **Symbols are deliberately not metric attributes.** The symbol universe is unbounded and would
 blow up cardinality. Symbols appear on spans, which are not aggregated.

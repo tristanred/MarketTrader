@@ -27,6 +27,13 @@ services:
       GF_AUTH_DISABLE_LOGIN_FORM: 'true'
     volumes:
       - lgtm_data:/data
+      # Dashboards from the repo. The provider yaml goes into Grafana's
+      # provisioning tree; the JSON goes somewhere else entirely, because the
+      # provisioning loader parses every file it finds and would log the
+      # dashboards as broken provider configs. /otel-lgtm is not on the
+      # lgtm_data volume, so neither mount is shadowed.
+      - ./deploy/grafana/provisioning/markettrader.yaml:/otel-lgtm/grafana/conf/provisioning/dashboards/markettrader.yaml:ro
+      - ./deploy/grafana/dashboards:/otel-lgtm/grafana/dashboards/markettrader:ro
 
 volumes:
   lgtm_data:

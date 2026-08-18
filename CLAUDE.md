@@ -39,7 +39,7 @@ These were chosen deliberately (see `docs/technical-decisions.md` for full ratio
 | Server framework | Fastify v5 |
 | WebSocket (server) | `@fastify/websocket` |
 | ORM | Drizzle ORM |
-| Database (prod) | PostgreSQL (AWS/Docker path) or SQLite (self-hosted single host — ADR-013) |
+| Database (prod) | PostgreSQL (Docker path) or SQLite (single-host deployments — ADR-013) |
 | Database (dev/test) | SQLite |
 | Frontend framework | React 19 |
 | Build tool | Vite |
@@ -228,9 +228,9 @@ The app has **one version**. `@markettrader/server`, `/frontend`, and `/shared` 
 changesets `fixed` group, so they always carry the same number — `packages/server/package.json`
 is the canonical copy. Managed entirely locally with `@changesets/cli`; CI has no release role.
 
-**Versioning and shipping are independent.** `pnpm ship` never touches versions, and cutting a
-version never deploys. That means several deploys can carry the same version number, which is
-why the build stamp includes a git SHA.
+**Versioning and deploying are independent.** Cutting a version does not deploy anything, and
+deploying does not change a version. That means several deploys can carry the same version
+number, which is why the build stamp includes a git SHA.
 
 ```bash
 pnpm changeset            # describe a change; commit the generated .changeset/*.md
@@ -238,20 +238,19 @@ pnpm changeset version    # bump all three + write CHANGELOGs, consume the chang
 git commit -am "release: vX.Y.Z"
 pnpm release:tag          # cuts a bare vX.Y.Z tag (not `changeset tag` — see ADR-014)
 git push --follow-tags
-pnpm ship                 # or: pnpm ship --ref vX.Y.Z
 ```
 
-- **Push before you ship.** `pnpm ship` deploys `origin/main` and the server builds from a fresh
-  `git fetch`, so an unpushed version commit simply doesn't reach production.
+- **Push before deploying.** Deployment builds from `origin`, so an unpushed version commit
+  doesn't reach production.
 - Never run `pnpm changeset publish` — nothing here goes to a registry.
-- If `pnpm changeset version` dirties `pnpm-lock.yaml`, commit it: `deploy.sh` runs
-  `pnpm install --frozen-lockfile` and will fail otherwise. (`workspace:*` specifiers don't
-  embed versions, so normally it doesn't.)
+- If `pnpm changeset version` dirties `pnpm-lock.yaml`, commit it: deployment installs with
+  `--frozen-lockfile` and will fail otherwise. (`workspace:*` specifiers don't embed versions,
+  so normally it doesn't.)
 
 ### The build stamp
 
 `GET /version` → `{ version, commit, buildTime }`. Public and unauthenticated, like `/health`;
-reachable at `/api/version` through nginx. `pnpm ship` echoes it after a successful deploy.
+reachable at `/api/version` when the app is served behind a reverse proxy.
 The shape is `VersionInfo` in `packages/shared`; the route handler is annotated with it so the
 Zod schema and the shared contract can't drift.
 
@@ -278,22 +277,22 @@ When adding a consumer, import `buildInfo` from `src/build-info.ts` rather than 
 ## Observability
 
 Traces, metrics, and logs go out over OTLP to an OpenTelemetry Collector (ADR-015).
-All of it is off unless `OTEL_EXPORTER_OTLP_ENDPOINT` is set, which is the production
-default today — **there is no collector deployed yet**, so errors reach journald only
-and nothing alerts. `docs/observability.md` is the runbook and metric catalogue.
+All of it is off unless `OTEL_EXPORTER_OTLP_ENDPOINT` is set, so a build with no collector
+configured emits nothing and costs nothing. `docs/observability.md` is the metric catalogue
+and the guide to what is instrumented.
 
-```bash
-pnpm observability:up    # local Grafana LGTM stack; Grafana on :3001, OTLP on :4318
-```
+The local Grafana LGTM stack and the provisioned dashboards are **not in this repo** — they
+live with the deployment configuration, which is maintained separately. Point
+`OTEL_EXPORTER_OTLP_ENDPOINT` at any OTLP/HTTP collector to see output.
 
 Three things to know before touching this code:
 
 - **Instrumentation is patch-free by design, not by accident.** `@fastify/otel` registers
   as a plugin and `instrumentation-undici` uses `diagnostics_channel`, so nothing needs to
   load before anything else. Adding an instrumentation that *does* patch modules would
-  require a `node --import` bootstrap and an `ExecStart` change in
-  `deploy/systemd/markettrader.service` — a `provision.sh` re-run that `deploy.sh` only
-  warns about. Prefer a manual span. ADR-015 has the full reasoning.
+  require a `node --import` bootstrap, and therefore a change to however the process is
+  launched — which is deployment configuration, outside this repo. Prefer a manual span.
+  ADR-015 has the full reasoning.
 - **`@fastify/otel` must be registered before every route.** It wraps route definitions as
   they are declared, so anything registered above it is silently untraced.
 - **Metric instruments are created lazily and must stay that way.** `metrics.getMeter()`
@@ -304,8 +303,9 @@ Three things to know before touching this code:
 Adding a metric: define it in `observability/telemetry.ts` and record at the call site.
 Keep symbols off metric attributes (unbounded cardinality) — they belong on spans.
 
-The browser sends telemetry to a relative `/otel` path. That needs the `location /otel/`
-block in the nginx site, which **does not deploy itself** — see below.
+The browser sends telemetry to a relative `/otel` path. In dev that is the `/otel` rule in
+`packages/frontend/vite.config.ts`; in a deployed environment the reverse proxy needs an
+equivalent route to the collector.
 
 ---
 
@@ -314,7 +314,7 @@ block in the nginx site, which **does not deploy itself** — see below.
 - `docs/technical-decisions.md` — before suggesting a library or architectural change
 - `.changeset/README.md` — the release flow in short form
 - `docs/design.md` — before adding any new entity, endpoint, or feature
-- `docs/observability.md` — the telemetry runbook and metric catalogue
+- `docs/observability.md` — the metric catalogue and what is instrumented
 - `docs/superpowers/specs/2026-05-08-markettrader-design.md` — the initial full spec
 
 ---
@@ -327,19 +327,15 @@ block in the nginx site, which **does not deploy itself** — see below.
 | Local (Docker PG) | `docker-compose up` |
 | Production | Docker: `Dockerfile.server` + Nginx for frontend static files |
 | AWS | Single EC2 instance (t3.micro/small), Docker Compose, Nginx reverse proxy |
-| Self-hosted | systemd + apt nginx + SQLite on one Linux box — `pnpm ship` to deploy. See `docs/deployment-selfhost.md` and ADR-013. Assets in `deploy/`. |
 
-### The nginx site does not deploy itself
+`docs/deployment.md` covers the Docker/Postgres path end to end.
 
-`deploy/nginx/markettrader.conf` is **not** what the server serves. `provision.sh` refuses to
-overwrite an existing site file because `certbot --nginx` rewrites the installed copy in place,
-and `deploy.sh` only checks systemd units for drift. So editing the repo config changes nothing
-in production until someone hand-applies it.
+**Production deployment configuration is maintained outside this repo.** Nothing here
+provisions a host, installs a service manager, or configures a reverse proxy. Two consequences
+worth remembering when changing code:
 
-If you change that file, say so explicitly in your summary and point at the manual step — it is
-the one class of change `pnpm ship` silently ignores. `deploy/nginx-check.sh` reports repo
-location blocks missing from the installed site; the full procedure is under "Changing the nginx
-site" in `docs/deployment-selfhost.md`.
-
-The same applies to `deploy/systemd/*` — those need a `provision.sh` re-run, though at least
-`deploy.sh` warns about them.
+- `nginx.conf` in this repo is the **container** config, baked into `Dockerfile.frontend`. It
+  is not what any non-Docker deployment serves.
+- A change that needs a new proxy route, a new environment variable, or a different process
+  launch does not ship by editing this repo alone. Call it out explicitly in your summary so
+  the deployment side gets updated too.

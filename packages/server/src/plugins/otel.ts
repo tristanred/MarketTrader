@@ -3,7 +3,7 @@ import FastifyOtelInstrumentation from '@fastify/otel';
 import { telemetryEnabled } from '../env.js';
 
 // Probes. Traced they would be pure noise: /health is polled every second by
-// deploy.sh's wait_for_health and by any uptime monitor, and /version is hit
+// deploy tooling's health polling and by any uptime monitor, and /version is hit
 // on every deploy.
 const UNTRACED_ROUTES = new Set(['/health', '/version']);
 

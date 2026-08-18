@@ -31,17 +31,17 @@ export default defineConfig({
     port: 5173,
     host: '0.0.0.0',
     proxy: {
-      // Swagger UI is served by the API server. Both here and in production
-      // it needs an explicit proxy rule, or the SPA's catch-all route
-      // intercepts /docs and redirects to /. The production equivalents are
-      // the `location /docs` blocks in nginx.conf and deploy/nginx/.
+      // Swagger UI is served by the API server. Both here and when deployed it
+      // needs an explicit proxy rule, or the SPA's catch-all route intercepts
+      // /docs and redirects to /. The deployed equivalent is a `/docs` route on
+      // the reverse proxy.
       '/docs': {
         target: 'http://localhost:3000',
         changeOrigin: true,
       },
       // Browser telemetry ingress. Points at the OTLP/HTTP port of the local
-      // collector (`pnpm observability:up`), not the API server. The production
-      // equivalent is the `location /otel/` block in deploy/nginx/ and nginx.conf.
+      // collector, not the API server. The deployed equivalent is a `/otel`
+      // route on the reverse proxy pointing at the collector's OTLP/HTTP port.
       '/otel': {
         target: 'http://localhost:4318',
         changeOrigin: true,

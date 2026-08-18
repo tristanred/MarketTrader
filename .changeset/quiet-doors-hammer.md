@@ -19,6 +19,5 @@ depend on network identity at all, tunable via `LOGIN_MAX_FAILED_ATTEMPTS`,
 `LOGIN_FAILURE_WINDOW_MS` and `LOGIN_LOCKOUT_MS`. The sign-in form reports the
 resulting 429 instead of a generic failure.
 
-**The nginx change needs a manual re-apply** on the self-hosted host — `pnpm ship`
-does not deploy those files. See "Changing the nginx site" in
-`docs/deployment-selfhost.md`.
+**The reverse-proxy change is not applied by deploying.** Proxy configuration is
+maintained outside this repo and has to be updated there.

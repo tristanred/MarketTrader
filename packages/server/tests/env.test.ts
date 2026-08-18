@@ -10,7 +10,7 @@ const valid: ProductionEnvCheck = {
   MARKET_STATUS_PROVIDER: 'yahoo',
   ALPACA_API_KEY_ID: '',
   ALPACA_API_SECRET_KEY: '',
-  SENTRY_DSN: 'https://public@sentry.io/1',
+  OTEL_EXPORTER_OTLP_ENDPOINT: 'http://collector:4318',
 };
 
 describe('validateProductionEnv', () => {
@@ -123,7 +123,7 @@ describe('validateProductionEnv', () => {
         MARKET_STATUS_PROVIDER: 'yahoo',
         ALPACA_API_KEY_ID: '',
         ALPACA_API_SECRET_KEY: '',
-        SENTRY_DSN: '',
+        OTEL_EXPORTER_OTLP_ENDPOINT: '',
       }),
     ).toThrow(/JWT_SECRET[\s\S]*CORS_ORIGIN[\s\S]*DATABASE_URL[\s\S]*ALPACA/);
   });

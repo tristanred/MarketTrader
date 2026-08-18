@@ -36,6 +36,13 @@ export default defineConfig({
       reuseExistingServer: false,
       timeout: 60_000,
       cwd: '../..',
+      env: {
+        // Vite reads the workspace-root .env (see `envDir` in vite.config.ts),
+        // so without this an e2e run would inherit whatever the developer has
+        // configured — emitting browser telemetry into their collector, or
+        // retrying POSTs against a dead one. Pin it off so e2e is hermetic.
+        VITE_OTEL_EXPORTER_URL: '',
+      },
     },
   ],
 });

@@ -1,0 +1,39 @@
+# Local telemetry backend for development. NOT a production deployment —
+# grafana/otel-lgtm stores everything in the container and is wiped on `down`.
+#
+#   pnpm observability:up
+#   OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 pnpm dev
+#
+# Grafana: http://localhost:3001 (anonymous admin, no login)
+#
+# The image bundles an OpenTelemetry Collector with Prometheus, Tempo, and Loki
+# behind it, already wired together — which is why there is no collector config
+# in this repo yet. A real deployment gets its own, once the backend is chosen.
+services:
+  lgtm:
+    image: grafana/otel-lgtm:latest
+    container_name: markettrader-lgtm
+    restart: unless-stopped
+    ports:
+      # Grafana. Deliberately NOT 3000 — the API server owns that port, and the
+      # collision is silent (whichever binds first wins).
+      - '3001:3000'
+      - '4317:4317' # OTLP/gRPC
+      - '4318:4318' # OTLP/HTTP — what both the server and the browser use
+    environment:
+      # Skip the login wall; this is a throwaway local instance.
+      GF_AUTH_ANONYMOUS_ENABLED: 'true'
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: 'true'
+    volumes:
+      - lgtm_data:/data
+      # Dashboards from the repo. The provider yaml goes into Grafana's
+      # provisioning tree; the JSON goes somewhere else entirely, because the
+      # provisioning loader parses every file it finds and would log the
+      # dashboards as broken provider configs. /otel-lgtm is not on the
+      # lgtm_data volume, so neither mount is shadowed.
+      - ./deploy/grafana/provisioning/markettrader.yaml:/otel-lgtm/grafana/conf/provisioning/dashboards/markettrader.yaml:ro
+      - ./deploy/grafana/dashboards:/otel-lgtm/grafana/dashboards/markettrader:ro
+
+volumes:
+  lgtm_data:

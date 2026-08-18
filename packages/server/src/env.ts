@@ -261,11 +261,32 @@ export const env = {
   LOGIN_LOCKOUT_MS: parsePositiveInt('LOGIN_LOCKOUT_MS', optional('LOGIN_LOCKOUT_MS', '900000')),
 
   /**
-   * Sentry DSN. When set, the server initializes @sentry/node and forwards
-   * 5xx errors to Sentry. Empty string disables Sentry entirely (no-op).
+   * Base OTLP/HTTP endpoint of an OpenTelemetry Collector, e.g.
+   * `http://localhost:4318`. Empty disables telemetry entirely — no exporters
+   * are constructed and no connection is attempted. Signal paths (`/v1/traces`
+   * and friends) are appended by {@link initTelemetry}, so do not include one.
+   *
+   * Other standard `OTEL_*` variables (`OTEL_TRACES_SAMPLER`,
+   * `OTEL_EXPORTER_OTLP_HEADERS`, …) are read by the SDK itself and are
+   * deliberately not mirrored here.
    */
-  SENTRY_DSN: optional('SENTRY_DSN', ''),
+  OTEL_EXPORTER_OTLP_ENDPOINT: optional('OTEL_EXPORTER_OTLP_ENDPOINT', ''),
+  /** `service.name` on every emitted span, metric, and log record. */
+  OTEL_SERVICE_NAME: optional('OTEL_SERVICE_NAME', 'markettrader-server'),
+  /** How often the metric reader pushes to the collector, in ms. */
+  OTEL_METRIC_EXPORT_INTERVAL_MS: parsePositiveInt(
+    'OTEL_METRIC_EXPORT_INTERVAL_MS',
+    optional('OTEL_METRIC_EXPORT_INTERVAL_MS', '60000'),
+  ),
+  /**
+   * Minimum pino level shipped over OTLP. Records below it still reach stdout
+   * (and therefore journald) — this only trims what crosses the network.
+   */
+  OTEL_LOG_LEVEL_MIN: optional('OTEL_LOG_LEVEL_MIN', 'info'),
 } as const;
+
+/** True when an OTLP endpoint is configured. Everything telemetry keys off this. */
+export const telemetryEnabled = env.OTEL_EXPORTER_OTLP_ENDPOINT !== '';
 
 export interface ProductionEnvCheck {
   JWT_SECRET: string;
@@ -276,7 +297,7 @@ export interface ProductionEnvCheck {
   MARKET_STATUS_PROVIDER: string;
   ALPACA_API_KEY_ID: string;
   ALPACA_API_SECRET_KEY: string;
-  SENTRY_DSN: string;
+  OTEL_EXPORTER_OTLP_ENDPOINT: string;
 }
 
 // Remote libsql endpoints are durable servers, not local files. Mirrors the
@@ -363,8 +384,11 @@ export function validateProductionEnv(cfg: ProductionEnvCheck = env): void {
     );
   }
 
-  if (!cfg.SENTRY_DSN) {
-    // Non-fatal: surface the gap so operators see it once at boot.
-    console.warn('[env] SENTRY_DSN not set — runtime errors will not be reported.');
+  if (!cfg.OTEL_EXPORTER_OTLP_ENDPOINT) {
+    // Non-fatal: surface the gap so operators see it once at boot. Logs still
+    // reach journald; what's missing is traces, metrics, and any alerting.
+    console.warn(
+      '[env] OTEL_EXPORTER_OTLP_ENDPOINT not set — no traces, metrics, or logs will be exported.',
+    );
   }
 }

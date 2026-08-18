@@ -37,7 +37,8 @@ import { IndicesBroadcaster } from './ws/indices-broadcaster.js';
 import { startPricePoller } from './ws/price-poller.js';
 import { startPendingOrdersWorker } from './workers/pending-orders.js';
 import { startPortfolioSnapshotWorker } from './workers/portfolio-snapshot.js';
-import { attachSentry } from './observability/sentry.js';
+import { attachErrorCapture } from './observability/error-capture.js';
+import { registerOtel } from './plugins/otel.js';
 import { EventBus } from './events/bus.js';
 import { AchievementEngine } from './achievements/engine.js';
 import { achievements as achievementDefinitions } from './achievements/definitions/index.js';
@@ -80,6 +81,11 @@ export async function buildApp(
 
   // @fastify/websocket MUST be registered before any routes
   await registerWebsocket(app);
+
+  // ...and @fastify/otel MUST come before them too — it only instruments
+  // routes declared after it, so a later registration silently loses coverage
+  // for everything above it.
+  await registerOtel(app);
 
   await registerCors(app);
   await registerHelmet(app);
@@ -187,7 +193,7 @@ export async function buildApp(
     });
   }
 
-  attachSentry(app);
+  attachErrorCapture(app);
 
   return app;
 }

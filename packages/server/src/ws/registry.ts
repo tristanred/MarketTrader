@@ -1,5 +1,6 @@
 import type { WebSocket } from 'ws';
 import type { WsServerEvent, StockQuote, WsPriceUpdateEvent } from '@markettrader/shared';
+import { meters } from '../observability/telemetry.js';
 
 /**
  * Represents a connected player's WebSocket session within a game room.
@@ -22,13 +23,18 @@ export class GameClientRegistry {
     if (!this.games.has(gameId)) {
       this.games.set(gameId, new Map());
     }
-    this.games.get(gameId)!.set(socket, { playerId, subscriptions: new Set() });
+    const clients = this.games.get(gameId)!;
+    // Only count sockets that are genuinely new. Re-adding an existing socket
+    // leaves the Map size unchanged, and an unconditional +1 would make the
+    // gauge climb forever without a matching decrement.
+    if (!clients.has(socket)) meters.wsClients.add(1, { scope: 'game' });
+    clients.set(socket, { playerId, subscriptions: new Set() });
   }
 
   remove(gameId: string, socket: WebSocket): void {
     const clients = this.games.get(gameId);
     if (!clients) return;
-    clients.delete(socket);
+    if (clients.delete(socket)) meters.wsClients.add(-1, { scope: 'game' });
     if (clients.size === 0) this.games.delete(gameId);
   }
 

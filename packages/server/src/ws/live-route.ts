@@ -17,7 +17,13 @@ export function liveRoute(db: Db, registry: GameClientRegistry, engine: Achievem
   return async function (app: FastifyInstance): Promise<void> {
     app.get<{ Params: { id: string }; Querystring: { token?: string } }>(
       '/games/:id/live',
-      { websocket: true, config: { rateLimit: { max: 10, timeWindow: '1 minute' } } },
+      // otel:false — the "request" here is a WebSocket upgrade that stays open
+      // for the length of a session, so a request span would sit unfinished for
+      // hours and never describe anything useful.
+      {
+        websocket: true,
+        config: { rateLimit: { max: 10, timeWindow: '1 minute' }, otel: false },
+      },
       async (socket, request: FastifyRequest<{ Params: { id: string }; Querystring: { token?: string } }>) => {
         const gameId = request.params.id;
         const { token } = request.query;

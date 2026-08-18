@@ -35,7 +35,7 @@ services:
       # one rate-limit bucket. Port 3000 is only `expose`d, never published, so
       # nothing outside the bridge can reach the app to forge the header.
       TRUST_PROXY: ${TRUST_PROXY:-uniquelocal}
-      SENTRY_DSN: ${SENTRY_DSN:-}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
       STOCK_PROVIDER: ${STOCK_PROVIDER:-yahoo}
       ALPACA_API_KEY: ${ALPACA_API_KEY:-}
     expose:

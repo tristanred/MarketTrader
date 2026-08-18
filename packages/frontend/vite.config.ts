@@ -6,6 +6,11 @@ import { visualizer } from 'rollup-plugin-visualizer';
 import { buildInfoDefines, readBuildInfo } from '../../scripts/build-info.mjs';
 
 export default defineConfig({
+  // This repo keeps a single .env at the workspace root (created by
+  // scripts/bootstrap-dev.mjs and read by the server via --env-file). Vite
+  // defaults to its own package directory, which would silently ignore it and
+  // leave every VITE_* var undefined.
+  envDir: path.resolve(__dirname, '../..'),
   define: buildInfoDefines(readBuildInfo(process.cwd())),
   plugins: [
     react(),
@@ -33,6 +38,14 @@ export default defineConfig({
       '/docs': {
         target: 'http://localhost:3000',
         changeOrigin: true,
+      },
+      // Browser telemetry ingress. Points at the OTLP/HTTP port of the local
+      // collector (`pnpm observability:up`), not the API server. The production
+      // equivalent is the `location /otel/` block in deploy/nginx/ and nginx.conf.
+      '/otel': {
+        target: 'http://localhost:4318',
+        changeOrigin: true,
+        rewrite: (p) => p.replace(/^\/otel/, ''),
       },
       '/api': {
         target: 'http://localhost:3000',

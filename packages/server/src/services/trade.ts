@@ -1,8 +1,10 @@
 import { eq, and, sql } from 'drizzle-orm';
+import { SpanStatusCode } from '@opentelemetry/api';
 import type { Db } from '../db/index.js';
 import { schema } from '../db/index.js';
 import type { TradeDirection, Trade } from '@markettrader/shared';
 import { TradeError } from '../providers/index.js';
+import { meters, tracer } from '../observability/telemetry.js';
 import { applyTradeStats, applyPositionCloseStats } from './game-player-stats.js';
 import { onPositionOpened } from './position-high-water.js';
 
@@ -142,6 +144,41 @@ export interface ExecuteTradeResult {
  *   {@link validateSell}).
  */
 export async function executeTrade(db: Db, params: ExecuteTradeParams): Promise<ExecuteTradeResult> {
+  const startedAt = Date.now();
+  // `resting` fills come from the trigger/settlement workers, `immediate` ones
+  // straight off the trade endpoint. Worth separating: they have very different
+  // latency profiles and only one of them has a player waiting on it.
+  const mode = params.existingTradeId != null ? 'resting' : 'immediate';
+
+  return tracer.startActiveSpan(
+    'trade.execute',
+    {
+      attributes: {
+        'trade.symbol': params.symbol,
+        'trade.direction': params.direction,
+        'trade.quantity': params.quantity,
+        'trade.mode': mode,
+      },
+    },
+    async (span) => {
+      try {
+        const result = await runTrade(db, params);
+        meters.tradesExecuted.add(1, { side: params.direction, mode });
+        return result;
+      } catch (err) {
+        span.recordException(err instanceof Error ? err : new Error(String(err)));
+        span.setStatus({ code: SpanStatusCode.ERROR });
+        throw err;
+      } finally {
+        meters.tradeDuration.record(Date.now() - startedAt, { side: params.direction });
+        span.end();
+      }
+    },
+  );
+}
+
+/** The transaction itself. Split out so {@link executeTrade} stays a thin telemetry wrapper. */
+async function runTrade(db: Db, params: ExecuteTradeParams): Promise<ExecuteTradeResult> {
   const { gamePlayerId, symbol, direction, quantity, price, existingTradeId } = params;
   const reservedCash = Number(params.reservedCash ?? 0);
   const { gamePlayers, portfolios, trades } = schema;

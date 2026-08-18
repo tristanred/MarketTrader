@@ -17,7 +17,7 @@ packages/
   server/     ← Fastify REST API + WebSocket server (Node.js + TypeScript)
               src/: routes services providers db ws events
               workers (pending-orders settler, portfolio-snapshot)
-              achievements observability (Sentry)
+              achievements observability (OpenTelemetry)
   frontend/   ← React 19 + Vite SPA
   shared/     ← TypeScript types only — API contracts shared between server and frontend
 docs/
@@ -168,8 +168,8 @@ Additional vars rarely need touching (defined in `env.ts`, most also documented
 in `.env.example`): the `MARKET_*` family (hours mode, status provider, extended
 hours), the `STOCK_*_MS` resilience tunables (cache TTLs, rate-limit backoff,
 stale-trade policy), the `LOGIN_*` family (per-account login throttle),
-`PENDING_ORDERS_TICK_MS`, `PORTFOLIO_SNAPSHOT_INTERVAL_MS`,
-and `SENTRY_DSN`. `env.ts` is the source of truth for the full set.
+`PENDING_ORDERS_TICK_MS`, `PORTFOLIO_SNAPSHOT_INTERVAL_MS`, and the `OTEL_*`
+family. `env.ts` is the source of truth for the full set.
 
 ---
 
@@ -269,8 +269,43 @@ no `package.json`, and the Docker runner stage copies neither `package.json` nor
 When adding a consumer, import `buildInfo` from `src/build-info.ts` rather than referencing the
 `__APP_VERSION__` globals directly — the server module wraps them in a `typeof` guard because
 `tsx watch` has no define step and a bare reference throws there. Current consumers:
-`routes/version.ts`, `plugins/swagger.ts`, `observability/sentry.ts`, and the frontend's
-`main.tsx`.
+`routes/version.ts`, `plugins/swagger.ts`, `observability/otel.ts`,
+`observability/telemetry.ts`, and the frontend's `main.tsx` and
+`observability/otel.ts`.
+
+---
+
+## Observability
+
+Traces, metrics, and logs go out over OTLP to an OpenTelemetry Collector (ADR-015).
+All of it is off unless `OTEL_EXPORTER_OTLP_ENDPOINT` is set, which is the production
+default today — **there is no collector deployed yet**, so errors reach journald only
+and nothing alerts. `docs/observability.md` is the runbook and metric catalogue.
+
+```bash
+pnpm observability:up    # local Grafana LGTM stack; Grafana on :3001, OTLP on :4318
+```
+
+Three things to know before touching this code:
+
+- **Instrumentation is patch-free by design, not by accident.** `@fastify/otel` registers
+  as a plugin and `instrumentation-undici` uses `diagnostics_channel`, so nothing needs to
+  load before anything else. Adding an instrumentation that *does* patch modules would
+  require a `node --import` bootstrap and an `ExecStart` change in
+  `deploy/systemd/markettrader.service` — a `provision.sh` re-run that `deploy.sh` only
+  warns about. Prefer a manual span. ADR-015 has the full reasoning.
+- **`@fastify/otel` must be registered before every route.** It wraps route definitions as
+  they are declared, so anything registered above it is silently untraced.
+- **Metric instruments are created lazily and must stay that way.** `metrics.getMeter()`
+  binds to whatever provider exists at call time, and the metrics API — unlike traces —
+  has no proxy that back-fills. Building them at module load makes every metric read zero
+  forever. `tests/observability/telemetry.test.ts` guards this.
+
+Adding a metric: define it in `observability/telemetry.ts` and record at the call site.
+Keep symbols off metric attributes (unbounded cardinality) — they belong on spans.
+
+The browser sends telemetry to a relative `/otel` path. That needs the `location /otel/`
+block in the nginx site, which **does not deploy itself** — see below.
 
 ---
 
@@ -279,6 +314,7 @@ When adding a consumer, import `buildInfo` from `src/build-info.ts` rather than 
 - `docs/technical-decisions.md` — before suggesting a library or architectural change
 - `.changeset/README.md` — the release flow in short form
 - `docs/design.md` — before adding any new entity, endpoint, or feature
+- `docs/observability.md` — the telemetry runbook and metric catalogue
 - `docs/superpowers/specs/2026-05-08-markettrader-design.md` — the initial full spec
 
 ---

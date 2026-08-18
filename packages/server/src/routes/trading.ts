@@ -30,6 +30,7 @@ import type { TradeDirection } from '@markettrader/shared';
 import type { GameClientRegistry } from '../ws/registry.js';
 import type { EventBus } from '../events/bus.js';
 import { env } from '../env.js';
+import { meters } from '../observability/telemetry.js';
 
 /** Returns whether the configured policy treats this market state as "open" for trading. */
 function isTradingOpen(state: MarketState): boolean {
@@ -116,6 +117,31 @@ export function tradingRoutes(
 
   return async function (rawApp: FastifyInstance): Promise<void> {
     const app = rawApp.withTypeProvider<ZodTypeProvider>();
+
+    // Counts refused orders by reason. Deliberately a hook rather than a call at
+    // each of the dozen `reply.status(4xx)` sites: those branches are added and
+    // reshuffled often, and a hook cannot fall out of sync with them. The reason
+    // is read from the payload because that is where this route puts it — the
+    // status code alone collapses INSUFFICIENT_FUNDS and MARKET_CLOSED into one
+    // undifferentiated 409.
+    app.addHook('onSend', async (_request, reply, payload) => {
+      if (reply.statusCode < 400 || reply.statusCode >= 500) return payload;
+      let reason = `http_${reply.statusCode}`;
+      if (typeof payload === 'string') {
+        try {
+          const body: unknown = JSON.parse(payload);
+          if (body && typeof body === 'object') {
+            const { code, error } = body as { code?: unknown; error?: unknown };
+            if (typeof code === 'string') reason = code;
+            else if (typeof error === 'string') reason = error;
+          }
+        } catch {
+          // Non-JSON error body — the status-code fallback above stands.
+        }
+      }
+      meters.tradesRejected.add(1, { reason });
+      return payload;
+    });
     const { games, gamePlayers, trades } = schema;
 
     app.post(

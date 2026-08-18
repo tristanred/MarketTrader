@@ -12,6 +12,7 @@ import type { GameClientRegistry } from '../ws/registry.js';
 import type { EventBus } from '../events/bus.js';
 import { env } from '../env.js';
 import { startIntervalWorker, type IntervalWorker } from './interval-worker.js';
+import { meters } from '../observability/telemetry.js';
 import type { MarketState, TradeDirection } from '@markettrader/shared';
 
 /** Whether the configured policy treats a given market state as "open" for settlement. */
@@ -156,6 +157,10 @@ export async function runPendingOrdersTick(deps: {
 
   // Broadcasts: trigger evaluator outcomes (limit/stop fills, OCO cancels, stop_limit triggers).
   for (const o of triggerOutcomes) {
+    // `o.kind` is already the settlement outcome taxonomy (filled / cancelled /
+    // triggered), so the metric tracks it directly rather than inventing one.
+    meters.pendingOrdersSettled.add(1, { outcome: o.kind });
+
     const gamePlayerId =
       o.kind === 'filled' ? o.row.gamePlayerId : o.gamePlayerId;
     const player = await resolvePlayer(gamePlayerId);
@@ -231,6 +236,7 @@ export async function runPendingOrdersTick(deps: {
 
   // Broadcasts: TIF expiry cancellations.
   for (const tradeId of expired.cancelledIds) {
+    meters.pendingOrdersSettled.add(1, { outcome: 'expired' });
     // Look up the player by trade id (small N — only the rows we cancelled this tick).
     const [t] = await db
       .select({ gamePlayerId: schema.trades.gamePlayerId })
@@ -277,6 +283,7 @@ export function startPendingOrdersWorker(deps: {
 }): IntervalWorker {
   const intervalMs = deps.intervalMs ?? env.PENDING_ORDERS_TICK_MS;
   return startIntervalWorker(
+    'pending-orders',
     () => runPendingOrdersTick(deps),
     intervalMs,
     (err) => deps.logger?.error({ err }, 'pending-orders tick failed'),

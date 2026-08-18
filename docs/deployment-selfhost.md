@@ -260,6 +260,8 @@ Three things about that sequence:
 - **`nginx -t` before the reload is not optional.** It is the only thing standing between a typo and the whole site going down.
 - **Put new `location` blocks in the first `server` block** — the one with `server_name markettrader.app` that holds `location /api/`. The second block is certbot's port-80 redirect and anything added there is ignored for real traffic.
 
+**One directive that is not a `location`.** The repo site declares `limit_req_zone ... zone=otel_ingest` *above* the `server` block, because `limit_req_zone` is only valid at `http` scope. `nginx-check.sh` compares `location` directives and will not tell you it is missing — but `location /otel/` references the zone, so copying the location block alone makes `nginx -t` fail with `unknown limit_req zone "otel_ingest"`. Copy both, or drop the `limit_req` line and accept an uncapped telemetry ingress (see `docs/observability.md` for why that is a bad trade).
+
 Note that `sudo` prompts for a password here. The NOPASSWD rules from `provision.sh` cover only `systemctl restart|start|stop|is-active markettrader` and `backup.sh`, deliberately — they exist so deploys are unattended, not so the host is broadly writable without authentication.
 
 ### Swagger UI

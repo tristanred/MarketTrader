@@ -191,7 +191,7 @@ const db = DATABASE_URL.startsWith('postgres')
 
 **Decision:** SQLite is a supported production database for single-host, self-hosted deployments. PostgreSQL remains the choice for the AWS/multi-host path. `validateProductionEnv` no longer requires PostgreSQL in production; it enforces database *durability* instead.
 
-**Context:** The first real deployment of MarketTrader is a home server hosting a 6+ month tournament for a few dozen players, reached through a residential port-forward. ADR-005 assumed the production target was AWS with a managed or containerised PostgreSQL. On a single box with one operator, Postgres adds a second service to run, monitor, upgrade, and back up, in exchange for concurrency headroom this workload will not use.
+**Context:** The intended deployment is a single host serving a long-running tournament for a few dozen players. ADR-005 assumed the production target was AWS with a managed or containerised PostgreSQL. On a single box with one operator, Postgres adds a second service to run, monitor, upgrade, and back up, in exchange for concurrency headroom this workload will not use.
 
 **Alternatives considered:**
 - **Keep the Postgres requirement, run Postgres on the VM** — correct but disproportionate: a second daemon plus `pg_dump` scheduling and role management, to serve a few dozen users whose writes are already serialised by the trade endpoint.
@@ -204,10 +204,8 @@ const db = DATABASE_URL.startsWith('postgres')
 **Consequences:**
 - Single writer. Fine at this scale (WAL + `SQLITE_BUSY_TIMEOUT_MS` + app-level retries), but it is the ceiling if concurrent trading grows well beyond a few dozen active players.
 - No network replication or read replicas. The database is only as available as the one host.
-- Backups are file-level and must never be a plain `cp` — WAL mode means a naive copy can capture a torn state. `deploy/backup.sh` uses `VACUUM INTO` and verifies each snapshot with `PRAGMA quick_check` before compressing it.
+- Backups are file-level and must never be a plain `cp` — WAL mode means a naive copy can capture a torn state. A correct snapshot uses `VACUUM INTO` and verifies with `PRAGMA quick_check` before compressing. The backup tooling itself is deployment configuration and lives outside this repo.
 - The schema must continue to be maintained in both `schema.sqlite.ts` and `schema.pg.ts`; this ADR does not retire the Postgres path.
-
-**See also:** `docs/deployment-selfhost.md` for the operator runbook.
 
 ---
 
@@ -218,24 +216,24 @@ const db = DATABASE_URL.startsWith('postgres')
 
 **Decision:** The app carries a single semver version, managed locally with `@changesets/cli`. `server`, `frontend`, and `shared` are a changesets `fixed` group, so they never drift. The version, the short git SHA, and the build timestamp are injected into each bundle at build time and served publicly by `GET /version`.
 
-**Context:** The app is now deployed to a real host with real users and releases are getting more frequent, but nothing identified a build. Every package sat at `0.0.1` and had never moved, the repo had zero tags, the Swagger info block hardcoded `'0.0.1'`, Sentry had no `release`, and the runbook's answer to "what's deployed?" was to SSH in and read `git log`.
+**Context:** The app is deployed to a real host with real users and releases are getting more frequent, but nothing identified a build. Every package sat at `0.0.1` and had never moved, the repo had zero tags, the Swagger info block hardcoded `'0.0.1'`, and the only way to answer "what's deployed?" was to log into the host and read `git log`.
 
 **Alternatives considered:**
-- **Version in CI on merge** — rejected by requirement. Versioning is a deliberate act performed locally; CI has no release role in this project, and `pnpm ship` deliberately doesn't touch versions.
+- **Version in CI on merge** — rejected by requirement. Versioning is a deliberate act performed locally; CI has no release role in this project, and deploying deliberately doesn't touch versions.
 - **Independent per-package versions** (changesets' default) — rejected. There is one deployable unit here, not three libraries. Three diverging numbers would raise "which one is the app version?" at exactly the moment you need a quick answer.
-- **Read `package.json` at runtime** — rejected. `tsup` emits a flat `dist/index.js` with no `package.json` beside it, and `Dockerfile.server`'s runner stage copies neither `package.json` nor `.git`. It would work under systemd and silently fail under Docker.
+- **Read `package.json` at runtime** — rejected. `tsup` emits a flat `dist/index.js` with no `package.json` beside it, and `Dockerfile.server`'s runner stage copies neither `package.json` nor `.git`. It would work under a bare process manager and silently fail under Docker.
 - **Report only the semver string** — rejected, see below.
 
-**Why the payload carries a SHA:** versioning and shipping are independent, which is a requirement, not an accident. That means several deploys can legitimately carry the same version number, so the version alone does not identify a build. The short SHA does, and `buildTime` distinguishes rebuilds of the same commit.
+**Why the payload carries a SHA:** versioning and deploying are independent, which is a requirement, not an accident. That means several deploys can legitimately carry the same version number, so the version alone does not identify a build. The short SHA does, and `buildTime` distinguishes rebuilds of the same commit.
 
 **Why `fixed` rather than `linked`:** `linked` lets versions drift when packages are bumped separately. `fixed` guarantees all three always read the same, so "the app version" is unambiguous whichever package you look at. `@markettrader/tools-seed-game-history` is a dev-only tool and is `ignore`d.
 
-**Why not `changeset tag`:** in a multi-package repo it emits `@markettrader/server@1.2.0`-style tags. `scripts/ship.mjs` validates its ref against `/^[A-Za-z0-9._/-]+$/` before interpolating it into a remote SSH command, and `@` is not in that set — those tags would be rejected by the deploy path. `privatePackages.tag` is therefore `false`, and `scripts/tag-release.mjs` (`pnpm release:tag`) cuts a plain `vX.Y.Z` tag, which is what the already-documented `pnpm ship --ref v1.2.0` needs.
+**Why not `changeset tag`:** in a multi-package repo it emits `@markettrader/server@1.2.0`-style tags. Deploy tooling takes a git ref and constrains it to characters git actually allows in a ref, which excludes `@` — those tags would be rejected. `privatePackages.tag` is therefore `false`, and `scripts/tag-release.mjs` (`pnpm release:tag`) cuts a plain `vX.Y.Z` tag, which is what a deploy-by-tag needs.
 
 **Consequences:**
 - The workspace root's `package.json` version is not managed by changesets — the workspace root is not a changesets package. It is vestigial; `packages/server/package.json` is the canonical app version.
 - Three `CHANGELOG.md` files are generated, one per fixed package. Accepted as the cost of a lockstep version.
-- The version reaches production only by being committed and pushed: the server builds from a fresh `git fetch` of `origin/main`. A version bump that isn't pushed simply doesn't ship.
+- The version reaches production only by being committed and pushed: deployment builds from a fresh fetch of `origin`. A version bump that isn't pushed simply doesn't ship.
 - `src/build-info.ts` needs a `typeof` guard on the injected globals. Dev runs under `tsx watch`, which has no define step, so a bare reference would throw a `ReferenceError` — dev reports `0.0.0-dev`. `vitest.config.ts` duplicates the tsup `define` block so tests exercise the real values instead of that fallback.
 - `/version` is public, matching `/health`. It exposes a version and a commit SHA to anyone; `/health` and the Swagger UI at `/docs` are already public, so this adds little, and being able to check a deploy with one curl is the point.
 
@@ -251,9 +249,9 @@ const db = DATABASE_URL.startsWith('postgres')
 
 **Decision:** The app emits OpenTelemetry traces, metrics, and logs over OTLP to an OpenTelemetry Collector, from both the server and the browser. Instrumentation is **patch-free by design** — no module monkey-patching anywhere. Sentry is removed. All telemetry is disabled unless `OTEL_EXPORTER_OTLP_ENDPOINT` is set.
 
-**Context:** The app runs a real multi-month tournament on a single self-hosted box (ADR-013), and the only observability was pino to journald plus Sentry 5xx capture. There were no metrics and no traces, so questions like "why was that trade slow?", "how often is Yahoo rate-limiting us?", and "how many WebSocket clients are actually connected?" could only be answered by SSHing in and reading logs.
+**Context:** The app runs a multi-month tournament on a single host (ADR-013), and the only observability was pino to stdout plus Sentry 5xx capture. There were no metrics and no traces, so questions like "why was that trade slow?", "how often is Yahoo rate-limiting us?", and "how many WebSocket clients are actually connected?" could only be answered by logging into the host and reading logs.
 
-**Why patch-free is the load-bearing decision.** The standard OTel Node setup patches modules as they load, which requires the SDK to start before any instrumented module is imported. Under ESM that needs an `import-in-the-middle` loader hook, and under a **bundler** it needs a separate entry point launched with `node --import ...` — because esbuild hoists every external `import` to the top of the output file, so no import ordering inside `src/` can win. That would have meant editing the `dev` script, `Dockerfile.server`'s `CMD`, **and** `deploy/systemd/markettrader.service`'s `ExecStart`. The last one requires a `provision.sh` re-run that `deploy.sh` only *warns* about, so forgetting it yields a production process that silently emits nothing.
+**Why patch-free is the load-bearing decision.** The standard OTel Node setup patches modules as they load, which requires the SDK to start before any instrumented module is imported. Under ESM that needs an `import-in-the-middle` loader hook, and under a **bundler** it needs a separate entry point launched with `node --import ...` — because esbuild hoists every external `import` to the top of the output file, so no import ordering inside `src/` can win. That would have meant editing the `dev` script, `Dockerfile.server`'s `CMD`, **and** however the deployed process is launched — which is deployment configuration maintained outside this repo, and therefore the change most likely to be forgotten. Forgetting it yields a production process that silently emits nothing.
 
 None of it is necessary here, because every signal has a real registration point:
 
@@ -269,7 +267,7 @@ The undici piece holds for a structural reason: every outbound call in this code
 
 The cost is nil: `instrumentation-http` would only have added a lower-level span beneath the Fastify one, and `@fastify/otel` supersedes `instrumentation-fastify` outright. Route templates come out *better*, because the plugin reads Fastify's own routing table instead of inferring it.
 
-**If a future instrumentation genuinely requires patching**, it will need the `--import` bootstrap described above, including the systemd change. Weigh that against writing a manual span first.
+**If a future instrumentation genuinely requires patching**, it will need the `--import` bootstrap described above, including the change to how the deployed process is launched. Weigh that against writing a manual span first.
 
 **Alternatives considered:**
 - **`@opentelemetry/auto-instrumentations-node`** — rejected. ~40 transitive packages instrumenting libraries this project does not use, right after a Dependabot cleanup, and it drags in the patching bootstrap for no coverage this app needs.
@@ -282,10 +280,9 @@ The cost is nil: `instrumentation-http` would only have added a lower-level span
 2. **The pino OTLP transport runs in a worker thread** and inherits nothing from the in-process SDK, so the resource attributes must be passed to it explicitly. Otherwise every log record arrives tagged `service_name="unknown_service"` and cannot be joined to its trace.
 
 **Consequences:**
-- **No error alerting until a Grafana/Prometheus server exists.** Errors are not lost — they stay in journald with trace ids attached — but nothing pages anyone. This is the accepted cost of retiring Sentry and the strongest reason to stand up the collector promptly.
+- **No error alerting until a metrics backend and alert rules exist.** Errors are not lost — they stay in the process logs with trace ids attached — but nothing pages anyone. This is the accepted cost of retiring Sentry and the strongest reason to stand up a collector promptly.
 - Retiring Sentry fixed a latent bug in the code it replaced: the old `attachSentry` hook read `reply.statusCode` in `onError`, where Fastify has not applied the status yet and it is still 200. Its `>= 400 ? … : 500` fallback therefore classified *every* thrown error as a 5xx, 4xx validation failures included. `attachErrorCapture` reads `err.statusCode` first.
-- `/otel` is a public, unauthenticated write path into the telemetry store — the SPA posts to it before anyone signs in. The nginx blocks cap body size and rate; removing those caps makes it a trivial flood vector.
-- The nginx change does not deploy itself (see "The nginx site does not deploy itself" in `CLAUDE.md`). Browser telemetry 404s silently until the location block is hand-applied.
+- `/otel` is a public, unauthenticated write path into the telemetry store — the SPA posts to it before anyone signs in. Whatever proxy exposes it must cap body size and rate; without those caps it is a trivial flood vector. Note the failure mode when the route is missing is silent: browser telemetry 404s and the SPA keeps working.
 - `vite.config.ts` now sets `envDir` to the workspace root so the single root `.env` feeds both packages. Only `VITE_`-prefixed variables reach the bundle, so server secrets in that file are not exposed.
 
-**See also:** `docs/observability.md` for the operator runbook and the metric catalogue.
+**See also:** `docs/observability.md` for the metric catalogue and what is instrumented.

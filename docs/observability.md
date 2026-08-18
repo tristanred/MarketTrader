@@ -9,56 +9,36 @@ set at build time.
 
 ---
 
-## Running the local stack
+## Seeing the output
 
-```bash
-pnpm observability:up
-```
-
-That starts `grafana/otel-lgtm` — a single container bundling an OpenTelemetry Collector with
-Prometheus, Tempo, and Loki behind it, plus Grafana. Then:
-
-```bash
-pnpm dev
-```
-
-with these in the workspace-root `.env`:
+Everything below is emitted over OTLP/HTTP to whatever `OTEL_EXPORTER_OTLP_ENDPOINT` names.
+Any OTLP-capable collector works; a single-container option is `grafana/otel-lgtm`, which
+bundles Prometheus, Tempo and Loki behind a collector with Grafana in front.
 
 ```
 OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
 VITE_OTEL_EXPORTER_URL=/otel
 ```
 
-Grafana is at **<http://localhost:3001>** (not 3000 — the API server owns that port). Anonymous
-admin, no login. `pnpm observability:down` tears it down; the data does not survive.
+Set both in the workspace-root `.env`. The first is read at runtime by the server; the second
+is a **build-time** constant baked into the SPA bundle.
 
 > On Windows, set these in `.env` rather than inline on a Git Bash command line. MSYS rewrites
 > arguments that look like absolute paths, so `VITE_OTEL_EXPORTER_URL=/otel pnpm dev` bakes
 > `C:/Program Files/Git/otel` into the bundle.
 
-### What to look at
+The collector deployment and its dashboards are maintained outside this repo, alongside the
+rest of the deployment configuration.
 
-Four dashboards are provisioned automatically, in Grafana's **MarketTrader** folder:
+### What to look for
 
-| Dashboard | Answers |
-|---|---|
-| Service Health | Is the API up and fast? Are the three workers ticking? Is the provider throttling us? |
-| Trading Activity | Fills by side and mode, rejections by reason, order settlement, achievement unlocks |
-| Frontend / RUM | Core Web Vitals, browser spans, uncaught JavaScript errors |
-| Logs & Traces | Error logs with a one-click pivot to the trace; slowest traces; per-symbol trade rate |
-
-They live in `deploy/grafana/` and are bind-mounted into the container — see the README there
-for how the provisioning is wired and how to edit a panel. Nothing about them reaches production.
-
-For ad-hoc digging outside the dashboards:
-
-- **Tempo** — a browser click produces one trace spanning the SPA's `fetch` span, the server's
+- **Traces** — a browser click produces one trace spanning the SPA's `fetch` span, the server's
   `GET /games/:id` span, the `handler` span, `trade.execute`, and the undici span for the
   upstream quote fetch.
-- **Prometheus** — `markettrader_*` for domain metrics, `http_client_request_duration_seconds`
+- **Metrics** — `markettrader_*` for domain metrics, `http_client_request_duration_seconds`
   for upstream calls, `markettrader_web_vitals_*` from the browser.
-- **Loki** — `{service_name="markettrader-server"}`. Every request log carries `trace_id`;
-  clicking it jumps to the trace. `{service_name="markettrader-frontend"}` holds uncaught browser
+- **Logs** — `{service_name="markettrader-server"}`. Every request log carries `trace_id`, so a
+  log line pivots to its trace. `{service_name="markettrader-frontend"}` holds uncaught browser
   errors.
 
 ---
@@ -156,8 +136,8 @@ preference.
 
 ### Deliberate exclusions
 
-- `/health` and `/version` are untraced (`plugins/otel.ts`). `deploy.sh` polls `/health` once a
-  second during every deploy, and uptime monitors poll it forever.
+- `/health` and `/version` are untraced (`plugins/otel.ts`). Deploy tooling and uptime monitors
+  poll `/health` continuously; tracing it would bury real traffic in noise.
 - The two WebSocket routes set `config: { otel: false }`. A WS upgrade is a connection that
   stays open for hours; a request span covering it would never close and would describe nothing.
 
@@ -187,26 +167,14 @@ glance at reports TTFB and FCP.
 The browser posts to a relative `/otel` path, proxied to the collector's OTLP/HTTP port:
 
 - **dev** — the `/otel` rule in `packages/frontend/vite.config.ts` → `localhost:4318`.
-- **production** — the `location /otel/` block in `deploy/nginx/markettrader.conf`.
+- **deployed** — the reverse proxy needs an equivalent route to the collector. That is
+  deployment configuration and lives outside this repo.
 
-### Two things to know before deploying it
+### It is an unauthenticated public write path
 
-**1. It is an unauthenticated public write path.** It has to be: the SPA collects Web Vitals on
-the login page, before anyone signs in. The nginx block therefore caps body size
-(`client_max_body_size 256k`) and rate (`limit_req`). Without those, anyone who finds the path
-can flood Prometheus and Loki.
+It has to be: the SPA collects Web Vitals on the login page, before anyone signs in. Any proxy
+route exposing it should cap body size and request rate — without those, anyone who finds the
+path can flood the metrics and log stores with junk series.
 
-**2. The nginx change does not deploy itself.** `provision.sh` refuses to overwrite an existing
-site file, and `certbot --nginx` has rewritten the installed copy in place — so `pnpm ship`
-ignores it. The failure is silent: browser telemetry 404s and the SPA keeps working, so nothing
-surfaces the gap. Run `deploy/nginx-check.sh` to see the missing block, and follow "Changing the
-nginx site" in `docs/deployment-selfhost.md`.
-
----
-
-## Not done yet
-
-There is **no production collector**. `OTEL_EXPORTER_OTLP_ENDPOINT` is unset in production, so
-the server emits nothing and errors reach journald only — nothing alerts. Standing up a collector
-and a Grafana/Prometheus backend, then choosing dashboards and alert rules, is the follow-up to
-this work. Until then, `journalctl -u markettrader` remains the way to investigate an incident.
+The failure mode when the route is missing is silent: browser telemetry 404s and the SPA keeps
+working, so nothing surfaces the gap. Check for it explicitly rather than assuming.

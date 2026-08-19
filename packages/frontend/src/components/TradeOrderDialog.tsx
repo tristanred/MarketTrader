@@ -389,7 +389,7 @@ export function TradeOrderDialog({
           </div>
         )}
 
-        <div className="max-h-[70vh] overflow-y-auto px-6 py-5 space-y-5">
+        <div className="max-h-[70dvh] overflow-y-auto px-6 py-5 space-y-5">
           {/* Symbol search — only shown when no symbol is selected yet */}
           {!activeSymbol && (
             <div className="relative">
@@ -408,6 +408,10 @@ export function TradeOrderDialog({
                   }
                 }}
                 autoComplete="off"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                enterKeyHint="search"
                 className="bg-background"
               />
               {showSuggestions && search.data && search.data.length > 0 && (
@@ -467,6 +471,7 @@ export function TradeOrderDialog({
                       </div>
                       <Input
                         type="number"
+                        inputMode="numeric"
                         min={1}
                         max={maxQuantity > 0 ? maxQuantity : undefined}
                         step={1}
@@ -474,7 +479,7 @@ export function TradeOrderDialog({
                         onChange={(e) =>
                           setQuantity(Math.max(1, Math.floor(Number(e.target.value) || 1)))
                         }
-                        className="mt-1 h-auto border-0 bg-transparent p-0 font-mono text-3xl font-bold leading-none focus-visible:ring-0"
+                        className="mt-1 h-auto border-0 bg-transparent p-0 font-mono !text-3xl font-bold leading-none focus-visible:ring-0"
                       />
                     </div>
                     <div className="text-right">
@@ -867,12 +872,13 @@ const PriceField = memo(function PriceField({
       <Input
         id={id}
         type="number"
+        inputMode="decimal"
         step="0.01"
         min={0}
         placeholder="$"
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="mt-1 h-auto border-0 bg-transparent p-0 font-mono text-lg font-bold focus-visible:ring-0"
+        className="mt-1 h-auto border-0 bg-transparent p-0 font-mono !text-lg font-bold focus-visible:ring-0"
       />
       {invalid && <p className="mt-1 text-[10px] text-loss">Must be greater than 0</p>}
       {!invalid && deltaVsLast && (

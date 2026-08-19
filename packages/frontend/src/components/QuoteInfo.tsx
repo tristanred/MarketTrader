@@ -87,6 +87,10 @@ export function QuoteInfo({
             }}
             onFocus={() => setShowSuggestions(true)}
             autoComplete="off"
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
+            enterKeyHint="search"
           />
           {showSuggestions && search.data && search.data.length > 0 && (
             <ul className="absolute z-10 mt-1 max-h-44 w-full overflow-auto rounded-md border bg-background shadow-md">

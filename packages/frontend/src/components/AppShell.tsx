@@ -37,7 +37,7 @@ export function AppShell() {
     // into the same context the in-game arena reads. Reset on game
     // change via the keyed remount.
     <SelectedSymbolProvider key={gameId ?? 'no-game'}>
-      <div className="flex min-h-screen flex-col bg-bg text-text">
+      <div className="safe-area flex min-h-dvh flex-col bg-bg text-text">
         <AppHeader />
         <StatusStrip {...(ctx ? { gameContext: ctx } : {})} />
         <main className="flex-1">

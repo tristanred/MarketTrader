@@ -2,10 +2,26 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- viewport-fit=cover is what makes env(safe-area-inset-*) report real
+         numbers; without it iOS letterboxes the page and every inset is 0. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <!-- Launches from the iOS home screen without Safari's chrome. The
+         standardised `mobile-web-app-capable` covers Android; iOS still reads
+         the `apple-` prefixed one. -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <!-- Home-screen label. Without it iOS uses <title>, which is fine here but
+         would drift the moment the title gains a suffix. -->
+    <meta name="apple-mobile-web-app-title" content="MarketTrader" />
+    <!-- No apple-mobile-web-app-status-bar-style on purpose: `black-translucent`
+         forces white status-bar text, which is unreadable over the light
+         "Paper" theme. The default style lets iOS tint the bar from
+         theme-color instead, which themeStore keeps in sync with --bg. -->
     <meta name="theme-color" content="#0a0b0d" />
+    <meta name="color-scheme" content="dark light" />
     <title>MarketTrader</title>
   </head>
   <body>

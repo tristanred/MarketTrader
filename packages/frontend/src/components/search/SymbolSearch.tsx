@@ -112,6 +112,10 @@ export function SymbolSearch({
           onClick={onInputClick}
           className="h-8 w-full rounded-chip border border-hairline-strong bg-panel pl-7 pr-12 font-mono text-xs text-text placeholder:text-muted focus:outline-none focus:ring-1 focus:ring-accent"
           autoComplete="off"
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
+          enterKeyHint="search"
         />
         {hintKbd ? (
           <kbd className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 rounded-chip border border-hairline-strong bg-bg px-1.5 py-0.5 font-mono text-[10px] text-muted">

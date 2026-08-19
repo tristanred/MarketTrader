@@ -87,7 +87,7 @@ export function VersionPage() {
   const verdict = VERDICT[status];
 
   return (
-    <main className="flex min-h-screen justify-center bg-bg px-4 py-10 sm:py-16">
+    <main className="safe-area flex min-h-dvh justify-center bg-bg px-4 py-10 sm:py-16">
       <div className="w-full max-w-md">
         <div className="overflow-hidden rounded-panel border border-hairline-strong bg-panel">
           <header className="px-5 pt-5 pb-4">

@@ -43,7 +43,7 @@ export function LoginPage() {
           : null;
 
   return (
-    <main className="grid min-h-screen bg-bg text-text lg:grid-cols-[3fr_2fr]">
+    <main className="safe-area grid min-h-dvh bg-bg text-text lg:grid-cols-[3fr_2fr]">
       <AuthAtmospherePanel />
       <div className="flex items-center justify-center p-6 sm:p-10">
         <div className="w-full max-w-sm space-y-6">
@@ -59,6 +59,9 @@ export function LoginPage() {
               <Input
                 id="username"
                 autoComplete="username"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
                 className="font-mono"
                 {...form.register('username')}
               />

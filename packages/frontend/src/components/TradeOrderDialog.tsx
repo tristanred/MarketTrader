@@ -70,7 +70,9 @@ export function TradeOrderDialog({
   const [searchQuery, setSearchQuery] = useState('');
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [direction, setDirection] = useState<DirectionTab>(initialDirection);
-  const [quantity, setQuantity] = useState<number>(1);
+  // `null` = the user has not sized the order yet: the field shows the default 1,
+  // and the first quick-fill press jumps straight to its amount instead of adding.
+  const [quantity, setQuantity] = useState<number | null>(null);
   const [term, setTerm] = useState<Term>('DAY');
   const [priceType, setPriceType] = useState<PriceType>('MARKET');
   const [limitPrice, setLimitPrice] = useState<string>('');
@@ -84,7 +86,7 @@ export function TradeOrderDialog({
       setSearchQuery('');
       setShowSuggestions(false);
       setDirection(initialDirection);
-      setQuantity(1);
+      setQuantity(null);
       setTerm('DAY');
       setPriceType('MARKET');
       setLimitPrice('');
@@ -158,7 +160,7 @@ export function TradeOrderDialog({
     return heldQuantity;
   }, [isBuy, displayPrice, cashBalance, heldQuantity]);
 
-  const effectiveQuantity = Math.min(Math.max(1, quantity), Math.max(1, maxQuantity));
+  const effectiveQuantity = Math.min(Math.max(1, quantity ?? 1), Math.max(1, maxQuantity));
   const orderValue = (displayPrice ?? 0) * effectiveQuantity;
   const total = orderValue + COMMISSION_USD;
 
@@ -198,12 +200,17 @@ export function TradeOrderDialog({
     setActiveSymbol(next);
     setSearchQuery('');
     setShowSuggestions(false);
-    setQuantity(1);
+    setQuantity(null);
+  };
+
+  const handleQuickAdd = (delta: number) => {
+    const next = quantity === null ? delta : effectiveQuantity + delta;
+    setQuantity(Math.min(Math.max(1, next), Math.max(1, maxQuantity)));
   };
 
   const handleClear = () => {
     setDirection('buy');
-    setQuantity(1);
+    setQuantity(null);
     setTerm('DAY');
     setPriceType('MARKET');
     setLimitPrice('');
@@ -508,9 +515,9 @@ export function TradeOrderDialog({
                 />
 
                 <div className="flex gap-2">
-                  <QuickFill label="+10" onClick={() => bumpQty(setQuantity, effectiveQuantity, 10, maxQuantity)} disabled={maxQuantity < 1} />
-                  <QuickFill label="+25" onClick={() => bumpQty(setQuantity, effectiveQuantity, 25, maxQuantity)} disabled={maxQuantity < 1} />
-                  <QuickFill label="+100" onClick={() => bumpQty(setQuantity, effectiveQuantity, 100, maxQuantity)} disabled={maxQuantity < 1} />
+                  <QuickFill label="+10" onClick={() => handleQuickAdd(10)} disabled={maxQuantity < 1} />
+                  <QuickFill label="+25" onClick={() => handleQuickAdd(25)} disabled={maxQuantity < 1} />
+                  <QuickFill label="+100" onClick={() => handleQuickAdd(100)} disabled={maxQuantity < 1} />
                   <QuickFill label="25%" onClick={() => setQuantity(Math.max(1, Math.floor(maxQuantity * 0.25)))} disabled={maxQuantity < 1} />
                   <QuickFill label="50%" onClick={() => setQuantity(Math.max(1, Math.floor(maxQuantity * 0.5)))} disabled={maxQuantity < 1} />
                 </div>
@@ -702,15 +709,6 @@ export function TradeOrderDialog({
       </DialogContent>
     </Dialog>
   );
-}
-
-function bumpQty(
-  setQuantity: (n: number) => void,
-  current: number,
-  delta: number,
-  max: number,
-) {
-  setQuantity(Math.min(Math.max(1, current + delta), Math.max(1, max)));
 }
 
 function labelForType(t: PriceType): string {

@@ -148,6 +148,14 @@ async function selectPriceType(
   await user.click(screen.getByRole('button', { name: PRICE_TYPE_PILL_NAME[value] }));
 }
 
+function quickFill(label: string) {
+  return screen.getByRole('button', { name: label });
+}
+
+function sharesInput() {
+  return screen.getByRole('spinbutton');
+}
+
 describe('TradeOrderDialog', () => {
   it('enables the submit button for a default MARKET buy', () => {
     render(wrap(<TradeOrderDialog {...baseProps} />));
@@ -313,5 +321,78 @@ describe('TradeOrderDialog', () => {
     expect(placeMutate).toHaveBeenCalledWith(
       expect.objectContaining({ timeInForce: 'gtc' }),
     );
+  });
+
+  describe('quick-fill quantity buttons', () => {
+    it('jumps to the increment on the first press instead of adding to the default', async () => {
+      const user = userEvent.setup();
+      render(wrap(<TradeOrderDialog {...baseProps} />));
+      expect(sharesInput()).toHaveValue(1);
+
+      await user.click(quickFill('+25'));
+
+      expect(sharesInput()).toHaveValue(25);
+      expect(submitBtn()).toHaveTextContent(`Buy 25 ${SYMBOL}`);
+    });
+
+    it('adds on every press after the first', async () => {
+      const user = userEvent.setup();
+      render(wrap(<TradeOrderDialog {...baseProps} />));
+
+      await user.click(quickFill('+25'));
+      await user.click(quickFill('+25'));
+
+      expect(sharesInput()).toHaveValue(50);
+    });
+
+    it('only the first press replaces, even for a different increment', async () => {
+      const user = userEvent.setup();
+      render(wrap(<TradeOrderDialog {...baseProps} />));
+
+      await user.click(quickFill('+25'));
+      await user.click(quickFill('+10'));
+
+      expect(sharesInput()).toHaveValue(35);
+    });
+
+    it('typing a quantity counts as sizing the order, so the next press adds', async () => {
+      const user = userEvent.setup();
+      render(wrap(<TradeOrderDialog {...baseProps} />));
+
+      // The typed value has to differ from the one on screen: React's value
+      // tracker suppresses onChange for a no-op edit, which would leave the
+      // order pristine and make this read as a false failure.
+      fireEvent.change(sharesInput(), { target: { value: '3' } });
+      await user.click(quickFill('+25'));
+
+      expect(sharesInput()).toHaveValue(28);
+    });
+
+    it('restores the first-press behaviour when the dialog is reopened', async () => {
+      const user = userEvent.setup();
+      const { rerender } = render(wrap(<TradeOrderDialog {...baseProps} />));
+
+      await user.click(quickFill('+25'));
+      await user.click(quickFill('+25'));
+      expect(sharesInput()).toHaveValue(50);
+
+      rerender(wrap(<TradeOrderDialog {...baseProps} open={false} />));
+      rerender(wrap(<TradeOrderDialog {...baseProps} open />));
+
+      await user.click(quickFill('+25'));
+      expect(sharesInput()).toHaveValue(25);
+    });
+
+    it('still clamps the first press to the maximum quantity', async () => {
+      const user = userEvent.setup();
+      render(wrap(<TradeOrderDialog {...baseProps} />));
+      // Sell side caps at the 50 shares held, so +100 lands on 50, not 100.
+      fireEvent.click(screen.getByRole('button', { name: /^sell$/i }));
+
+      await user.click(quickFill('+100'));
+
+      expect(sharesInput()).toHaveValue(50);
+      expect(submitBtn()).toHaveTextContent(`Sell 50 ${SYMBOL}`);
+    });
   });
 });

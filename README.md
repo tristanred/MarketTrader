@@ -200,6 +200,60 @@ pnpm docs:achievements
 
 Re-captures one preview PNG per achievement and rewrites `docs/achievements.md`.
 
+## Releasing a New Version
+
+The app carries **one version**. `server`, `frontend`, and `shared` are a changesets `fixed`
+group, so they always move together — `packages/server/package.json` is the canonical copy, and
+its value is what `GET /api/version` reports. (The workspace root's version is vestigial and is
+not managed by changesets.)
+
+### 1. Describe each change as you make it
+
+```bash
+pnpm changeset
+```
+
+Select the affected packages and the bump type (`patch` / `minor` / `major`), write a short
+description, and commit the generated `.changeset/*.md` file alongside the change itself. The
+highest bump among the pending changesets decides the release.
+
+To see what is queued without consuming anything:
+
+```bash
+pnpm changeset status
+```
+
+### 2. Cut the release
+
+```bash
+pnpm changeset version    # bump all three packages, write CHANGELOGs, consume the changesets
+git commit -am "release: vX.Y.Z"
+pnpm release:tag          # cut a bare vX.Y.Z tag
+git push --follow-tags    # push before deploying
+```
+
+The order is load-bearing: `pnpm release:tag` reads the version out of
+`packages/server/package.json`, so tagging before the bump is committed tags the _previous_
+version.
+
+### Gotchas
+
+- **Push before deploying.** Deployment builds from `origin`, so a version commit that never
+  leaves your machine never reaches production.
+- **Commit `pnpm-lock.yaml` if `changeset version` dirties it.** Deployment installs with
+  `--frozen-lockfile` and will fail otherwise. (`workspace:*` specifiers embed no versions, so
+  normally the lockfile stays clean.)
+- **Never run `pnpm changeset publish`.** Nothing in this repo goes to a registry.
+- **Use `pnpm release:tag`, not `changeset tag`.** In a multi-package repo the latter emits
+  `@markettrader/server@1.2.0`-style tags, and `@` is not accepted in a ref that deploy-by-tag
+  takes.
+- **Versioning and deploying are independent.** Cutting a version deploys nothing, and deploying
+  changes no version — which is why several deploys can legitimately share a version number, and
+  why the build stamp pairs the version with a git SHA.
+
+Full rationale lives in the "Versioning and Releases" section of [`CLAUDE.md`](CLAUDE.md) and in
+ADR-014 of [`docs/technical-decisions.md`](docs/technical-decisions.md).
+
 ## Environment Variables
 
 | Variable         | Default                 | Description                                                               |

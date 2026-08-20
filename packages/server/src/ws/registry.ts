@@ -50,6 +50,11 @@ export class GameClientRegistry {
     return [...this.games.keys()];
   }
 
+  /** Every registered socket across all games — walked by the heartbeat. */
+  *sockets(): Iterable<WebSocket> {
+    for (const clients of this.games.values()) yield* clients.keys();
+  }
+
   /** Broadcast a server event to every OPEN socket in a game. */
   broadcast(gameId: string, event: WsServerEvent): void {
     const clients = this.games.get(gameId);

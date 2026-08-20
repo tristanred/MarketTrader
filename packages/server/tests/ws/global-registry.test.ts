@@ -37,4 +37,12 @@ describe('GlobalClientRegistry', () => {
     registry.broadcast({ event: 'indices', data: { quotes: [], at: 'now' } });
     expect(sent).toHaveLength(0);
   });
+
+  it('exposes its sockets for the heartbeat to walk', () => {
+    const a = { readyState: 1, send: () => {} } as unknown as WebSocket;
+    const b = { readyState: 1, send: () => {} } as unknown as WebSocket;
+    registry.add('u1', a);
+    registry.add('u2', b);
+    expect([...registry.sockets()]).toEqual([a, b]);
+  });
 });

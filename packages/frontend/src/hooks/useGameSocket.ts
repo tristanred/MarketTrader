@@ -2,14 +2,13 @@ import { useEffect, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuthStore } from '@/stores/authStore';
 import { useLiveStore } from '@/stores/liveStore';
+import { useConnectionStore } from '@/stores/connectionStore';
+import { ReconnectController, attachResumeListeners } from '@/lib/reconnect';
 import { tradeKeys } from '@/api/trades';
 import { leaderboardHistoryKeys } from '@/api/leaderboard-history';
 import { toast } from '@/components/ui/toast';
 import { useAchievementUnlockStream } from './useAchievementUnlockStream';
 import type { WsClientEvent, WsServerEvent } from '@markettrader/shared';
-
-const MAX_BACKOFF_MS = 30_000;
-const BASE_BACKOFF_MS = 1_000;
 
 /** Compute the WebSocket URL for a given game, including the access token query param. */
 function buildWsUrl(gameId: string, token: string): string {
@@ -20,8 +19,9 @@ function buildWsUrl(gameId: string, token: string): string {
 /**
  * Opens a per-game WebSocket connection, dispatches inbound events into the
  * live store, sends a `subscribe` message whenever the symbol list changes,
- * and reconnects with exponential backoff. Returns nothing; tear-down happens
- * on unmount.
+ * and reconnects under {@link ReconnectController}'s backoff policy. Publishes
+ * its health on the `game` channel of {@link useConnectionStore}. Returns
+ * nothing; tear-down happens on unmount.
  *
  * @param myGamePlayerId - The viewer's gamePlayerId, used to filter
  *   achievement_unlocked events to only those belonging to the current player.
@@ -42,7 +42,6 @@ export function useGameSocket(gameId: string, symbols: string[], myGamePlayerId:
   handleAchievementUnlockRef.current = handleAchievementUnlock;
 
   const wsRef = useRef<WebSocket | null>(null);
-  const reconnectRef = useRef<{ attempt: number; timer: number | null }>({ attempt: 0, timer: null });
   const symbolsRef = useRef<string[]>(symbols);
   symbolsRef.current = symbols;
   // Tracks the last sorted-joined symbol set actually sent on this socket.
@@ -53,6 +52,8 @@ export function useGameSocket(gameId: string, symbols: string[], myGamePlayerId:
     if (!gameId || !token) return;
     let cancelled = false;
     useLiveStore.getState().reset();
+    const { setStatus } = useConnectionStore.getState();
+    const reconnect = new ReconnectController();
 
     const sendSubscribe = (ws: WebSocket, syms: string[]) => {
       if (syms.length === 0) return;
@@ -69,11 +70,13 @@ export function useGameSocket(gameId: string, symbols: string[], myGamePlayerId:
 
     const connect = () => {
       if (cancelled) return;
+      setStatus('game', 'connecting');
       const ws = new WebSocket(buildWsUrl(gameId, token));
       wsRef.current = ws;
 
       ws.onopen = () => {
-        reconnectRef.current.attempt = 0;
+        reconnect.markOpen();
+        setStatus('game', 'live');
         lastSentKeyRef.current = null;
         sendSubscribe(ws, symbolsRef.current);
       };
@@ -127,21 +130,29 @@ export function useGameSocket(gameId: string, symbols: string[], myGamePlayerId:
 
       ws.onclose = () => {
         if (cancelled) return;
-        const attempt = reconnectRef.current.attempt + 1;
-        reconnectRef.current.attempt = attempt;
-        const delay = Math.min(BASE_BACKOFF_MS * 2 ** (attempt - 1), MAX_BACKOFF_MS);
-        reconnectRef.current.timer = window.setTimeout(connect, delay);
+        setStatus('game', reconnect.scheduleReconnect(connect) === null ? 'offline' : 'reconnecting');
       };
     };
+
+    // Only revives a socket that has spent its attempt budget — a healthy or
+    // already-pending one is left alone.
+    const resume = () => {
+      if (cancelled || !reconnect.exhausted) return;
+      reconnect.reset();
+      connect();
+    };
+    const detachResume = attachResumeListeners(resume);
+    const unsubscribeRetry = useConnectionStore.subscribe((s, prev) => {
+      if (s.retryNonce !== prev.retryNonce) resume();
+    });
 
     connect();
 
     return () => {
       cancelled = true;
-      if (reconnectRef.current.timer !== null) {
-        window.clearTimeout(reconnectRef.current.timer);
-        reconnectRef.current.timer = null;
-      }
+      detachResume();
+      unsubscribeRetry();
+      reconnect.cancel();
       if (wsRef.current) {
         try {
           wsRef.current.close();
@@ -151,6 +162,7 @@ export function useGameSocket(gameId: string, symbols: string[], myGamePlayerId:
         wsRef.current = null;
       }
       lastSentKeyRef.current = null;
+      setStatus('game', 'idle');
     };
   }, [gameId, token]);
 

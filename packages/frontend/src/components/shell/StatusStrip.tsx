@@ -7,6 +7,7 @@ import { INDICES_QUERY_KEY, INDICES_UNAVAILABLE_QUERY_KEY } from '@/hooks/useInd
 import { AboutGameModal } from './AboutGameModal';
 import { useMarketStatus } from '@/api/market-status';
 import { useSetSelectedSymbol } from '@/contexts/SelectedSymbolContext';
+import { selectConnectionStatus, useConnectionStore } from '@/stores/connectionStore';
 import type { IndexQuote } from '@markettrader/shared';
 import { cn } from '@/lib/utils';
 
@@ -24,8 +25,9 @@ export interface StatusStripProps {
 
 /**
  * Second row of global chrome. Left: market-open pulse dot, ticking ET clock,
- * LIVE pill, three major index quotes. Right (only inside a game): the
- * DAY n/N marker and an info button that opens {@link AboutGameModal}.
+ * a {@link ConnectionPill} reflecting live-socket health, three major index
+ * quotes. Right (only inside a game): the DAY n/N marker and an info button
+ * that opens {@link AboutGameModal}.
  */
 export function StatusStrip({ gameContext }: StatusStripProps) {
   const clock = useLiveClock();
@@ -66,9 +68,7 @@ export function StatusStrip({ gameContext }: StatusStripProps) {
           MARKET {isOpen ? 'OPEN' : 'CLOSED'}
         </span>
         <span className="shrink-0">{clock} ET</span>
-        <span className="shrink-0 rounded-chip bg-accent-bg px-2 py-0.5 text-[10px] tracking-[0.14em] text-accent">
-          LIVE
-        </span>
+        <ConnectionPill />
         <span className="hidden min-w-0 items-center gap-4 overflow-hidden lg:flex">
           {unavailable.data ? (
             <span className="text-loss">INDICES UNAVAILABLE</span>
@@ -123,6 +123,40 @@ export function StatusStrip({ gameContext }: StatusStripProps) {
         </div>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * The LIVE indicator, doubling as the recovery affordance: sockets stop
+ * retrying once their attempt budget is spent, so `offline` has to give the
+ * user a way back rather than just a label.
+ */
+function ConnectionPill() {
+  const status = useConnectionStore(selectConnectionStatus);
+  const requestRetry = useConnectionStore((s) => s.requestRetry);
+
+  if (status === 'offline') {
+    return (
+      <button
+        type="button"
+        onClick={requestRetry}
+        className="shrink-0 rounded-chip bg-loss/15 px-2 py-0.5 text-[10px] tracking-[0.14em] text-loss hover:bg-loss/25"
+      >
+        OFFLINE · RECONNECT
+      </button>
+    );
+  }
+  if (status === 'reconnecting') {
+    return (
+      <span className="shrink-0 animate-pulse rounded-chip bg-hairline px-2 py-0.5 text-[10px] tracking-[0.14em] text-muted">
+        RECONNECTING
+      </span>
+    );
+  }
+  return (
+    <span className="shrink-0 rounded-chip bg-accent-bg px-2 py-0.5 text-[10px] tracking-[0.14em] text-accent">
+      LIVE
+    </span>
   );
 }
 

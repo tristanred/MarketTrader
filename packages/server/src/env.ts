@@ -228,6 +228,19 @@ export const env = {
   ),
 
   /**
+   * How often the server sends WebSocket ping frames to connected clients, in
+   * ms. Must stay comfortably below the shortest idle timeout on the path
+   * (reverse-proxy `proxy_read_timeout`, NAT tables): a socket reaped by an
+   * intermediary tells neither end, which strands the server entry and puts
+   * the browser into a reconnect loop. A client that misses one ping is
+   * terminated.
+   */
+  WS_HEARTBEAT_INTERVAL_MS: parsePositiveInt(
+    'WS_HEARTBEAT_INTERVAL_MS',
+    optional('WS_HEARTBEAT_INTERVAL_MS', '30000'),
+  ),
+
+  /**
    * SQLite (libsql) busy-handler timeout in ms — how long a writer waits for a
    * contended lock before failing with SQLITE_BUSY. Set as a per-connection
    * `PRAGMA busy_timeout` at startup (covers reads/conn0) and re-applied before

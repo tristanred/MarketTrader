@@ -108,4 +108,12 @@ describe('GameClientRegistry', () => {
       expect(messages).toHaveLength(0);
     });
   });
+
+  it('exposes sockets across every game for the heartbeat to walk', () => {
+    const a = { readyState: 1, send: () => {} } as unknown as WebSocket;
+    const b = { readyState: 1, send: () => {} } as unknown as WebSocket;
+    registry.add('game-1', 'p1', a);
+    registry.add('game-2', 'p2', b);
+    expect([...registry.sockets()]).toEqual([a, b]);
+  });
 });

@@ -112,6 +112,14 @@ The server maintains a set of "watched symbols" per active game (union of all sy
 
 After each trade, the server rebroadcasts a `leaderboard_update` event recalculated with the latest prices.
 
+### Connection lifecycle
+
+The server pings every connected socket every `WS_HEARTBEAT_INTERVAL_MS` (default 30s) and terminates any client that missed the previous round trip. This keeps an idle socket from being reaped unannounced by a reverse proxy or NAT table, and clears peers that disappeared without a close frame.
+
+Both browser hooks (`useGameSocket`, `useIndicesSocket`) reconnect through `ReconnectController` in `packages/frontend/src/lib/reconnect.ts`: exponential backoff from 1s to a 30s ceiling, jittered into the lower half of each window, and capped at 10 consecutive attempts. The attempt counter clears only once a connection has stayed open for 30s — clearing it on `open` instead pins a socket that opens and immediately drops to the base delay forever, which is what produced ~15k reconnects/day on the self-hosted instance (issue #27).
+
+Once the attempt budget is spent the hook stops and publishes `offline` on `useConnectionStore`; the `LIVE` pill in `StatusStrip` becomes a retry button. A give-up state also re-tests itself when the browser comes back online or the tab returns to the foreground.
+
 ---
 
 ## Feature Roadmap (post-MVP)

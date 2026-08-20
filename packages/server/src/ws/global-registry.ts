@@ -25,6 +25,11 @@ export class GlobalClientRegistry {
     if (this.clients.delete(socket)) meters.wsClients.add(-1, { scope: 'global' });
   }
 
+  /** Every registered socket — walked by the heartbeat. */
+  sockets(): Iterable<WebSocket> {
+    return this.clients.keys();
+  }
+
   broadcast(message: LiveWsMessage): void {
     const payload = JSON.stringify(message);
     for (const [socket] of this.clients) {

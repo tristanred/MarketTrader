@@ -1,10 +1,11 @@
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import { StatusStrip } from '@/components/shell/StatusStrip';
 import { INDICES_QUERY_KEY, INDICES_UNAVAILABLE_QUERY_KEY } from '@/hooks/useIndicesSocket';
 import { SelectedSymbolProvider } from '@/contexts/SelectedSymbolContext';
+import { useConnectionStore } from '@/stores/connectionStore';
 import type { IndexQuote } from '@markettrader/shared';
 import type React from 'react';
 
@@ -26,6 +27,7 @@ describe('StatusStrip', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-05-15T14:23:08-04:00'));
+    useConnectionStore.setState({ game: 'idle', global: 'idle', retryNonce: 0 });
   });
   afterEach(() => vi.useRealTimers());
 
@@ -76,5 +78,24 @@ describe('StatusStrip', () => {
     render(ui);
     expect(screen.getByText(/DAY 4 \/ 14/)).toBeInTheDocument();
     expect(screen.getByText(/Friday Night/)).toBeInTheDocument();
+  });
+
+  it('replaces the LIVE pill with RECONNECTING while a socket is backing off', () => {
+    useConnectionStore.setState({ global: 'reconnecting' });
+    const { ui } = wrap(<StatusStrip />);
+    render(ui);
+    expect(screen.getByText('RECONNECTING')).toBeInTheDocument();
+    expect(screen.queryByText('LIVE')).not.toBeInTheDocument();
+  });
+
+  it('offers a retry button once a socket has given up', () => {
+    useConnectionStore.setState({ global: 'offline' });
+    const { ui } = wrap(<StatusStrip />);
+    render(ui);
+
+    const button = screen.getByRole('button', { name: /reconnect/i });
+    act(() => button.click());
+
+    expect(useConnectionStore.getState().retryNonce).toBe(1);
   });
 });

@@ -34,6 +34,7 @@ import { GlobalClientRegistry } from './ws/global-registry.js';
 import { liveRoute } from './ws/live-route.js';
 import { globalLiveRoute } from './ws/global-live-route.js';
 import { IndicesBroadcaster } from './ws/indices-broadcaster.js';
+import { startWsHeartbeat } from './ws/heartbeat.js';
 import { startPricePoller } from './ws/price-poller.js';
 import { startPendingOrdersWorker } from './workers/pending-orders.js';
 import { startPortfolioSnapshotWorker } from './workers/portfolio-snapshot.js';
@@ -155,6 +156,19 @@ export async function buildApp(
   await app.register(globalLiveRoute(globalRegistry));
 
   if (!disablePoller) {
+    // Keeps idle sockets from being reaped by an intermediary, and reaps peers
+    // that vanished without a close frame.
+    const heartbeat = startWsHeartbeat(
+      function* () {
+        yield* registry.sockets();
+        yield* globalRegistry.sockets();
+      },
+      { intervalMs: env.WS_HEARTBEAT_INTERVAL_MS },
+    );
+    app.addHook('onClose', async () => {
+      heartbeat.stop();
+    });
+
     const poller = startPricePoller(db, provider, registry);
     app.addHook('onClose', async () => {
       await poller.stop();

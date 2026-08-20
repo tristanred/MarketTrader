@@ -106,6 +106,15 @@ Every exported function, class, and interface must have a JSDoc comment unless t
 - **Batch price updates** — never push a message for every individual price tick; batch at 5-second intervals
 - **Clean up disconnected clients** — always remove sockets from broadcast lists on `close` and `error`
 - **Auth on upgrade** — validate JWT from `?token=` query param at WebSocket connection time, not per-message
+- **Heartbeat** — `startWsHeartbeat` (`ws/heartbeat.ts`) pings every socket in both registries every
+  `WS_HEARTBEAT_INTERVAL_MS` and terminates clients that missed the previous ping. Keep the interval
+  under the shortest idle timeout on the deployed path (`proxy_read_timeout`), or intermediaries reap
+  idle sockets and neither end is told.
+- **Client backoff lives in one place** — `ReconnectController` (`frontend/src/lib/reconnect.ts`).
+  Both socket hooks use it. Its attempt counter clears only after a connection has been open for 30s;
+  clearing on `open` pins a socket that opens and immediately drops to the base delay forever
+  (issue #27). Sockets stop after 10 consecutive attempts and publish `offline` on
+  `useConnectionStore`, which turns the `LIVE` pill into a retry button.
 
 ---
 
@@ -168,8 +177,8 @@ Additional vars rarely need touching (defined in `env.ts`, most also documented
 in `.env.example`): the `MARKET_*` family (hours mode, status provider, extended
 hours), the `STOCK_*_MS` resilience tunables (cache TTLs, rate-limit backoff,
 stale-trade policy), the `LOGIN_*` family (per-account login throttle),
-`PENDING_ORDERS_TICK_MS`, `PORTFOLIO_SNAPSHOT_INTERVAL_MS`, and the `OTEL_*`
-family. `env.ts` is the source of truth for the full set.
+`PENDING_ORDERS_TICK_MS`, `PORTFOLIO_SNAPSHOT_INTERVAL_MS`,
+`WS_HEARTBEAT_INTERVAL_MS`, and the `OTEL_*` family. `env.ts` is the source of truth for the full set.
 
 ---
 

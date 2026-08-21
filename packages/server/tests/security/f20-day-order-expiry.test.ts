@@ -105,12 +105,33 @@ describe('nextSessionClose', () => {
     );
   });
 
-  it('emits the same ISO shape expireDayOrders compares against', () => {
-    // expireDayOrders compares expiresAt lexicographically against
-    // `new Date().toISOString()`, so the stored value must be that exact form.
-    expect(nextSessionClose(new Date('2026-08-19T18:00:00Z')).toISOString()).toMatch(
-      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/,
-    );
+  it('orders lexicographically the way expireDayOrders needs it to', () => {
+    // expireDayOrders has no time predicate: it compares expiresAt as TEXT
+    // against `new Date().toISOString()`. String order therefore has to agree
+    // with chronological order, which only holds for the fixed-width UTC form.
+    //
+    // Asserting the regex on `.toISOString()` would prove nothing — that method
+    // always returns that shape. What can actually regress is someone storing a
+    // different rendering (an offset form like 2026-08-19T16:00:00-04:00, or a
+    // Date coerced by the driver), so compare orderings directly.
+    const close = nextSessionClose(new Date('2026-08-19T18:00:00Z'));
+    const before = new Date(close.getTime() - 1000);
+    const after = new Date(close.getTime() + 1000);
+
+    expect(before.toISOString() < close.toISOString()).toBe(true);
+    expect(after.toISOString() > close.toISOString()).toBe(true);
+
+    // The offset form names the same instant but sorts as though it were four
+    // hours earlier, so `expiresAt < now` fires before the session has closed.
+    // That is the substitution this guards against.
+    const offsetForm = '2026-08-19T16:00:00-04:00';
+    const anHourBeforeClose = new Date(close.getTime() - 3_600_000).toISOString();
+
+    expect(new Date(offsetForm).getTime()).toBe(close.getTime());
+    // Correct rendering: not yet expired an hour before the close.
+    expect(close.toISOString() < anHourBeforeClose).toBe(false);
+    // Offset rendering: already "expired", an hour early.
+    expect(offsetForm < anHourBeforeClose).toBe(true);
   });
 });
 

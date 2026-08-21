@@ -162,6 +162,36 @@ in-flight requests — bounded and harmless now that it only backstops a load
 limit. And it is per *game-player*, so a player who creates N games gets N × 50;
 the load that permits is cacheable, since the poller de-duplicates symbols.
 
+### Day-order expiry only runs in `pending` market-hours mode
+
+`expireDayOrders` has one caller, the pending-orders worker, and that worker is
+registered only when `MARKET_HOURS_MODE === 'pending'`. The env default is
+`instant`. So on a default-configured server the `expiresAt` stamped on day
+orders is written and never read, and resting orders stay immortal — the very
+property that made F20 permanent rather than transient. `provision.sh` writes
+`pending`, so deployed hosts get the expiry; a developer running defaults does
+not. (The same gate means `evaluateTriggers` never runs in `instant` mode
+either, so limit/stop/bracket orders never fill there. Pre-existing.)
+
+Second-order consequence on `pending`-mode servers: `timeInForce` defaults to
+`day`, so a client that omits it now gets an order that dies at the next session
+close where before it never expired.
+
+### Order symbol validation fails open when the provider is unavailable
+
+`POST /trades` rejects an order whose symbol the provider reports as
+`SYMBOL_NOT_FOUND`, which is what stops a junk ticker becoming a permanent
+upstream fetch. `RATE_LIMITED` and other provider errors deliberately do NOT
+reject — a provider outage must not block trading. The tradeoff is real and
+one-sided: during a rate-limit window, junk symbols can still be stored, and a
+GTC order gets no `expiresAt`, so those rows are immortal. The price-poller leg
+is bounded by `PRICE_POLLER_MAX_SYMBOLS`, but `evaluateTriggers` fetches one
+symbol at a time with no cap.
+
+Not implemented from the finding's own list: negative caching of
+`SYMBOL_NOT_FOUND`, cancel-after-N-consecutive-failures, a minimum reservation
+value, and any backfill of `expiresAt` for rows already resting in production.
+
 ### Day orders expire at the next session close, ignoring half-days
 
 `expiresAt` for a `day`-TIF order is stamped from `nextSessionClose`

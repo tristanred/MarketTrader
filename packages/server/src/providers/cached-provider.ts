@@ -58,8 +58,9 @@ function chunk<T>(items: T[], size: number): T[][] {
  *     within `STOCK_CACHE_TTL_MS` skip the upstream fetch entirely. On a fresh
  *     fetch the cache row is upserted.
  *  2. **Search cache** — an in-memory `Map<query, results>` with TTL
- *     `STOCK_SEARCH_CACHE_TTL_MS`. Search responses are static for a query
- *     within minutes; caching them protects against autocomplete bursts.
+ *     `STOCK_SEARCH_CACHE_TTL_MS` and at most {@link SEARCH_CACHE_MAX_ENTRIES}
+ *     keys. Search responses are static for a query within minutes; caching
+ *     them protects against autocomplete bursts.
  *
  * The decorator also implements **graceful stale fallback** for `getQuote`:
  * when the inner provider throws `RATE_LIMITED` and the cache row is no older
@@ -175,7 +176,6 @@ export class CachedProvider implements StockProvider {
   }
 
   /**
-  /**
    * Rebuilds a {@link StockQuote} from a persisted cache row, re-attaching the
    * market state from the in-memory shadow map. Pass `stale` when the row is
    * being served because the upstream is unavailable.
@@ -266,6 +266,7 @@ export class CachedProvider implements StockProvider {
     return out;
   }
 
+  /**
    * Upserts a freshly-fetched quote into the persisted price cache and mirrors
    * its market state, so subsequent {@link getQuote} reads and the rest of the
    * app share it. Shared by {@link getQuote} and search-result enrichment.
@@ -351,11 +352,21 @@ export class CachedProvider implements StockProvider {
     if (hit && Date.now() - hit.fetchedAt < env.STOCK_SEARCH_CACHE_TTL_MS) {
       base = hit.results;
     } else {
+      // The key is what upstream gets. Any two inputs that collapse to the same
+      // key must produce the same upstream query, or one caller's results end up
+      // cached under another caller's term. Whitespace and case are not the only
+      // pair that collapses — U+212A lowercases to 'k' — so deriving both from
+      // one value is the only version of this that stays true.
+      //
       // A search-path rate-limit must still surface as 429 — keep this OUTSIDE
       // the best-effort enrichment try/catch.
       base = await this.upstream('searchSymbols', undefined, () =>
-        this.inner.searchSymbols(query),
+        this.inner.searchSymbols(key),
       );
+      if (this.searchCache.size >= SEARCH_CACHE_MAX_ENTRIES) {
+        const oldest = this.searchCache.keys().next();
+        if (!oldest.done) this.searchCache.delete(oldest.value);
+      }
       this.searchCache.set(key, { results: base, fetchedAt: Date.now() });
     }
 

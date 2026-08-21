@@ -4,23 +4,14 @@ import type { AddressInfo } from 'net';
 import type { FastifyInstance } from 'fastify';
 import { and, eq } from 'drizzle-orm';
 import { buildApp } from '../../src/app.js';
-import { createTestDb } from '../helpers/app.js';
+import { createTestDb, registerAdmin } from '../helpers/app.js';
 import { MockStockProvider } from '../helpers/mock-provider.js';
 import { schema } from '../../src/db/index.js';
+import { WS_AUTH_SUBPROTOCOL } from '../../src/ws/subprotocol.js';
 
 // ─── helpers (mirror live-route-achievement-replay.test.ts) ───────────────────
 
 type Db = Awaited<ReturnType<typeof createTestDb>>;
-
-async function registerUser(app: FastifyInstance, username: string) {
-  const res = await app.inject({
-    method: 'POST',
-    url: '/auth/register',
-    payload: { username, password: 'password123' },
-  });
-  const body = res.json<{ token: string; user: { id: string } }>();
-  return { token: body.token, userId: body.user.id };
-}
 
 async function createActiveGame(app: FastifyInstance, token: string) {
   const res = await app.inject({
@@ -38,7 +29,7 @@ async function createActiveGame(app: FastifyInstance, token: string) {
 }
 
 function connectWs(port: number, gameId: string, token: string): WebSocket {
-  return new WebSocket(`ws://127.0.0.1:${port}/games/${gameId}/live?token=${token}`);
+  return new WebSocket(`ws://127.0.0.1:${port}/games/${gameId}/live`, [WS_AUTH_SUBPROTOCOL, token]);
 }
 
 function waitForOpen(ws: WebSocket, ms = 2000): Promise<void> {
@@ -110,8 +101,7 @@ describe('Admin achievement mutations broadcast WS events', () => {
     await app.listen({ port: 0, host: '127.0.0.1' });
     port = (app.server.address() as AddressInfo).port;
 
-    // First-registered becomes admin.
-    ({ token: adminToken } = await registerUser(app, 'admin-broadcast'));
+    ({ token: adminToken } = await registerAdmin(app, 'admin-broadcast'));
     ({ id: gameId } = await createActiveGame(app, adminToken));
 
     const [row] = await db

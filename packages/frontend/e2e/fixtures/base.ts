@@ -1,3 +1,4 @@
+import { DatabaseSync } from 'node:sqlite';
 import {
   test as base,
   request,
@@ -8,6 +9,30 @@ import {
 } from '@playwright/test';
 
 const API_BASE = 'http://127.0.0.1:3000';
+
+/** Mirrors `ADMIN_GROUP_ID` in `packages/server/src/constants/groups.ts`. */
+const ADMIN_GROUP_ID = '00000000-0000-0000-0000-000000000001';
+
+/**
+ * Adds a user to the `admin` group by writing to the server's SQLite file.
+ *
+ * The API exposes no way to create the first admin — that is the point of the
+ * fix this replaces — so the fixture reaches around it. `node:sqlite` keeps
+ * this dependency-free; the server package's Drizzle client is not available
+ * to the frontend workspace. Idempotent, so a worker restart is harmless.
+ */
+function promoteToAdmin(userId: string): void {
+  const file = process.env['E2E_DATABASE_FILE'];
+  if (!file) throw new Error('E2E_DATABASE_FILE is unset — see playwright.config.ts');
+  const db = new DatabaseSync(file);
+  try {
+    db.prepare(
+      'INSERT OR IGNORE INTO user_groups (user_id, group_id) VALUES (?, ?)',
+    ).run(userId, ADMIN_GROUP_ID);
+  } finally {
+    db.close();
+  }
+}
 
 // Cookie path emitted by the API server. The Vite dev proxy rewrites this to
 // `/api/auth/refresh` on the way back to the browser so it gets sent when the
@@ -163,20 +188,20 @@ export const testFixtures = base.extend<Fixtures, WorkerFixtures>({
     });
   },
 
-  // Worker-scoped: the first registered user is auto-promoted to the admin
-  // group by the server. We rely on this fixture being touched before any
-  // other user is created in the worker — playerUser depends on adminUser
-  // to enforce that ordering.
+  // Worker-scoped. Registration grants no group to anyone, and the server's
+  // boot-time admin seed deliberately does not run under NODE_ENV=test, so this
+  // fixture writes the membership itself — straight into the SQLite file the
+  // server was pointed at by `playwright.config.ts`. That is why the e2e server
+  // uses a file DB rather than `:memory:`, which libsql keeps private to the
+  // server process.
   //
-  // Deterministic credentials + register-or-login so the fixture survives a
-  // worker restart (which Playwright does after a test failure with
-  // `retries`). On first init, register succeeds and the first-user bootstrap
-  // promotes this account to admin. On a restart, the account already exists
-  // in the still-running :memory: server, so register returns 409 and we log
-  // in instead — recovering the same admin session. Without this, a single
-  // failure would cascade: the restarted fixture's fresh-username register
-  // would NOT be the first user, come back with groups=[], and fail every
-  // downstream test in the worker.
+  // Deterministic credentials, and register-then-login unconditionally so the
+  // fixture survives a worker restart (which Playwright does after a test
+  // failure with `retries`): on a restart the account already exists and
+  // register returns 409, which is fine because the promotion and the login
+  // that reads `groups` back both run either way. `promoteToAdmin` is
+  // idempotent, so re-running it costs nothing and repairs a half-finished
+  // earlier attempt.
   adminUser: [
     async ({}, use) => {
       const ctx = await request.newContext({ baseURL: API_BASE });
@@ -184,45 +209,38 @@ export const testFixtures = base.extend<Fixtures, WorkerFixtures>({
         const username = 'e2e-admin';
         const password = 'correct-horse-battery';
 
-        let session: UserSession;
         const registerRes = await ctx.post('/auth/register', {
           data: { username, password },
         });
-        if (registerRes.ok()) {
-          const body = (await registerRes.json()) as AuthBody;
-          session = {
-            username,
-            password,
-            userId: body.user.id,
-            accessToken: body.token,
-            cookies: authCookies(extractRefreshToken(registerRes.headers())),
-            refreshToken: extractRefreshToken(registerRes.headers()),
-            groups: body.user.groups ?? [],
-          };
-        } else if (registerRes.status() === 409) {
-          // Already registered (worker restart) — log in to recover the session.
-          const loginRes = await ctx.post('/auth/login', {
-            data: { username, password },
-          });
-          expect(
-            loginRes.ok(),
-            `admin re-login failed: ${loginRes.status()} ${await loginRes.text()}`,
-          ).toBeTruthy();
-          const body = (await loginRes.json()) as AuthBody;
-          session = {
-            username,
-            password,
-            userId: body.user.id,
-            accessToken: body.token,
-            cookies: authCookies(extractRefreshToken(loginRes.headers())),
-            refreshToken: extractRefreshToken(loginRes.headers()),
-            groups: body.user.groups ?? [],
-          };
-        } else {
+        if (!registerRes.ok() && registerRes.status() !== 409) {
           throw new Error(
             `admin register failed: ${registerRes.status()} ${await registerRes.text()}`,
           );
         }
+
+        const identify = await ctx.post('/auth/login', { data: { username, password } });
+        expect(
+          identify.ok(),
+          `admin login failed: ${identify.status()} ${await identify.text()}`,
+        ).toBeTruthy();
+        promoteToAdmin(((await identify.json()) as AuthBody).user.id);
+
+        // Log in again after the promotion so `groups` reflects it.
+        const loginRes = await ctx.post('/auth/login', { data: { username, password } });
+        expect(
+          loginRes.ok(),
+          `admin re-login failed: ${loginRes.status()} ${await loginRes.text()}`,
+        ).toBeTruthy();
+        const body = (await loginRes.json()) as AuthBody;
+        const session: UserSession = {
+          username,
+          password,
+          userId: body.user.id,
+          accessToken: body.token,
+          cookies: authCookies(extractRefreshToken(loginRes.headers())),
+          refreshToken: extractRefreshToken(loginRes.headers()),
+          groups: body.user.groups ?? [],
+        };
 
         expect(
           session.groups,
@@ -237,9 +255,9 @@ export const testFixtures = base.extend<Fixtures, WorkerFixtures>({
   ],
 
   playerUser: async ({ registerUser, adminUser }, use) => {
-    // Depend on adminUser so the worker-scoped admin is materialised first;
-    // otherwise the player would itself become the first registered user
-    // and be auto-promoted.
+    // Depend on adminUser so the worker-scoped admin exists before any test
+    // that needs both. Ordering no longer affects privileges — registration
+    // grants none — but several specs assume the admin is already there.
     void adminUser;
     const user = await registerUser();
     await use(user);

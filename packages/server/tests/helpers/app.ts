@@ -2,6 +2,7 @@ import { createClient } from '@libsql/client';
 import { drizzle } from 'drizzle-orm/libsql';
 import { migrate } from 'drizzle-orm/libsql/migrator';
 import * as schema from '../../src/db/schema.sqlite.js';
+import { ADMIN_GROUP_ID } from '../../src/constants/groups.js';
 import { buildApp } from '../../src/app.js';
 import type { FastifyInstance } from 'fastify';
 import type { StockProvider } from '../../src/providers/index.js';
@@ -61,4 +62,45 @@ export async function createTestAppWithDb(
     leaderboardThrottleMs: 0,
   });
   return { app, db };
+}
+
+let promotionDb: Awaited<ReturnType<typeof createTestDb>> | undefined;
+
+/**
+ * Registers a user through `POST /auth/register` and then adds it to the
+ * `admin` group directly.
+ *
+ * The register route grants no group membership to anyone, and the boot-time
+ * seed in `src/db/seed-admin.ts` deliberately does not run under tests, so this
+ * is how a test obtains an administrator. Membership is read from the database
+ * on every request, so the token issued at register works unchanged afterwards.
+ */
+export async function registerAdmin(
+  app: FastifyInstance,
+  username: string,
+  password = 'password123',
+): Promise<{ token: string; refreshToken: string; userId: string; username: string }> {
+  const res = await app.inject({
+    method: 'POST',
+    url: '/auth/register',
+    payload: { username, password },
+  });
+  if (res.statusCode !== 201) {
+    throw new Error(`registerAdmin: register failed: ${res.statusCode} ${res.body}`);
+  }
+  const body = res.json<{ token: string; user: { id: string; username: string } }>();
+
+  // Every handle opened here points at the same shared in-memory database, so
+  // this works whether the caller built its app with createTestApp or its own db.
+  promotionDb ??= await createTestDb();
+  await promotionDb
+    .insert(schema.userGroups)
+    .values({ userId: body.user.id, groupId: ADMIN_GROUP_ID });
+
+  return {
+    token: body.token,
+    refreshToken: res.cookies.find((c) => c.name === 'refreshToken')?.value ?? '',
+    userId: body.user.id,
+    username: body.user.username,
+  };
 }

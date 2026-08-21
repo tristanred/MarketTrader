@@ -160,6 +160,8 @@ That's it. `pnpm dev` runs a small bootstrap step that:
 
 It then starts the server (`:3000`) and frontend (`:5173`) in parallel. The frontend proxies `/api` to the server, so both services run independently.
 
+On a database with no administrator, the server creates an `admin` account with a randomly generated password and prints it to the console once at startup — grab it from the `pnpm dev` output. Registering through the app grants no privileges to anyone; further admins are added from the admin panel.
+
 The default SQLite client is `@libsql/client` and password hashing uses `@node-rs/argon2`, both of which ship prebuilt napi-rs binaries for Windows, Linux, and macOS — no C/C++ toolchain required.
 
 ### Local development with Docker (PostgreSQL)

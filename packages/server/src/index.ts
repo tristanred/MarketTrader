@@ -1,7 +1,8 @@
 import { buildApp } from './app.js';
 import { env, telemetryEnabled, validateProductionEnv } from './env.js';
 import { runMigrations } from './db/migrate.js';
-import { closeDb } from './db/index.js';
+import { closeDb, db } from './db/index.js';
+import { bootstrapAdmin } from './db/seed-admin.js';
 import { initTelemetry, resourceAttributes, shutdownTelemetry } from './observability/otel.js';
 import { traceContextMixin } from './observability/log-correlation.js';
 import { buildInfo } from './build-info.js';
@@ -76,6 +77,9 @@ initTelemetry();
 
 try {
   await runMigrations();
+  // Before listen(): a fresh database must not accept requests while it still
+  // has no administrator.
+  await bootstrapAdmin(db);
   const app = await buildApp({
     logger: loggerOptions,
     trustProxy: env.TRUST_PROXY,

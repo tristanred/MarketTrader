@@ -20,8 +20,7 @@ test('happy path: register → create game → buy AAPL → portfolio reflects h
   makeGame,
   adminUser,
 }) => {
-  // Materialize the worker-scoped admin first so the user we register through
-  // the UI doesn't get promoted to admin as the first registered user.
+  // Materialize the worker-scoped admin; later steps need it to exist.
   void adminUser;
 
   const username = uniqueName('e2e');

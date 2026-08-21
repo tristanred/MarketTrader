@@ -166,6 +166,15 @@ CORS_ORIGIN=           # frontend URL (e.g. http://localhost:5173)
 NODE_ENV=development   # development | production | test
 TRUST_PROXY=loopback   # which hops may set X-Forwarded-For; `true` is refused in prod
 ```
+- **`POST /auth/register` grants no group membership to anyone, ever** — not even to the
+  first account. The first admin comes from `bootstrapAdmin` in `db/seed-admin.ts`, called
+  by `index.ts` right after migrations and before `listen()`: on a database with no admin
+  it creates `admin` with a CSPRNG password and prints it to stdout once (`console.log`,
+  not the logger — pino would ship it over OTLP). Idempotent: a later boot finds the
+  existing admin and returns `null`, so nothing is re-created, re-printed, or reset. Skipped
+  under `NODE_ENV=test` and for `:memory:` URLs, so the suite stays deterministic — tests
+  get an admin from `registerAdmin` in `tests/helpers/app.ts`. If a non-admin already owns
+  the name `admin` it is never promoted; the seed falls back to `admin-<hex>`.
 
 `TRUST_PROXY` decides `request.ip`, which is the key every per-route rate limit is
 bucketed on. Trusting every hop (`true`) makes that value client-controlled and lifts

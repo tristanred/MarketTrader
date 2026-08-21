@@ -47,7 +47,6 @@ export function RegisterPage() {
         <div className="w-full max-w-sm space-y-6">
           <div className="space-y-1">
             <h1 className="text-xl font-bold tracking-[-0.02em] text-text-strong">Create account</h1>
-            <p className="text-xs text-muted">First registrant becomes admin.</p>
           </div>
           <form onSubmit={onSubmit} className="space-y-4">
             <div className="space-y-1">

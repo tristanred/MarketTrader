@@ -2,7 +2,8 @@ import { describe, it, beforeAll, afterAll, expect } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import WebSocket from 'ws';
 import type { AddressInfo } from 'node:net';
-import { createTestApp } from '../helpers/app.js';
+import { createTestApp, registerAdmin } from '../helpers/app.js';
+import { WS_AUTH_SUBPROTOCOL } from '../../src/ws/subprotocol.js';
 
 describe('PUT /admin/system-settings/ticker-tape', () => {
   let app: FastifyInstance;
@@ -11,13 +12,7 @@ describe('PUT /admin/system-settings/ticker-tape', () => {
 
   beforeAll(async () => {
     app = await createTestApp();
-    // First-ever registrant becomes admin per existing repo convention.
-    const reg1 = await app.inject({
-      method: 'POST',
-      url: '/auth/register',
-      payload: { username: 'admin-tape', password: 'password123' },
-    });
-    adminToken = reg1.json<{ token: string }>().token;
+    adminToken = (await registerAdmin(app, 'admin-tape')).token;
 
     const reg2 = await app.inject({
       method: 'POST',
@@ -85,9 +80,8 @@ describe('PUT /admin/system-settings/ticker-tape', () => {
   });
 
   it('writes an audit-log row on success', async () => {
-    // Use the shared app+adminToken; the shared in-memory DB means any fresh
-    // createTestApp() would see the existing users and the audit-admin user
-    // would not be first (and therefore not auto-promoted to admin).
+    // Reuse the shared app+adminToken rather than building a second app: the
+    // in-memory DB is shared within the worker, so a fresh one buys nothing.
     const put = await app.inject({
       method: 'PUT',
       url: '/admin/system-settings/ticker-tape',
@@ -116,7 +110,7 @@ describe('PUT /admin/system-settings/ticker-tape', () => {
     // build a "fresh" app cheaply.
     await app.listen({ port: 0, host: '127.0.0.1' });
     const port = (app.server.address() as AddressInfo).port;
-    const ws = new WebSocket(`ws://127.0.0.1:${port}/ws/live?token=${adminToken}`);
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/ws/live`, [WS_AUTH_SUBPROTOCOL, adminToken]);
     await new Promise<void>((resolve, reject) => {
       ws.on('open', () => resolve());
       ws.on('error', reject);

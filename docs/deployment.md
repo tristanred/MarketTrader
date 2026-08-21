@@ -65,7 +65,7 @@ docker compose up -d --build
 What happens:
 
 1. `db` (Postgres 16) starts; health-checks via `pg_isready`.
-2. `server` waits for db, runs Drizzle migrations from `packages/server/drizzle/pg/` on startup (idempotent — tracked in `__drizzle_migrations`), then binds `:3000` (internal only).
+2. `server` waits for db, runs Drizzle migrations from `packages/server/drizzle/pg/` on startup (idempotent — tracked in `__drizzle_migrations`), seeds the first administrator if the database has none, then binds `:3000` (internal only).
 3. `web` (Nginx) serves the static SPA bundle on `:80` and proxies `/api/*` and `/api/games/*/live` (WebSocket) to `server:3000`.
 
 Tail the logs:
@@ -79,6 +79,35 @@ docker compose logs -f server
 The compose file ships HTTP-only. Two production options:
 
 **A. AWS Application Load Balancer (recommended)**
+
+### The first administrator
+
+On a database with no admin, the server creates an `admin` account with a
+randomly generated password and prints it to stdout once, before it starts
+accepting requests:
+
+```
+================================================================
+  MarketTrader — administrator account created
+
+    username: admin
+    password: <32 random characters>
+```
+
+Capture it from `docker compose logs server` on first boot. The app shows it
+once and never again: subsequent boots find the existing admin and leave it
+alone — no second account, no password reset. If a non-admin account already
+holds the name `admin`, that account is *not* promoted; the seed uses
+`admin-<hex>` instead and the banner names it.
+
+**Rotate it.** The banner goes to stdout, so it stays in `docker compose logs`
+for as long as the log is retained. Sign in, open the admin panel's Users page,
+and reset the admin's own password (`POST /admin/users/:id/reset-password` — an
+admin may target itself). There is no self-service password change outside the
+admin surface.
+
+Registering through the app grants no privileges to anyone. Every further
+administrator is added by an existing one.
 
 Put an ALB in front of the instance, attach an ACM cert, target group on TCP 80. ALB handles TLS termination; the instance never sees HTTPS. Set `CORS_ORIGIN=https://your-domain.example.com` — that's what the browser sees.
 

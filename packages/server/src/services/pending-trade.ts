@@ -4,7 +4,7 @@ import { schema } from '../db/index.js';
 import type { PendingTrade, TradeDirection, Trade } from '@markettrader/shared';
 import type { StockProvider } from '../providers/index.js';
 import { TradeError } from '../providers/index.js';
-import { validateBuy, validateSell, computeNewAvgCostBasis } from './trade.js';
+import { validateBuy, validateSell } from './trade.js';
 import { assertTradableSymbol } from './symbol.js';
 import { applyTradeStats } from './game-player-stats.js';
 import { onPositionOpened } from './position-high-water.js';
@@ -346,11 +346,13 @@ export async function settlePendingTrades(
             throw new TradeError('INSUFFICIENT_FUNDS', 'Insufficient cash to settle pending buy');
           }
 
-          // Apply the buy to the portfolio. Read after the cash write: that
-          // update locks the gamePlayers row, which serializes this player's
-          // concurrent settlements, so what we read here is post-lock state.
+          // Apply the buy to the portfolio. The read only decides add-on vs new
+          // position; both columns are written from the row's own values, since
+          // the sell paths mutate `portfolios` without touching `gamePlayers`
+          // and so are not serialized by the cash lock taken above. An absolute
+          // write here would clobber a resting sell that committed in between.
           const [holding] = await tx
-            .select()
+            .select({ id: portfolios.id })
             .from(portfolios)
             .where(
               and(
@@ -360,17 +362,17 @@ export async function settlePendingTrades(
             )
             .limit(1);
           if (holding) {
-            const newQty = holding.quantity + quantity;
-            const newAvg = computeNewAvgCostBasis(
-              holding.quantity,
-              Number(holding.avgCostBasis),
-              quantity,
-              price,
-            );
-            await tx
+            const [updated] = await tx
               .update(portfolios)
-              .set({ quantity: newQty, avgCostBasis: newAvg })
-              .where(eq(portfolios.id, holding.id));
+              .set({
+                quantity: sql`${portfolios.quantity} + ${quantity}`,
+                avgCostBasis: sql`(${portfolios.quantity} * ${portfolios.avgCostBasis} + ${quantity * price}) / (${portfolios.quantity} + ${quantity})`,
+              })
+              .where(eq(portfolios.id, holding.id))
+              .returning({ id: portfolios.id });
+            if (!updated) {
+              throw new TradeError('INVALID_ORDER', 'Position changed during settlement; order left pending');
+            }
           } else {
             await tx.insert(portfolios).values({
               gamePlayerId: claimed.gamePlayerId,

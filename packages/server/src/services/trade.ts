@@ -277,30 +277,42 @@ async function runTrade(db: Db, params: ExecuteTradeParams): Promise<ExecuteTrad
     }
 
     if (direction === 'buy') {
-      // Read after the cash write: that update takes the gamePlayers row lock,
-      // which serializes this player's concurrent trades, so the holding we
-      // read here is post-lock state rather than a pre-transaction snapshot.
       const [current] = await readHolding();
-      const newQty = (current?.quantity ?? 0) + quantity;
-      const newAvg = computeNewAvgCostBasis(
-        current?.quantity ?? 0,
-        Number(current?.avgCostBasis ?? price),
-        quantity,
-        price,
-      );
       if (current) {
         // Add-on buy: do not touch openedAt — position is the same one.
-        await tx.update(portfolios).set({ quantity: newQty, avgCostBasis: newAvg }).where(eq(portfolios.id, current.id));
+        //
+        // Both columns are written from the row's own current values rather
+        // than from `current`, which is only used to decide add-on vs new
+        // position. An absolute write would be a lost update on PostgreSQL
+        // READ COMMITTED: the sell paths (decrementHolding, releaseReservation,
+        // and the pending reserve/cancel pair) touch `portfolios` WITHOUT
+        // touching `gamePlayers`, so the cash-row lock taken above does not
+        // serialize them, and a concurrent resting sell committed inside this
+        // transaction would be clobbered — minting the shares it removed.
+        const [updated] = await tx
+          .update(portfolios)
+          .set({
+            quantity: sql`${portfolios.quantity} + ${quantity}`,
+            avgCostBasis: sql`(${portfolios.quantity} * ${portfolios.avgCostBasis} + ${quantity * price}) / (${portfolios.quantity} + ${quantity})`,
+          })
+          .where(eq(portfolios.id, current.id))
+          .returning({ id: portfolios.id });
+        if (!updated) {
+          // The position was closed and its row deleted while we were here.
+          throw new TradeError('INVALID_ORDER', 'Position changed during execution; retry the trade');
+        }
       } else {
         // Brand-new position — stamp openedAt so hold-duration metrics work.
-        await tx.insert(portfolios).values({ gamePlayerId, symbol, quantity: newQty, avgCostBasis: newAvg, openedAt: executedAt });
+        // A concurrent buy that got here first loses on unique(gamePlayerId,
+        // symbol) and rolls back, rather than creating a second row.
+        await tx.insert(portfolios).values({ gamePlayerId, symbol, quantity, avgCostBasis: price, openedAt: executedAt });
         await onPositionOpened(tx as unknown as Db, {
           gamePlayerId,
           symbol,
           openedAt: executedAt,
           currentPrice: price,
-          quantity: newQty,
-          avgCostBasis: newAvg,
+          quantity,
+          avgCostBasis: price,
         });
       }
     } else if (!sharesReserved) {

@@ -124,15 +124,22 @@ curl -fsS http://<public-ip>/api/health
 
 TOKEN=$(curl -fsS -X POST http://<public-ip>/api/auth/register \
   -H 'content-type: application/json' \
-  -d '{"username":"smoke-'"$$"'","password":"smoke-password-1"}' \
+  -d "{\"username\":\"$SMOKE_USER\",\"password\":\"$SMOKE_PASS\"}" \
   | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
 
 curl -fsS http://<public-ip>/api/games -H "authorization: Bearer $TOKEN"
+# Generate the password per run. Never commit a literal here: this account is
+# created on the live host, and a password in the repo is a working credential.
+SMOKE_USER="smoke-$$"
+SMOKE_PASS=$(openssl rand -hex 24)
+
 ```
 
-Note this leaves a real user row behind. Use a throwaway name and clean up.
+Registration grants no privileges, so this account is unprivileged — but it does
+leave a real user row behind. Delete it afterwards from the admin panel
+(`/admin/users`) or with `DELETE /api/admin/users/<id>` as the seeded admin.
 
-The script hits `/api/health`, registers a one-off user, and makes an authenticated `/api/games` request. Exit code 0 means the round-trip works.
+Exit code 0 on all three calls means the round-trip works.
 
 ## 7. Routine operations
 

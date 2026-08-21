@@ -109,6 +109,13 @@ admin surface.
 Registering through the app grants no privileges to anyone. Every further
 administrator is added by an existing one.
 
+**If you miss the banner** — log rotation, lost scrollback, a crash right after
+the seed committed — the account exists with a password nobody knows. It is
+recoverable: the seed decides by group membership, not by username, so deleting
+the admin's `user_groups` row makes the next boot seed a fresh administrator.
+The orphaned account stays behind and should be deleted from the admin panel
+afterwards.
+
 ## 5. TLS
 
 The compose file ships HTTP-only. Two production options:

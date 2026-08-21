@@ -352,6 +352,17 @@ export interface ProductionEnvCheck {
 const REMOTE_DB_SCHEMES = ['libsql:', 'http:', 'https:', 'ws:', 'wss:'];
 
 /**
+ * True when `url` points at a server rather than a local file — Postgres or
+ * remote libsql. Such a URL is durable whatever its content, which is why every
+ * caller tests it before any substring match: a password containing `:memory:`
+ * must not make a real database look ephemeral.
+ */
+export function isRemoteDatabaseUrl(url: string): boolean {
+  if (url.startsWith('postgres')) return true;
+  return REMOTE_DB_SCHEMES.some((scheme) => url.startsWith(scheme));
+}
+
+/**
  * True when `url` names a database that survives a process restart. Postgres and
  * remote libsql qualify; a SQLite file qualifies only at an absolute path.
  *
@@ -361,8 +372,7 @@ const REMOTE_DB_SCHEMES = ['libsql:', 'http:', 'https:', 'ws:', 'wss:'];
  * opens a fresh, empty file and migrates it into a working-looking app.
  */
 function isDurableProductionDatabase(url: string): boolean {
-  if (url.startsWith('postgres')) return true;
-  if (REMOTE_DB_SCHEMES.some((scheme) => url.startsWith(scheme))) return true;
+  if (isRemoteDatabaseUrl(url)) return true;
   // Catches bare ':memory:' and the 'file::memory:?cache=shared' form that
   // normalizeLibsqlUrl expands it into.
   if (url.includes(':memory:')) return false;

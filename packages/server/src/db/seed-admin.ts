@@ -1,10 +1,10 @@
 import { randomBytes } from 'node:crypto';
 import { hash } from '@node-rs/argon2';
-import { eq } from 'drizzle-orm';
+import { eq, like } from 'drizzle-orm';
 import type { Db } from './index.js';
 import * as schema from './schema.sqlite.js';
 import { ADMIN_GROUP_ID } from '../constants/groups.js';
-import { env } from '../env.js';
+import { env, isRemoteDatabaseUrl } from '../env.js';
 
 /** Preferred username for the seeded administrator. */
 export const SEEDED_ADMIN_USERNAME = 'admin';
@@ -28,9 +28,32 @@ export interface SeededAdminCredentials {
  */
 export function shouldSeedAdminOnBoot(nodeEnv: string, databaseUrl: string): boolean {
   if (nodeEnv === 'test') return false;
+  // Postgres and remote libsql are always durable. Checked first, and ahead of
+  // the substring test below, so a password that happens to contain ":memory:"
+  // cannot make a real database look ephemeral — `env.ts` orders it the same way.
+  if (isRemoteDatabaseUrl(databaseUrl)) return true;
   // `normalizeLibsqlUrl` rewrites `:memory:` to `file::memory:?cache=shared`,
   // so match the substring the way `db/index.ts` does.
   return !databaseUrl.includes(':memory:');
+}
+
+/**
+ * First name in the deterministic sequence `admin`, `admin-2`, `admin-3`, …
+ * that `taken` does not already hold.
+ *
+ * Deterministic on purpose. A random suffix would let two servers booting at
+ * the same instant against one PostgreSQL database pick *different* names,
+ * insert both, and seed two administrators — READ COMMITTED lets both see no
+ * admin row. Choosing the same name makes the unique index on `users.username`
+ * the arbiter: the loser's transaction aborts, which is already how the
+ * uncontended case stays safe.
+ */
+export function firstFreeAdminUsername(taken: ReadonlySet<string>): string {
+  if (!taken.has(SEEDED_ADMIN_USERNAME)) return SEEDED_ADMIN_USERNAME;
+  for (let suffix = 2; ; suffix += 1) {
+    const candidate = `${SEEDED_ADMIN_USERNAME}-${suffix}`;
+    if (!taken.has(candidate)) return candidate;
+  }
 }
 
 /**
@@ -39,9 +62,9 @@ export function shouldSeedAdminOnBoot(nodeEnv: string, databaseUrl: string): boo
  * the run that creates the account and `null` on every run afterwards, so a
  * restart never resets or re-prints an existing admin's password.
  *
- * Falls back to `admin-<hex>` when the `admin` username is already taken; a
- * squatting account is never promoted, since that would hand admin to whoever
- * registered it. Throws if the `admin` group row is missing (migrations
+ * Falls back to the next free `admin-<n>` when the `admin` username is already
+ * taken; a squatting account is never promoted, since that would hand admin to
+ * whoever registered it. Throws if the `admin` group row is missing (migrations
  * unapplied).
  */
 export async function ensureSeededAdmin(db: Db): Promise<SeededAdminCredentials | null> {
@@ -79,14 +102,15 @@ export async function ensureSeededAdmin(db: Db): Promise<SeededAdminCredentials 
       .limit(1);
     if (existingAdmin) return null;
 
-    const [squatter] = await tx
-      .select({ id: users.id })
-      .from(users)
-      .where(eq(users.username, SEEDED_ADMIN_USERNAME))
-      .limit(1);
-    const username = squatter
-      ? `${SEEDED_ADMIN_USERNAME}-${randomBytes(4).toString('hex')}`
-      : SEEDED_ADMIN_USERNAME;
+    const taken = new Set(
+      (
+        await tx
+          .select({ username: users.username })
+          .from(users)
+          .where(like(users.username, `${SEEDED_ADMIN_USERNAME}%`))
+      ).map((row) => row.username),
+    );
+    const username = firstFreeAdminUsername(taken);
 
     const [inserted] = await tx
       .insert(users)

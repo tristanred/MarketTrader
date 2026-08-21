@@ -6,6 +6,7 @@ import {
   SEEDED_ADMIN_USERNAME,
   ensureSeededAdmin,
   shouldSeedAdminOnBoot,
+  firstFreeAdminUsername,
 } from '../../src/db/seed-admin.js';
 import { schema } from '../../src/db/index.js';
 import { ADMIN_GROUP_ID } from '../../src/constants/groups.js';
@@ -95,8 +96,26 @@ describe('ensureSeededAdmin', () => {
       .values({ username: SEEDED_ADMIN_USERNAME, passwordHash: await hash('password123') });
 
     const credentials = await ensureSeededAdmin(db);
-    expect(credentials?.username).toMatch(/^admin-[0-9a-f]{8}$/);
+    expect(credentials?.username).toBe('admin-2');
     expect(await adminMembers(db)).toEqual([credentials!.username]);
+  });
+});
+
+describe('firstFreeAdminUsername', () => {
+  it('walks a deterministic sequence past every taken name', () => {
+    expect(firstFreeAdminUsername(new Set())).toBe('admin');
+    expect(firstFreeAdminUsername(new Set(['admin']))).toBe('admin-2');
+    expect(firstFreeAdminUsername(new Set(['admin', 'admin-2']))).toBe('admin-3');
+    // Unrelated names that merely share the prefix must not shift the sequence.
+    expect(firstFreeAdminUsername(new Set(['administrator']))).toBe('admin');
+  });
+
+  it('is deterministic, which is what makes concurrent seeding safe', () => {
+    // Two servers booting at the same instant must choose the SAME name, so the
+    // unique index on users.username rejects the loser. A random suffix would
+    // let both succeed and seed two administrators.
+    const taken = new Set(['admin']);
+    expect(firstFreeAdminUsername(taken)).toBe(firstFreeAdminUsername(new Set(taken)));
   });
 });
 

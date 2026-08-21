@@ -24,7 +24,10 @@ const ADMIN_GROUP_ID = '00000000-0000-0000-0000-000000000001';
 function promoteToAdmin(userId: string): void {
   const file = process.env['E2E_DATABASE_FILE'];
   if (!file) throw new Error('E2E_DATABASE_FILE is unset — see playwright.config.ts');
-  const db = new DatabaseSync(file);
+  // The server holds this same file in WAL mode and writes to it from its
+  // background timers. Without a busy timeout the default is 0, so a collision
+  // throws "database is locked" and fails every test in the worker.
+  const db = new DatabaseSync(file, { timeout: 5000 });
   try {
     db.prepare(
       'INSERT OR IGNORE INTO user_groups (user_id, group_id) VALUES (?, ?)',

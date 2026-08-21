@@ -7,8 +7,9 @@
  *   - The backend is running on PORT (default 3000).
  *   - The frontend dev server is running on FRONTEND_PORT (default 5173).
  *     Both are started by `pnpm dev` at repo root.
- *   - An admin account exists. The script POSTs /auth/login with the credentials
- *     in DOCS_ADMIN_USER / DOCS_ADMIN_PASSWORD (defaults: tristan / abcd1234).
+ *   - An admin account exists, and its credentials are exported as
+ *     DOCS_ADMIN_USER / DOCS_ADMIN_PASSWORD. Both are required — the script
+ *     refuses to run without them rather than falling back to a default.
  *
  * The script:
  *   1) Logs in as admin and pulls the achievement catalog from GET /admin/achievements.
@@ -35,8 +36,10 @@ const repoRoot = join(__dirname, '..', '..', '..');
 
 const API_BASE = process.env.DOCS_API_BASE ?? 'http://localhost:3000';
 const FRONTEND_BASE = process.env.DOCS_FRONTEND_BASE ?? 'http://localhost:5173';
-const ADMIN_USER = process.env.DOCS_ADMIN_USER ?? 'tristan';
-const ADMIN_PASSWORD = process.env.DOCS_ADMIN_PASSWORD ?? 'abcd1234';
+// No defaults: a fallback here would be a real credential for this app's own
+// login endpoint, committed to a public repository.
+const ADMIN_USER = process.env.DOCS_ADMIN_USER;
+const ADMIN_PASSWORD = process.env.DOCS_ADMIN_PASSWORD;
 
 const DOCS_DIR = join(repoRoot, 'docs');
 const IMG_DIR = join(DOCS_DIR, 'achievements', 'img');
@@ -53,6 +56,19 @@ const CATEGORY_LABELS = {
 };
 const RARITY_ORDER = { legendary: 0, epic: 1, rare: 2, uncommon: 3, common: 4 };
 
+function requireCredentials() {
+  const missing = [
+    ADMIN_USER ? null : 'DOCS_ADMIN_USER',
+    ADMIN_PASSWORD ? null : 'DOCS_ADMIN_PASSWORD',
+  ].filter(Boolean);
+  if (missing.length > 0) {
+    throw new Error(
+      `${missing.join(' and ')} must be set to an admin account on ${API_BASE}.\n` +
+        '  e.g. DOCS_ADMIN_USER=… DOCS_ADMIN_PASSWORD=… pnpm docs:achievements',
+    );
+  }
+}
+
 async function login() {
   const res = await fetch(`${API_BASE}/auth/login`, {
     method: 'POST',
@@ -60,7 +76,7 @@ async function login() {
     body: JSON.stringify({ username: ADMIN_USER, password: ADMIN_PASSWORD }),
   });
   if (!res.ok) {
-    throw new Error(`Login failed (${res.status}): set DOCS_ADMIN_USER / DOCS_ADMIN_PASSWORD if your admin isn't '${ADMIN_USER}'`);
+    throw new Error(`Login failed (${res.status}): check DOCS_ADMIN_USER / DOCS_ADMIN_PASSWORD — '${ADMIN_USER}' was rejected`);
   }
   const body = await res.json();
   if (!body.user.groups.includes('admin')) {
@@ -169,6 +185,7 @@ function capitalize(s) {
 }
 
 async function main() {
+  requireCredentials();
   console.log(`Logging in as ${ADMIN_USER}…`);
   const token = await login();
   console.log('Fetching achievement catalog…');

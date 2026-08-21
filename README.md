@@ -194,8 +194,8 @@ pnpm build       # Full production build
 ### Regenerating achievement docs
 
 ```bash
-# Requires `pnpm dev` running and an admin account (defaults: tristan / abcd1234).
-pnpm docs:achievements
+# Requires `pnpm dev` running and an admin account of your own.
+DOCS_ADMIN_USER=… DOCS_ADMIN_PASSWORD=… pnpm docs:achievements
 ```
 
 Re-captures one preview PNG per achievement and rewrites `docs/achievements.md`.

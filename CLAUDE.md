@@ -93,7 +93,7 @@ Every exported function, class, and interface must have a JSDoc comment unless t
 - Driver selection at startup:
   ```typescript
   DATABASE_URL starts with "postgres" → postgres-js driver
-  otherwise                           → better-sqlite3 driver
+  otherwise                           → @libsql/client driver
   ```
 - Test databases use `DATABASE_URL=:memory:` (SQLite in-memory)
 
@@ -133,7 +133,8 @@ Every exported function, class, and interface must have a JSDoc comment unless t
   (issue #27). Sockets stop after 10 consecutive attempts and publish `offline` on
   `useConnectionStore`, which turns the `LIVE` pill into a retry button.
 - **A 1008 close is not a backoff case** — since the server now closes sockets on token expiry, both
-  hooks route a 1008 on an *established* socket (open ≥ `WS_CREDENTIAL_STALE_AFTER_MS`) to
+  hooks route a 1008 on an *established* socket (open ≥ `WS_CREDENTIAL_STALE_AFTER_MS`, a frontend
+  constant in `lib/wsAuth.ts` — not an env var) to
   `tryRefresh()` instead of `scheduleReconnect`; the new token re-runs the effect. A 1008 that lands
   immediately is an authorization refusal — not a member, account disabled — where a fresh token
   changes nothing, so it takes the normal backoff and reaches `offline`. Keep the two apart:

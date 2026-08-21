@@ -125,7 +125,7 @@ pnpm workspace monorepo. The `shared` package is the single source of truth for 
 | Server framework    | Fastify 5                      | Lowest overhead, schema-first, async-native               |
 | ORM                 | Drizzle ORM                    | Type-safe SQL, zero runtime overhead, dual-dialect        |
 | Database (prod)     | PostgreSQL 16                  | ACID, proven at scale                                     |
-| Database (dev/test) | SQLite (better-sqlite3)        | Zero setup, in-memory for tests                           |
+| Database (dev/test) | SQLite (@libsql/client)        | Zero setup, in-memory for tests                           |
 | WebSocket           | `@fastify/websocket`           | Native Fastify integration, no Socket.io overhead         |
 | Auth                | JWT + argon2                   | Short-lived access tokens (15 min), 7-day refresh cookies |
 | Frontend framework  | React 19                       | Concurrent features, stable ecosystem                     |

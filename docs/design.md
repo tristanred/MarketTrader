@@ -147,6 +147,37 @@ These are candidates for future design cycles. None are committed.
 
 ## Known Gaps
 
+### Open orders are capped per game-player
+
+`MAX_OPEN_ORDERS_PER_PLAYER` (`services/working-order.ts`) caps `working` +
+`pending` rows at 50 per game-player; a bracket counts as three. Placing past it
+is refused with `TOO_MANY_OPEN_ORDERS`. The cap exists because every resting
+order's symbol joins the price poller's 5-second fan-out, so an unbounded order
+book is an unbounded upstream load. It is a constant rather than an env var —
+promote it if a real game ever needs a different number.
+
+Two things it does not do. The count is a read inside the transaction followed by
+an insert, so concurrent placements can overshoot by roughly the number of
+in-flight requests — bounded and harmless now that it only backstops a load
+limit. And it is per *game-player*, so a player who creates N games gets N × 50;
+the load that permits is cacheable, since the poller de-duplicates symbols.
+
+### Day orders expire at the next session close, ignoring half-days
+
+`expiresAt` for a `day`-TIF order is stamped from `nextSessionClose`
+(`services/market-calendar.ts`), which models regular and extended hours but not
+NYSE half-day early closes. A day order placed the day after Thanksgiving
+expires roughly three hours late. Bounded and documented at the call site;
+fixing it means teaching the market calendar about early closes.
+
+### Ended games depend on a status write to seal off
+
+`settlePendingTrades` and `evaluateTriggers` both refuse to fill orders in games
+whose status is not `active`. Nothing sweeps `games.status` on a timer —
+`recomputeGameStatus` runs only from route handlers — so a game whose end date
+has passed but which nobody has requested still reads `active` and its queued
+orders can still fill. Ranking-neutral today; a scheduled sweeper would close it.
+
 ### Resting / pending-market sell realized P&L
 
 For limit/stop sell orders that fill via the trigger worker — and for pending

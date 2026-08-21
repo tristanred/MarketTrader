@@ -228,6 +228,29 @@ export const env = {
   ),
 
   /**
+   * Hard cap on how many distinct symbols one price-poller tick may fetch.
+   * The poller's symbol set is assembled from user-controlled rows (holdings,
+   * open orders, watchlists) and the provider it drains is process-wide, so an
+   * unbounded set lets one account's row count degrade prices for everyone.
+   * Symbols are prioritised holdings → open orders → watchlists, so anything
+   * dropped at the cap is display-only. Truncation is logged.
+   */
+  PRICE_POLLER_MAX_SYMBOLS: parsePositiveInt(
+    'PRICE_POLLER_MAX_SYMBOLS',
+    optional('PRICE_POLLER_MAX_SYMBOLS', '500'),
+  ),
+  /** Symbols one watchlist may hold. Adds past it are refused with 409. */
+  WATCHLIST_MAX_ITEMS: parsePositiveInt(
+    'WATCHLIST_MAX_ITEMS',
+    optional('WATCHLIST_MAX_ITEMS', '50'),
+  ),
+  /** Watchlists one user may own. Creates past it are refused with 409. */
+  WATCHLIST_MAX_PER_USER: parsePositiveInt(
+    'WATCHLIST_MAX_PER_USER',
+    optional('WATCHLIST_MAX_PER_USER', '20'),
+  ),
+
+  /**
    * How often the server sends WebSocket ping frames to connected clients, in
    * ms. Must stay comfortably below the shortest idle timeout on the path
    * (reverse-proxy `proxy_read_timeout`, NAT tables): a socket reaped by an

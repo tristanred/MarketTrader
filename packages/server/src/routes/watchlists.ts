@@ -1,10 +1,11 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, count, eq } from 'drizzle-orm';
 import type { Db } from '../db/index.js';
 import { schema } from '../db/index.js';
 import type { Watchlist } from '@markettrader/shared';
+import { env } from '../env.js';
 
 const nameSchema = z
   .string()
@@ -63,6 +64,10 @@ async function loadWatchlistForUser(
  * Watchlists are user-scoped, not game-scoped. Any `:id` that does not belong
  * to the caller returns 404 (no leaking existence). Duplicate names/symbols
  * are treated as idempotent — the existing record is returned rather than 409.
+ *
+ * Growth is capped by `WATCHLIST_MAX_PER_USER` and `WATCHLIST_MAX_ITEMS`; a
+ * write past either answers 409. The rows are an input to the price poller's
+ * per-tick symbol set, so an unbounded list is upstream load everyone shares.
  */
 export function watchlistRoutes(db: Db) {
   return async function (rawApp: FastifyInstance): Promise<void> {
@@ -135,6 +140,18 @@ export function watchlistRoutes(db: Db) {
         return reply.status(200).send(loaded);
       }
 
+      // Checked only on the branch that inserts, so a user at the cap can still
+      // fetch an existing list by name above.
+      const [owned] = await db
+        .select({ total: count() })
+        .from(watchlists)
+        .where(eq(watchlists.userId, userId));
+      if ((owned?.total ?? 0) >= env.WATCHLIST_MAX_PER_USER) {
+        return reply.status(409).send({
+          error: `Watchlist limit reached (${env.WATCHLIST_MAX_PER_USER} per user). Delete one first.`,
+        });
+      }
+
       const [row] = await db.insert(watchlists).values({ userId, name }).returning();
       if (!row) return reply.status(500).send({ error: 'Failed to create watchlist' });
       const loaded = await loadWatchlistForUser(db, row.id, userId);
@@ -204,6 +221,10 @@ export function watchlistRoutes(db: Db) {
       '/watchlists/:id/items',
       {
         onRequest: rawApp.authenticate,
+        // Every row added here is fetched by the price poller on behalf of this
+        // user whenever they hold a live socket, so the write path gets a cap of
+        // its own on top of the per-list ceiling below.
+        config: { rateLimit: { max: 60, timeWindow: '1 minute' } },
         schema: {
           tags: ['Watchlists'],
           summary: 'Add a symbol to a watchlist (idempotent).',
@@ -221,6 +242,11 @@ export function watchlistRoutes(db: Db) {
         if (!existing) return reply.status(404).send({ error: 'Watchlist not found' });
 
         if (!existing.symbols.includes(symbol)) {
+          if (existing.symbols.length >= env.WATCHLIST_MAX_ITEMS) {
+            return reply.status(409).send({
+              error: `Watchlist is full (${env.WATCHLIST_MAX_ITEMS} symbols). Remove one first.`,
+            });
+          }
           try {
             await db.insert(watchlistItems).values({ watchlistId, symbol });
           } catch {

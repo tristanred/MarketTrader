@@ -104,6 +104,11 @@ Every exported function, class, and interface must have a JSDoc comment unless t
 - **Register `@fastify/websocket` before all routes**
 - **Wrap every WS message handler in try/catch** — errors do not propagate to Fastify's error handler
 - **Batch price updates** — never push a message for every individual price tick; batch at 5-second intervals
+- **Bound the poller's fan-out** — `pollPrices` builds its symbol set from user-controlled rows
+  (holdings, open orders, watchlists) and drains the one shared `StockProvider`, so it fetches
+  through the batch `getQuotes` path and never more than `PRICE_POLLER_MAX_SYMBOLS` per tick.
+  Symbols rank holdings → open orders → watchlists; anything added to that set needs a ceiling
+  on its write path too.
 - **Clean up disconnected clients** — always remove sockets from broadcast lists on `close` and `error`
 - **Auth on upgrade** — validate JWT from `?token=` query param at WebSocket connection time, not per-message
 - **Heartbeat** — `startWsHeartbeat` (`ws/heartbeat.ts`) pings every socket in both registries every

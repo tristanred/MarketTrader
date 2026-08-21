@@ -213,7 +213,28 @@ describe('live sockets are re-authorized after upgrade (F8)', () => {
     const local = Fastify({ logger: false });
     await registerWebsocket(local);
     await registerJwt(local, db);
+
+    // Counted on the registry, not on the database: closing the app empties
+    // the registry, so a leaked sweep short-circuits before it ever queries
+    // and a query count would sit flat either way. Both sweeps read their
+    // registry unconditionally on every tick, which is what a leaked timer
+    // keeps doing forever.
+    let gameSweeps = 0;
     const localRegistry = new GameClientRegistry();
+    const readGameIds = localRegistry.getActiveGameIds.bind(localRegistry);
+    localRegistry.getActiveGameIds = () => {
+      gameSweeps += 1;
+      return readGameIds();
+    };
+
+    let globalSweeps = 0;
+    const localGlobalRegistry = new GlobalClientRegistry();
+    const readSockets = localGlobalRegistry.sockets.bind(localGlobalRegistry);
+    localGlobalRegistry.sockets = () => {
+      globalSweeps += 1;
+      return readSockets();
+    };
+
     const engine = new AchievementEngine(
       db,
       new EventBus(),
@@ -222,6 +243,7 @@ describe('live sockets are re-authorized after upgrade (F8)', () => {
       [],
     );
     await local.register(liveRoute(db, localRegistry, engine, SWEEP_MS));
+    await local.register(globalLiveRoute(db, localGlobalRegistry, SWEEP_MS));
     await local.listen({ port: 0, host: '127.0.0.1' });
     const localPort = (local.server.address() as AddressInfo).port;
 
@@ -231,11 +253,20 @@ describe('live sockets are re-authorized after upgrade (F8)', () => {
       token,
     ]);
     await waitForOpen(ws);
-    await local.close();
 
-    // A sweep that survived close would keep querying a torn-down app; the
-    // socket must be gone and nothing must throw afterwards.
     await new Promise((r) => setTimeout(r, SWEEP_MS * 4));
+    // Without this the assertions below would also hold for a timer that never
+    // started at all.
+    expect(gameSweeps).toBeGreaterThan(0);
+    expect(globalSweeps).toBeGreaterThan(0);
+
+    await local.close();
+    const gameAtClose = gameSweeps;
+    const globalAtClose = globalSweeps;
+
+    await new Promise((r) => setTimeout(r, SWEEP_MS * 8));
+    expect(gameSweeps).toBe(gameAtClose);
+    expect(globalSweeps).toBe(globalAtClose);
     expect(ws.readyState).not.toBe(WebSocket.OPEN);
   });
 });

@@ -54,6 +54,31 @@ function waitForClose(ws: WebSocket, ms = 2000): Promise<number> {
   });
 }
 
+/**
+ * Resolves the upgrade response's headers. `ws` emits `upgrade` before it
+ * validates the negotiated subprotocol, so this observes what the server sent
+ * even when the client then aborts the handshake over it.
+ */
+function upgradeHeaders(ws: WebSocket, ms = 2000): Promise<NodeJS.Dict<string | string[]>> {
+  return new Promise((resolve, reject) => {
+    let upgraded = false;
+    const t = setTimeout(() => reject(new Error('WS upgrade timeout')), ms);
+    ws.once('upgrade', (res) => {
+      upgraded = true;
+      clearTimeout(t);
+      resolve(res.headers);
+    });
+    // Swallowed once the response is in hand: a client that offered a
+    // subprotocol the server declined aborts the handshake, and that abort is
+    // the expected outcome here rather than a failure.
+    ws.once('error', (e) => {
+      if (upgraded) return;
+      clearTimeout(t);
+      reject(e);
+    });
+  });
+}
+
 /** Resolves true when the socket survives `ms` without a close frame. */
 function staysOpen(ws: WebSocket, ms = 250): Promise<boolean> {
   return new Promise((resolve) => {
@@ -119,6 +144,20 @@ describe('WebSocket credentials never travel in the URL (F6, F22)', () => {
       expect(ws.protocol).not.toContain(token);
       ws.close();
       await waitForClose(ws);
+    });
+
+    it('never echoes a token offered as the only subprotocol', async () => {
+      // The case that actually exercises `handleProtocols`. With the hook
+      // removed, ws falls back to selecting the first offered value — which is
+      // the marker for an offer of [marker, token], so that offer passes
+      // either way. Offering the token alone is what makes the default echo
+      // the credential straight back into the response line that proxy and
+      // process logs record verbatim.
+      const ws = new WebSocket(`ws://127.0.0.1:${port}/games/${gameId}/live`, [token]);
+      const headers = await upgradeHeaders(ws);
+
+      expect(headers['sec-websocket-protocol']).toBeUndefined();
+      expect(JSON.stringify(headers)).not.toContain(token);
     });
 
     it('closes 1008 when no credential is offered at all', async () => {

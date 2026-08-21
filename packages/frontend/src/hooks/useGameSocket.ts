@@ -137,11 +137,13 @@ export function useGameSocket(gameId: string, symbols: string[], myGamePlayerId:
 
       ws.onclose = (evt?: CloseEvent) => {
         if (cancelled) return;
-        // The server closes established sockets with 1008 once the access token
-        // expires. Reconnecting re-offers the same dead token, so refresh
-        // instead and let the new token re-run this effect. A 1008 that lands
-        // immediately is an authorization refusal, which a fresh token would
-        // not fix — back off normally so it can reach `offline`.
+        // The server closes established sockets with the policy code once the
+        // access token expires. Reconnecting re-offers the same dead token, so
+        // refresh instead and let the new token re-run this effect. One that
+        // lands immediately is an authorization refusal, which a fresh token
+        // would not fix — back off normally so it can reach `offline`. A frame
+        // this socket sent and the server refused carries its own code and
+        // takes the backoff path too.
         if (isStaleCredentialClose(evt?.code, openedAt)) {
           setStatus('game', 'reconnecting');
           void tryRefresh();

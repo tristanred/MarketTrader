@@ -8,6 +8,7 @@ import type { ClientEntry, GameClientRegistry } from './registry.js';
 import type { AchievementEngine } from '../achievements/engine.js';
 import { ACCESS_TOKEN_TYPE } from '../plugins/jwt.js';
 import { extractSubprotocolToken } from './subprotocol.js';
+import { WS_INVALID_FRAME_CLOSE_CODE, WS_POLICY_CLOSE_CODE } from './close-codes.js';
 import { env } from '../env.js';
 
 /** Claims read off the upgrade credential. `exp` is seconds since the epoch. */
@@ -36,9 +37,15 @@ const clientFrameSchema = z.object({
   }),
 });
 
-function closeSocket(socket: WebSocket, reason: string): void {
+/**
+ * Closes a socket with `code`, swallowing the throw from one already closing.
+ * The code is explicit at every call site because the client branches on it:
+ * {@link WS_POLICY_CLOSE_CODE} costs a token refresh,
+ * {@link WS_INVALID_FRAME_CLOSE_CODE} does not.
+ */
+function closeSocket(socket: WebSocket, code: number, reason: string): void {
   try {
-    socket.close(1008, reason);
+    socket.close(code, reason);
   } catch {
     // Already closing or closed — nothing to revoke.
   }
@@ -69,7 +76,7 @@ async function revalidateSockets(
     for (const [socket, entry] of clients) {
       const expiresAt = expiryOf.get(socket);
       if (expiresAt === undefined || expiresAt <= nowSeconds) {
-        closeSocket(socket, 'Token expired');
+        closeSocket(socket, WS_POLICY_CLOSE_CODE, 'Token expired');
         continue;
       }
       unexpired.push([socket, entry]);
@@ -95,7 +102,7 @@ async function revalidateSockets(
 
     for (const [socket, entry] of unexpired) {
       if (!stillAuthorized.has(entry.playerId)) {
-        closeSocket(socket, 'Authorization revoked');
+        closeSocket(socket, WS_POLICY_CLOSE_CODE, 'Authorization revoked');
       }
     }
   }
@@ -107,8 +114,9 @@ async function revalidateSockets(
  * The access token is offered in the `Sec-WebSocket-Protocol` header — see
  * {@link extractSubprotocolToken} — never in the URL. Only enabled accounts
  * that are current members of the game are admitted; everyone else is closed
- * with 1008, and admitted sockets are re-checked on the interval below so a
- * revocation takes effect without waiting for the client to reconnect.
+ * with {@link WS_POLICY_CLOSE_CODE}, and admitted sockets are re-checked on
+ * the interval below so a revocation takes effect without waiting for the
+ * client to reconnect.
  *
  * On connect, replays any unlocked achievements the player has not yet
  * acknowledged.
@@ -128,6 +136,10 @@ export function liveRoute(
     const expiryOf = new WeakMap<WebSocket, number>();
 
     const sweep = setInterval(() => {
+      // Fails open deliberately: a database blip must not mass-disconnect
+      // every live player, so a failed sweep only logs and the next one
+      // revokes. The cost is that a *persistent* database fault extends the
+      // revocation window for as long as it lasts.
       void revalidateSockets(db, registry, expiryOf).catch((err: unknown) => {
         app.log.error({ err }, 'ws revalidation sweep failed');
       });
@@ -153,7 +165,7 @@ export function liveRoute(
         const token = extractSubprotocolToken(request.headers['sec-websocket-protocol']);
 
         if (!token) {
-          socket.close(1008, 'Missing token');
+          socket.close(WS_POLICY_CLOSE_CODE, 'Missing token');
           return;
         }
 
@@ -161,7 +173,7 @@ export function liveRoute(
         try {
           payload = app.jwt.verify<AccessClaims>(token);
         } catch {
-          socket.close(1008, 'Invalid token');
+          socket.close(WS_POLICY_CLOSE_CODE, 'Invalid token');
           return;
         }
 
@@ -169,7 +181,7 @@ export function liveRoute(
         // Demanding a positive `access` claim rather than denying `refresh`
         // also fails closed on an unstamped token.
         if (payload.type !== ACCESS_TOKEN_TYPE || typeof payload.exp !== 'number') {
-          socket.close(1008, 'Invalid token');
+          socket.close(WS_POLICY_CLOSE_CODE, 'Invalid token');
           return;
         }
 
@@ -182,7 +194,7 @@ export function liveRoute(
           .limit(1);
 
         if (!account || account.disabled) {
-          socket.close(1008, 'Invalid token');
+          socket.close(WS_POLICY_CLOSE_CODE, 'Invalid token');
           return;
         }
 
@@ -193,7 +205,7 @@ export function liveRoute(
           .limit(1);
 
         if (!membership) {
-          socket.close(1008, 'Not a game member');
+          socket.close(WS_POLICY_CLOSE_CODE, 'Not a game member');
           return;
         }
 
@@ -204,6 +216,39 @@ export function liveRoute(
         const connectTime = new Date().toISOString();
         expiryOf.set(socket, payload.exp);
         registry.add(gameId, payload.id, socket);
+
+        // Attached before the replay `await` below, not after it. A peer that
+        // disconnects inside that window fires `close` exactly once, and a
+        // listener added afterwards never hears it — the registry entry would
+        // then outlive the process, and its first `subscribe` (sent from the
+        // browser's `onopen`) would be dropped on the floor.
+        socket.on('message', (raw: Buffer) => {
+          try {
+            const parsed = clientFrameSchema.safeParse(JSON.parse(raw.toString()));
+            if (!parsed.success) {
+              closeSocket(socket, WS_INVALID_FRAME_CLOSE_CODE, 'Invalid frame');
+              return;
+            }
+            const entry = registry.getEntry(gameId, socket);
+            if (!entry) return;
+            // Replace, not append: the client sends the full active set on
+            // every change, and additive merging would broadcast forever
+            // to symbols the user has dropped (e.g. when switching lists).
+            entry.subscriptions.clear();
+            for (const symbol of parsed.data.data.symbols) {
+              entry.subscriptions.add(symbol.toUpperCase());
+            }
+          } catch {
+            // Unparseable JSON. Same disposition as a schema failure — no
+            // legitimate client sends one, and answering nothing lets a peer
+            // keep probing for free.
+            closeSocket(socket, WS_INVALID_FRAME_CLOSE_CODE, 'Invalid frame');
+          }
+        });
+
+        const cleanup = () => registry.remove(gameId, socket);
+        socket.on('close', cleanup);
+        socket.on('error', cleanup);
 
         // Replay any unlocked achievements the player has not yet acknowledged.
         // Wrapped in try/catch so a DB error never breaks the WS connection.
@@ -250,34 +295,6 @@ export function liveRoute(
         } catch (err) {
           app.log.error({ err, gameId, gamePlayerId: membership.id }, 'achievement replay failed');
         }
-
-        socket.on('message', (raw: Buffer) => {
-          try {
-            const parsed = clientFrameSchema.safeParse(JSON.parse(raw.toString()));
-            if (!parsed.success) {
-              closeSocket(socket, 'Invalid frame');
-              return;
-            }
-            const entry = registry.getEntry(gameId, socket);
-            if (!entry) return;
-            // Replace, not append: the client sends the full active set on
-            // every change, and additive merging would broadcast forever
-            // to symbols the user has dropped (e.g. when switching lists).
-            entry.subscriptions.clear();
-            for (const symbol of parsed.data.data.symbols) {
-              entry.subscriptions.add(symbol.toUpperCase());
-            }
-          } catch {
-            // Unparseable JSON. Same disposition as a schema failure — no
-            // legitimate client sends one, and answering nothing lets a peer
-            // keep probing for free.
-            closeSocket(socket, 'Invalid frame');
-          }
-        });
-
-        const cleanup = () => registry.remove(gameId, socket);
-        socket.on('close', cleanup);
-        socket.on('error', cleanup);
       },
     );
   };

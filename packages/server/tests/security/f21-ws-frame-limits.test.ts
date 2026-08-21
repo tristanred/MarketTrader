@@ -7,11 +7,16 @@ import { createTestDb } from '../helpers/app.js';
 import { MockStockProvider } from '../helpers/mock-provider.js';
 import { MockMarketStatusProvider } from '../helpers/mock-market-status.js';
 import { WS_AUTH_SUBPROTOCOL } from '../../src/ws/subprotocol.js';
+import { WS_INVALID_FRAME_CLOSE_CODE } from '../../src/ws/close-codes.js';
 
 /**
  * F21 — inbound client frames were `JSON.parse`d and cast, with no bound on
  * frame size, array length, or string length, and every element was retained
  * in a per-socket Set for the life of the connection.
+ *
+ * Every refusal here carries {@link WS_INVALID_FRAME_CLOSE_CODE}, never the
+ * 1008 the credential paths use: the client spends a token refresh on a 1008
+ * that lands on a long-open socket, which no amount of refreshing would fix.
  */
 
 async function registerUser(app: FastifyInstance, username: string) {
@@ -120,35 +125,35 @@ describe('WebSocket frames are bounded and validated (F21)', () => {
     const ws = connect();
     await waitForOpen(ws);
     ws.send(JSON.stringify({ event: 'subscribe', data: { symbols: symbols(501) } }));
-    expect(await waitForClose(ws)).toBe(1008);
+    expect(await waitForClose(ws)).toBe(WS_INVALID_FRAME_CLOSE_CODE);
   });
 
   it('closes on a symbol longer than any real ticker', async () => {
     const ws = connect();
     await waitForOpen(ws);
     ws.send(JSON.stringify({ event: 'subscribe', data: { symbols: ['A'.repeat(13)] } }));
-    expect(await waitForClose(ws)).toBe(1008);
+    expect(await waitForClose(ws)).toBe(WS_INVALID_FRAME_CLOSE_CODE);
   });
 
   it('closes on a subscribe frame whose symbols are not strings', async () => {
     const ws = connect();
     await waitForOpen(ws);
     ws.send(JSON.stringify({ event: 'subscribe', data: { symbols: [{ nested: 'object' }] } }));
-    expect(await waitForClose(ws)).toBe(1008);
+    expect(await waitForClose(ws)).toBe(WS_INVALID_FRAME_CLOSE_CODE);
   });
 
   it('closes on an unparseable frame', async () => {
     const ws = connect();
     await waitForOpen(ws);
     ws.send('{not json');
-    expect(await waitForClose(ws)).toBe(1008);
+    expect(await waitForClose(ws)).toBe(WS_INVALID_FRAME_CLOSE_CODE);
   });
 
   it('closes on an unknown event type', async () => {
     const ws = connect();
     await waitForOpen(ws);
     ws.send(JSON.stringify({ event: 'unsubscribe', data: { symbols: ['AAPL'] } }));
-    expect(await waitForClose(ws)).toBe(1008);
+    expect(await waitForClose(ws)).toBe(WS_INVALID_FRAME_CLOSE_CODE);
   });
 
   it('accepts a subscribe frame at the cap and keeps serving other clients', async () => {

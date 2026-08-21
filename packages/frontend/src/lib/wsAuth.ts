@@ -16,8 +16,24 @@ export function wsAuthProtocols(token: string): [string, string] {
   return [WS_AUTH_SUBPROTOCOL, token];
 }
 
-/** WebSocket close code the server uses for every credential rejection. */
+/**
+ * WebSocket close code the server uses for every credential rejection, and
+ * only those. Keep in step with `WS_POLICY_CLOSE_CODE` in
+ * `packages/server/src/ws/close-codes.ts`.
+ */
 export const WS_POLICY_CLOSE_CODE = 1008;
+
+/**
+ * Close code the server uses for a frame it refuses to parse.
+ *
+ * Distinct from {@link WS_POLICY_CLOSE_CODE} so a rejected frame on a
+ * long-open socket is not mistaken for an expired token: that misreading costs
+ * a wasted refresh and a reconnect that re-sends the same bad frame. A close
+ * carrying this code takes the ordinary backoff path — the credential is fine,
+ * so there is nothing to refresh. Pinned against the server in
+ * `tests/lib/wsAuth.test.ts`.
+ */
+export const WS_INVALID_FRAME_CLOSE_CODE = 4400;
 
 /**
  * How long a socket must have been open for a 1008 to read as an expired

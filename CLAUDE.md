@@ -116,13 +116,21 @@ Every exported function, class, and interface must have a JSDoc comment unless t
   (`ws/subprotocol.ts`), and `handleProtocols` echoes back the marker only — echoing the token would
   put it straight back into a logged response.
 - **Re-check admitted sockets** — a socket is not a one-time decision. Both routes sweep every
-  `WS_REVALIDATE_INTERVAL_MS` and close (1008) anything whose token has expired or whose account is
-  gone or disabled; `/games/:id/live` also re-checks game membership, which `/ws/live` has no notion
-  of. Per-socket state for the sweep lives in a `WeakMap`, and the timer is `unref`'d and cleared on
-  `onClose`.
+  `WS_REVALIDATE_INTERVAL_MS` and close (1008 — credentials only) anything whose token has expired
+  or whose account is gone or disabled; `/games/:id/live` also re-checks game membership, which
+  `/ws/live` has no notion of. Per-socket state for the sweep lives in a `WeakMap`, and the timer is
+  `unref`'d and cleared on `onClose`.
+- **Attach socket listeners before the first `await`** — `close` fires exactly once, so a listener
+  added after an `await` never hears a peer that vanished during it. That leaks the registry entry
+  for the life of the process (and the revalidation sweep then re-processes the zombie forever), and
+  drops the client's first `subscribe`, which the browser sends from `onopen`.
 - **Bound and validate inbound frames** — `@fastify/websocket` is registered with an explicit
   `maxPayload` (ws defaults to 100 MiB), and `subscribe` — the only frame a client may send — is
-  Zod-validated with a cap on symbol count and length. Anything else closes the socket.
+  Zod-validated with a cap on symbol count and length. Anything else closes the socket with
+  `WS_INVALID_FRAME_CLOSE_CODE` (4400, `ws/close-codes.ts`) — **not** 1008. Keep the two codes
+  disjoint: 1008 means "your credential is no longer good", the client answers it by refreshing its
+  token, and a malformed frame answered that way burns a refresh that cannot help. 4400 rather than
+  1003/1007 because `ws` emits those itself and would re-create the overlap.
 - **Heartbeat** — `startWsHeartbeat` (`ws/heartbeat.ts`) pings every socket in both registries every
   `WS_HEARTBEAT_INTERVAL_MS` and terminates clients that missed the previous ping. Keep the interval
   under the shortest idle timeout on the deployed path (`proxy_read_timeout`), or intermediaries reap
@@ -138,7 +146,8 @@ Every exported function, class, and interface must have a JSDoc comment unless t
   `tryRefresh()` instead of `scheduleReconnect`; the new token re-runs the effect. A 1008 that lands
   immediately is an authorization refusal — not a member, account disabled — where a fresh token
   changes nothing, so it takes the normal backoff and reaches `offline`. Keep the two apart:
-  refreshing on the second spins forever.
+  refreshing on the second spins forever. A 4400 (rejected frame) is never a credential case and
+  always takes the backoff path — that is the whole reason it has its own code.
 
 ---
 

@@ -6,6 +6,7 @@ import { schema } from '../db/index.js';
 import type { GlobalClientRegistry } from './global-registry.js';
 import { ACCESS_TOKEN_TYPE } from '../plugins/jwt.js';
 import { extractSubprotocolToken } from './subprotocol.js';
+import { WS_POLICY_CLOSE_CODE } from './close-codes.js';
 import { env } from '../env.js';
 
 /** Claims read off the upgrade credential. `exp` is seconds since the epoch. */
@@ -25,7 +26,9 @@ interface SocketIdentity {
 
 function closeSocket(socket: WebSocket, reason: string): void {
   try {
-    socket.close(1008, reason);
+    // Every close on this route is a credential decision — it accepts no
+    // client frames, so it has no frame-validation code to distinguish.
+    socket.close(WS_POLICY_CLOSE_CODE, reason);
   } catch {
     // Already closing or closed — nothing to revoke.
   }
@@ -96,6 +99,9 @@ export function globalLiveRoute(
     const identityOf = new WeakMap<WebSocket, SocketIdentity>();
 
     const sweep = setInterval(() => {
+      // Fails open, same trade-off as the per-game sweep: a database blip must
+      // not mass-disconnect every live session, at the price of a persistent
+      // fault extending the revocation window for as long as it lasts.
       void revalidateSockets(db, registry, identityOf).catch((err: unknown) => {
         app.log.error({ err }, 'global ws revalidation sweep failed');
       });
@@ -116,21 +122,21 @@ export function globalLiveRoute(
       async (socket, request: FastifyRequest) => {
         const token = extractSubprotocolToken(request.headers['sec-websocket-protocol']);
         if (!token) {
-          socket.close(1008, 'Missing token');
+          socket.close(WS_POLICY_CLOSE_CODE, 'Missing token');
           return;
         }
         let payload: AccessClaims;
         try {
           payload = app.jwt.verify<AccessClaims>(token);
         } catch {
-          socket.close(1008, 'Invalid token');
+          socket.close(WS_POLICY_CLOSE_CODE, 'Invalid token');
           return;
         }
         // Only the 15-minute access token may authenticate a connection.
         // Demanding a positive `access` claim rather than denying `refresh`
         // also fails closed on an unstamped token.
         if (payload.type !== ACCESS_TOKEN_TYPE || typeof payload.exp !== 'number') {
-          socket.close(1008, 'Invalid token');
+          socket.close(WS_POLICY_CLOSE_CODE, 'Invalid token');
           return;
         }
 
@@ -143,7 +149,7 @@ export function globalLiveRoute(
           .limit(1);
 
         if (!account || account.disabled) {
-          socket.close(1008, 'Invalid token');
+          socket.close(WS_POLICY_CLOSE_CODE, 'Invalid token');
           return;
         }
 

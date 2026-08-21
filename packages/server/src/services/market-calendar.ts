@@ -114,8 +114,64 @@ function isTradingDay(p: NyParts): boolean {
   return !isHoliday(new Date(p.year, p.month - 1, p.day));
 }
 
+/** Options for {@link nextSessionClose}. */
+export interface SessionCloseOptions {
+  /**
+   * Treat the pre/post-market windows as tradable, so the session ends at the
+   * 20:00 ET post-market boundary rather than the 16:00 ET regular close.
+   * Mirrors `MARKET_HOURS_INCLUDE_EXTENDED`.
+   */
+  includeExtended?: boolean;
+}
+
+/**
+ * Returns the instant the current or next NYSE session closes, as a UTC `Date`.
+ *
+ * If `now` falls on a trading day before that day's close, returns today's
+ * close; otherwise walks forward past weekends and NYSE holidays to the next
+ * trading day. Used to give day-TIF orders an `expiresAt` so they can actually
+ * be reclaimed — the counterpart to {@link mostRecentTradingSession}, which
+ * only ever looks backward.
+ *
+ * Half-day early closes are not modeled, matching
+ * {@link mostRecentTradingSession}: an order placed the day after Thanksgiving
+ * expires ~3h later than the real close. Still bounded, which is what matters.
+ */
+export function nextSessionClose(
+  now: Date = new Date(),
+  options: SessionCloseOptions = {},
+): Date {
+  const closeHour = options.includeExtended ? 20 : 16;
+  const today = nyParts(now);
+  if (isTradingDay(today)) {
+    const close = nyDateAt(today, closeHour, 0);
+    if (close.getTime() > now.getTime()) return close;
+  }
+
+  // 14 days covers the longest NYSE holiday gap, same bound as
+  // `mostRecentTradingSession` uses walking the other way.
+  let cursor = nextDayParts(today);
+  for (let i = 0; i < 14; i += 1) {
+    if (isTradingDay(cursor)) return nyDateAt(cursor, closeHour, 0);
+    cursor = nextDayParts(cursor);
+  }
+  return nyDateAt(cursor, closeHour, 0);
+}
+
 function previousDayParts(p: NyParts): NyParts {
   const d = new Date(Date.UTC(p.year, p.month - 1, p.day) - 86_400_000);
+  return {
+    year: d.getUTCFullYear(),
+    month: d.getUTCMonth() + 1,
+    day: d.getUTCDate(),
+    hour: 0,
+    minute: 0,
+    weekday: SHORT_WEEKDAYS[d.getUTCDay()] ?? '',
+  };
+}
+
+function nextDayParts(p: NyParts): NyParts {
+  const d = new Date(Date.UTC(p.year, p.month - 1, p.day) + 86_400_000);
   return {
     year: d.getUTCFullYear(),
     month: d.getUTCMonth() + 1,

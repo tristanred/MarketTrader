@@ -9,6 +9,7 @@ import { StockProviderError, TradeError } from '../providers/index.js';
 import type { MarketStatusProvider } from '../providers/market-status/index.js';
 import type { MarketState } from '@markettrader/shared';
 import { recomputeGameStatus } from '../services/game-status.js';
+import { nextSessionClose } from '../services/market-calendar.js';
 import { executeTrade } from '../services/trade.js';
 import { emitTradeEvents } from '../services/trade-emit.js';
 import { loadPlayerPortfolio } from '../services/portfolio.js';
@@ -243,10 +244,32 @@ export function tradingRoutes(
           try {
             const q = await provider.getQuote(symbol);
             referencePrice = q.price;
-          } catch {
-            // Stop and market-bracket entries that need a reference price
-            // will be rejected by placeWorkingOrder with INVALID_ORDER.
+          } catch (err) {
+            // A ticker the provider can't resolve must never become a resting
+            // row: the trigger worker and the price poller re-fetch every open
+            // order's symbol on each tick, and a failed lookup is not cached —
+            // so one bad row is a permanent, uncacheable load amplifier. Fail
+            // closed here, matching the market path below.
+            //
+            // Every other provider failure stays best-effort: an upstream
+            // outage must not block order placement. Stop and market-bracket
+            // entries that then lack a reference price are rejected by
+            // placeWorkingOrder with INVALID_ORDER.
+            if (err instanceof StockProviderError && err.code === 'SYMBOL_NOT_FOUND') {
+              return reply.status(404).send({ error: err.message });
+            }
           }
+          // A `day` order that carries no expiry is immortal: expireDayOrders
+          // only matches rows with a non-null expiresAt, so without this the
+          // TIF is decorative and every resting row lives until cancelled by
+          // hand. Extended-hours servers run to the post-market boundary.
+          const expiresAt =
+            timeInForce === 'day'
+              ? nextSessionClose(new Date(), {
+                  includeExtended: env.MARKET_HOURS_INCLUDE_EXTENDED,
+                }).toISOString()
+              : undefined;
+
           try {
             const orders = await placeWorkingOrder(db, {
               gamePlayerId: gamePlayer.id,
@@ -255,6 +278,7 @@ export function tradingRoutes(
               quantity,
               orderType: orderType as OrderType,
               timeInForce: timeInForce as TimeInForce,
+              ...(expiresAt != null && { expiresAt }),
               ...(limitPrice != null && { limitPrice }),
               ...(stopPrice != null && { stopPrice }),
               ...(takeProfitPrice != null && { takeProfitPrice }),

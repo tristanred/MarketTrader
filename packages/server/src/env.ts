@@ -264,6 +264,17 @@ export const env = {
   ),
 
   /**
+   * How often live sockets are re-checked against the database, in ms. A
+   * socket's authorization is otherwise decided once at upgrade, so this bounds
+   * how long a revoked membership, a disabled account, or an expired token
+   * keeps receiving a game's event stream.
+   */
+  WS_REVALIDATE_INTERVAL_MS: parsePositiveInt(
+    'WS_REVALIDATE_INTERVAL_MS',
+    optional('WS_REVALIDATE_INTERVAL_MS', '30000'),
+  ),
+
+  /**
    * SQLite (libsql) busy-handler timeout in ms — how long a writer waits for a
    * contended lock before failing with SQLITE_BUSY. Set as a per-connection
    * `PRAGMA busy_timeout` at startup (covers reads/conn0) and re-applied before

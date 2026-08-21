@@ -8,12 +8,17 @@ import { tradeKeys } from '@/api/trades';
 import { leaderboardHistoryKeys } from '@/api/leaderboard-history';
 import { toast } from '@/components/ui/toast';
 import { useAchievementUnlockStream } from './useAchievementUnlockStream';
+import { isStaleCredentialClose, wsAuthProtocols } from '@/lib/wsAuth';
+import { tryRefresh } from '@/lib/api';
 import type { WsClientEvent, WsServerEvent } from '@markettrader/shared';
 
-/** Compute the WebSocket URL for a given game, including the access token query param. */
-function buildWsUrl(gameId: string, token: string): string {
+/**
+ * WebSocket URL for a game. Carries no credential: the access token is offered
+ * in the `Sec-WebSocket-Protocol` header — see {@link wsAuthProtocols}.
+ */
+function buildWsUrl(gameId: string): string {
   const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
-  return `${proto}://${window.location.host}/api/games/${gameId}/live?token=${encodeURIComponent(token)}`;
+  return `${proto}://${window.location.host}/api/games/${gameId}/live`;
 }
 
 /**
@@ -71,10 +76,12 @@ export function useGameSocket(gameId: string, symbols: string[], myGamePlayerId:
     const connect = () => {
       if (cancelled) return;
       setStatus('game', 'connecting');
-      const ws = new WebSocket(buildWsUrl(gameId, token));
+      const ws = new WebSocket(buildWsUrl(gameId), wsAuthProtocols(token));
       wsRef.current = ws;
+      let openedAt = 0;
 
       ws.onopen = () => {
+        openedAt = Date.now();
         reconnect.markOpen();
         setStatus('game', 'live');
         lastSentKeyRef.current = null;
@@ -128,8 +135,18 @@ export function useGameSocket(gameId: string, symbols: string[], myGamePlayerId:
         }
       };
 
-      ws.onclose = () => {
+      ws.onclose = (evt?: CloseEvent) => {
         if (cancelled) return;
+        // The server closes established sockets with 1008 once the access token
+        // expires. Reconnecting re-offers the same dead token, so refresh
+        // instead and let the new token re-run this effect. A 1008 that lands
+        // immediately is an authorization refusal, which a fresh token would
+        // not fix — back off normally so it can reach `offline`.
+        if (isStaleCredentialClose(evt?.code, openedAt)) {
+          setStatus('game', 'reconnecting');
+          void tryRefresh();
+          return;
+        }
         setStatus('game', reconnect.scheduleReconnect(connect) === null ? 'offline' : 'reconnecting');
       };
     };

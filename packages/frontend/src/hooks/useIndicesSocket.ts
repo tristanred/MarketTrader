@@ -5,6 +5,8 @@ import { useConnectionStore } from '@/stores/connectionStore';
 import { ReconnectController, attachResumeListeners } from '@/lib/reconnect';
 import type { IndexQuote, LiveWsMessage } from '@markettrader/shared';
 import { TICKER_TAPE_QUERY_KEY } from '@/api/systemSettings';
+import { isStaleCredentialClose, wsAuthProtocols } from '@/lib/wsAuth';
+import { tryRefresh } from '@/lib/api';
 
 /** Stable React Query key for the live indices cache. */
 export const INDICES_QUERY_KEY = ['indices'] as const;
@@ -36,11 +38,15 @@ export function useIndicesSocket(): void {
       if (cancelled) return;
       setStatus('global', 'connecting');
       const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const url = `${proto}//${window.location.host}/api/ws/live?token=${encodeURIComponent(token)}`;
-      const ws = new WebSocket(url);
+      // No credential in the URL: it is offered in the upgrade header instead,
+      // because proxy and process logs record the request line verbatim.
+      const url = `${proto}//${window.location.host}/api/ws/live`;
+      const ws = new WebSocket(url, wsAuthProtocols(token));
       socket = ws;
+      let openedAt = 0;
 
       ws.onopen = () => {
+        openedAt = Date.now();
         reconnect.markOpen();
         setStatus('global', 'live');
       };
@@ -73,8 +79,15 @@ export function useIndicesSocket(): void {
         }
       };
 
-      ws.onclose = () => {
+      ws.onclose = (evt?: CloseEvent) => {
         if (cancelled) return;
+        // See useGameSocket: an established socket closed with 1008 means the
+        // access token expired, and only a fresh one gets it back.
+        if (isStaleCredentialClose(evt?.code, openedAt)) {
+          setStatus('global', 'reconnecting');
+          void tryRefresh();
+          return;
+        }
         setStatus('global', reconnect.scheduleReconnect(connect) === null ? 'offline' : 'reconnecting');
       };
     };

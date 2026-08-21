@@ -68,17 +68,17 @@ What happens:
 2. `server` waits for db, runs Drizzle migrations from `packages/server/drizzle/pg/` on startup (idempotent — tracked in `__drizzle_migrations`), seeds the first administrator if the database has none, then binds `:3000` (internal only).
 3. `web` (Nginx) serves the static SPA bundle on `:80` and proxies `/api/*` and `/api/games/*/live` (WebSocket) to `server:3000`.
 
+> **WebSocket credentials ride in `Sec-WebSocket-Protocol`, not the URL.** Any reverse proxy in
+> front of the API must pass that header through on the upgrade request *and* pass the server's
+> echoed value back on the 101 response — browsers fail the handshake otherwise. Nginx does both
+> by default; a proxy that whitelists headers needs it added explicitly. Server and frontend must
+> ship together: there is no query-string fallback.
+
 Tail the logs:
 
 ```sh
 docker compose logs -f server
 ```
-
-## 5. TLS
-
-The compose file ships HTTP-only. Two production options:
-
-**A. AWS Application Load Balancer (recommended)**
 
 ### The first administrator
 
@@ -109,6 +109,12 @@ admin surface.
 Registering through the app grants no privileges to anyone. Every further
 administrator is added by an existing one.
 
+## 5. TLS
+
+The compose file ships HTTP-only. Two production options:
+
+**A. AWS Application Load Balancer (recommended)**
+
 Put an ALB in front of the instance, attach an ACM cert, target group on TCP 80. ALB handles TLS termination; the instance never sees HTTPS. Set `CORS_ORIGIN=https://your-domain.example.com` — that's what the browser sees.
 
 **B. Certbot + Nginx**
@@ -122,17 +128,17 @@ Check the API answers, then that a registration round-trips:
 ```sh
 curl -fsS http://<public-ip>/api/health
 
+# Generate the password per run. Never commit a literal here: this account is
+# created on the live host, and a password in the repo is a working credential.
+SMOKE_USER="smoke-$$"
+SMOKE_PASS=$(openssl rand -hex 24)
+
 TOKEN=$(curl -fsS -X POST http://<public-ip>/api/auth/register \
   -H 'content-type: application/json' \
   -d "{\"username\":\"$SMOKE_USER\",\"password\":\"$SMOKE_PASS\"}" \
   | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
 
 curl -fsS http://<public-ip>/api/games -H "authorization: Bearer $TOKEN"
-# Generate the password per run. Never commit a literal here: this account is
-# created on the live host, and a password in the repo is a working credential.
-SMOKE_USER="smoke-$$"
-SMOKE_PASS=$(openssl rand -hex 24)
-
 ```
 
 Registration grants no privileges, so this account is unprivileged — but it does

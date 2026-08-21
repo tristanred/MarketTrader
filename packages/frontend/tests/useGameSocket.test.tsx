@@ -6,6 +6,13 @@ import { useGameSocket } from '../src/hooks/useGameSocket';
 import { useAuthStore } from '../src/stores/authStore';
 import { useLiveStore } from '../src/stores/liveStore';
 import { useConnectionStore } from '../src/stores/connectionStore';
+import { WS_AUTH_SUBPROTOCOL } from '../src/lib/wsAuth';
+import { tryRefresh } from '../src/lib/api';
+
+vi.mock('../src/lib/api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/lib/api')>();
+  return { ...actual, tryRefresh: vi.fn(async () => true) };
+});
 
 function withQueryClient(children: React.ReactNode) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -16,15 +23,17 @@ class MockWebSocket {
   static OPEN = 1;
   static instances: MockWebSocket[] = [];
   url: string;
+  protocols: string[];
   readyState: number = MockWebSocket.OPEN;
   onopen: (() => void) | null = null;
   onmessage: ((evt: { data: string }) => void) | null = null;
-  onclose: (() => void) | null = null;
+  onclose: ((evt?: { code: number }) => void) | null = null;
   onerror: (() => void) | null = null;
   sent: string[] = [];
 
-  constructor(url: string) {
+  constructor(url: string, protocols?: string | string[]) {
     this.url = url;
+    this.protocols = protocols === undefined ? [] : [protocols].flat();
     MockWebSocket.instances.push(this);
     setTimeout(() => this.onopen?.(), 0);
   }
@@ -36,6 +45,12 @@ class MockWebSocket {
   close(): void {
     this.readyState = 3;
     this.onclose?.();
+  }
+
+  /** Server-initiated close carrying a status code. */
+  closeWith(code: number): void {
+    this.readyState = 3;
+    this.onclose?.({ code });
   }
 
   receive(data: unknown): void {
@@ -53,6 +68,7 @@ describe('useGameSocket', () => {
     vi.useFakeTimers();
     vi.stubGlobal('WebSocket', MockWebSocket as unknown as typeof WebSocket);
     MockWebSocket.instances = [];
+    vi.mocked(tryRefresh).mockClear();
     useAuthStore.setState({ token: 'jwt-abc', user: { id: 'u1', username: 'alice', groups: [] }, ready: true });
     useLiveStore.getState().reset();
     useConnectionStore.setState({ game: 'idle', global: 'idle', retryNonce: 0 });
@@ -84,7 +100,13 @@ describe('useGameSocket', () => {
     await tick(30_001);
   }
 
-  it('connects with the token in the query string and sends an initial subscribe', async () => {
+  it('pins the auth subprotocol wire value', () => {
+    // Duplicated in packages/server/src/ws/subprotocol.ts — `shared` carries
+    // types only, so nothing else makes a one-sided rename fail.
+    expect(WS_AUTH_SUBPROTOCOL).toBe('markettrader.auth.v1');
+  });
+
+  it('offers the token as a subprotocol, keeps it out of the URL, and sends an initial subscribe', async () => {
     render(withQueryClient(<Harness symbols={['AAPL', 'TSLA']} />));
     await act(async () => {
       await vi.runAllTimersAsync();
@@ -92,9 +114,47 @@ describe('useGameSocket', () => {
 
     expect(MockWebSocket.instances).toHaveLength(1);
     const ws = MockWebSocket.instances[0]!;
-    expect(ws.url).toContain('token=jwt-abc');
     expect(ws.url).toContain('/games/game-1/live');
+    // The URL is written verbatim to proxy and process logs, so the credential
+    // must never appear in it — see the server's F6/F22 regression test.
+    expect(ws.url).not.toContain('jwt-abc');
+    expect(ws.url).not.toContain('token=');
+    expect(ws.protocols).toEqual([WS_AUTH_SUBPROTOCOL, 'jwt-abc']);
     expect(ws.sent[0]).toBe(JSON.stringify({ event: 'subscribe', data: { symbols: ['AAPL', 'TSLA'] } }));
+  });
+
+  it('refreshes the credential when an established socket is closed as unauthorized', async () => {
+    render(withQueryClient(<Harness symbols={['AAPL']} />));
+    await act(async () => {
+      await vi.runAllTimersAsync();
+    });
+    const ws = MockWebSocket.instances[0]!;
+
+    // The server revalidates admitted sockets and closes them with 1008 when the
+    // access token expires. Reconnecting with the same token just repeats it.
+    await tick(10_000);
+    await act(async () => ws.closeWith(1008));
+
+    expect(vi.mocked(tryRefresh)).toHaveBeenCalledTimes(1);
+    // No blind reconnect: the new token re-runs the effect instead.
+    await tick(60_000);
+    expect(MockWebSocket.instances).toHaveLength(1);
+  });
+
+  it('backs off instead of refreshing when 1008 lands right after open', async () => {
+    render(withQueryClient(<Harness symbols={['AAPL']} />));
+    // Only far enough to fire the open callback — `runAllTimersAsync` would
+    // also drain the 30s stability timer and move the clock with it.
+    await tick(0);
+    const ws = MockWebSocket.instances[0]!;
+
+    // An immediate 1008 is an authorization refusal — removed from the game, or
+    // a disabled account. A fresh token would not help, and refreshing on it
+    // would spin.
+    await act(async () => ws.closeWith(1008));
+    expect(vi.mocked(tryRefresh)).not.toHaveBeenCalled();
+    await tick(30_001);
+    expect(MockWebSocket.instances).toHaveLength(2);
   });
 
   it('dispatches price_update events into the live store', async () => {

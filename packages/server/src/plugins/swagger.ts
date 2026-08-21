@@ -26,7 +26,9 @@ export async function registerSwagger(app: FastifyInstance): Promise<void> {
         description:
           'REST API for the MarketTrader virtual stock trading tournament platform. ' +
           'In addition to the documented HTTP endpoints, a WebSocket endpoint at ' +
-          '`/games/:id/live?token=<jwt>` streams price ticks and leaderboard updates.',
+          '`/games/:id/live` streams price ticks and leaderboard updates. It authenticates with ' +
+          'the access token offered as a `Sec-WebSocket-Protocol` value, after the ' +
+          '`markettrader.auth.v1` marker — never in the query string.',
         version: buildInfo.version,
       },
       components: {

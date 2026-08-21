@@ -7,6 +7,7 @@ import { buildApp } from '../../src/app.js';
 import { createTestDb } from '../helpers/app.js';
 import { MockStockProvider } from '../helpers/mock-provider.js';
 import { schema } from '../../src/db/index.js';
+import { WS_AUTH_SUBPROTOCOL } from '../../src/ws/subprotocol.js';
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -38,7 +39,7 @@ async function createActiveGame(app: FastifyInstance, token: string) {
 }
 
 function connectWs(port: number, gameId: string, token: string): WebSocket {
-  return new WebSocket(`ws://127.0.0.1:${port}/games/${gameId}/live?token=${token}`);
+  return new WebSocket(`ws://127.0.0.1:${port}/games/${gameId}/live`, [WS_AUTH_SUBPROTOCOL, token]);
 }
 
 function waitForOpen(ws: WebSocket, ms = 2000): Promise<void> {

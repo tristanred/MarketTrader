@@ -153,7 +153,7 @@ export async function buildApp(
   await app.register(adminRoutes(db, provider, systemSettings, bus, registry));
   await app.register(adminAchievementsRoutes(db, achievementEngine, systemSettings));
   await app.register(liveRoute(db, registry, achievementEngine));
-  await app.register(globalLiveRoute(globalRegistry));
+  await app.register(globalLiveRoute(db, globalRegistry));
 
   if (!disablePoller) {
     // Keeps idle sockets from being reaped by an intermediary, and reaps peers

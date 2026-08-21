@@ -110,7 +110,19 @@ Every exported function, class, and interface must have a JSDoc comment unless t
   Symbols rank holdings → open orders → watchlists; anything added to that set needs a ceiling
   on its write path too.
 - **Clean up disconnected clients** — always remove sockets from broadcast lists on `close` and `error`
-- **Auth on upgrade** — validate JWT from `?token=` query param at WebSocket connection time, not per-message
+- **Auth on upgrade** — validate the JWT offered in `Sec-WebSocket-Protocol` at connection time, not
+  per-message. Never accept a credential in the query string: Fastify logs the request line and so
+  does the reverse proxy. The offer is `[WS_AUTH_SUBPROTOCOL, <access_token>]`
+  (`ws/subprotocol.ts`), and `handleProtocols` echoes back the marker only — echoing the token would
+  put it straight back into a logged response.
+- **Re-check admitted sockets** — a socket is not a one-time decision. Both routes sweep every
+  `WS_REVALIDATE_INTERVAL_MS` and close (1008) anything whose token has expired or whose account is
+  gone or disabled; `/games/:id/live` also re-checks game membership, which `/ws/live` has no notion
+  of. Per-socket state for the sweep lives in a `WeakMap`, and the timer is `unref`'d and cleared on
+  `onClose`.
+- **Bound and validate inbound frames** — `@fastify/websocket` is registered with an explicit
+  `maxPayload` (ws defaults to 100 MiB), and `subscribe` — the only frame a client may send — is
+  Zod-validated with a cap on symbol count and length. Anything else closes the socket.
 - **Heartbeat** — `startWsHeartbeat` (`ws/heartbeat.ts`) pings every socket in both registries every
   `WS_HEARTBEAT_INTERVAL_MS` and terminates clients that missed the previous ping. Keep the interval
   under the shortest idle timeout on the deployed path (`proxy_read_timeout`), or intermediaries reap
@@ -120,6 +132,12 @@ Every exported function, class, and interface must have a JSDoc comment unless t
   clearing on `open` pins a socket that opens and immediately drops to the base delay forever
   (issue #27). Sockets stop after 10 consecutive attempts and publish `offline` on
   `useConnectionStore`, which turns the `LIVE` pill into a retry button.
+- **A 1008 close is not a backoff case** — since the server now closes sockets on token expiry, both
+  hooks route a 1008 on an *established* socket (open ≥ `WS_CREDENTIAL_STALE_AFTER_MS`) to
+  `tryRefresh()` instead of `scheduleReconnect`; the new token re-runs the effect. A 1008 that lands
+  immediately is an authorization refusal — not a member, account disabled — where a fresh token
+  changes nothing, so it takes the normal backoff and reaches `offline`. Keep the two apart:
+  refreshing on the second spins forever.
 
 ---
 
@@ -135,15 +153,28 @@ Every exported function, class, and interface must have a JSDoc comment unless t
   WS upgrade handlers. Only `POST /auth/refresh` accepts a `refresh` token.
 - `verifyAccessToken` also re-reads the `users` row on every request, so disabling or deleting an
   account takes effect on the *next* REST call rather than at the next token expiry. Live
-  WebSockets are not re-checked — authorization there is still decided once at upgrade.
+  WebSockets do the same read at upgrade and then re-run it — plus the game-membership check and
+  the token's `exp` — every `WS_REVALIDATE_INTERVAL_MS`, so a revocation closes an open socket
+  instead of waiting for the client to reconnect.
 - Password hashing: argon2 via `@node-rs/argon2` (not bcrypt)
 - JWT secret: any string ≥ 32 chars (enforced in production by `validateProductionEnv` in `env.ts`)
-- WebSocket auth: `ws://host/games/:id/live?token=<access_token>`
+- WebSocket auth: `new WebSocket('ws://host/games/:id/live', ['markettrader.auth.v1', accessToken])`
+  — the token is a `Sec-WebSocket-Protocol` value, never a query parameter. Same shape on
+  `/ws/live`. Server and frontend must deploy together; there is no query-string fallback.
 - Login brute-force controls are deliberately two independent layers: the per-IP
   `@fastify/rate-limit` cap (5/min), and `FailedLoginTracker` in
   `services/failed-login.ts`, which counts failures per *username* so the control
   holds even when `request.ip` cannot be trusted. Don't remove one on the grounds
   that the other exists.
+- **`POST /auth/register` grants no group membership to anyone, ever** — not even to the
+  first account. The first admin comes from `bootstrapAdmin` in `db/seed-admin.ts`, called
+  by `index.ts` right after migrations and before `listen()`: on a database with no admin
+  it creates `admin` with a CSPRNG password and prints it to stdout once (`console.log`,
+  not the logger — pino would ship it over OTLP). Idempotent: a later boot finds the
+  existing admin and returns `null`, so nothing is re-created, re-printed, or reset. Skipped
+  under `NODE_ENV=test` and for `:memory:` URLs, so the suite stays deterministic — tests
+  get an admin from `registerAdmin` in `tests/helpers/app.ts`. If a non-admin already owns
+  the name `admin` it is never promoted; the seed falls back to `admin-<hex>`.
 
 ---
 
@@ -171,15 +202,6 @@ CORS_ORIGIN=           # frontend URL (e.g. http://localhost:5173)
 NODE_ENV=development   # development | production | test
 TRUST_PROXY=loopback   # which hops may set X-Forwarded-For; `true` is refused in prod
 ```
-- **`POST /auth/register` grants no group membership to anyone, ever** — not even to the
-  first account. The first admin comes from `bootstrapAdmin` in `db/seed-admin.ts`, called
-  by `index.ts` right after migrations and before `listen()`: on a database with no admin
-  it creates `admin` with a CSPRNG password and prints it to stdout once (`console.log`,
-  not the logger — pino would ship it over OTLP). Idempotent: a later boot finds the
-  existing admin and returns `null`, so nothing is re-created, re-printed, or reset. Skipped
-  under `NODE_ENV=test` and for `:memory:` URLs, so the suite stays deterministic — tests
-  get an admin from `registerAdmin` in `tests/helpers/app.ts`. If a non-admin already owns
-  the name `admin` it is never promoted; the seed falls back to `admin-<hex>`.
 
 `TRUST_PROXY` decides `request.ip`, which is the key every per-route rate limit is
 bucketed on. Trusting every hop (`true`) makes that value client-controlled and lifts
@@ -192,7 +214,9 @@ in `.env.example`): the `MARKET_*` family (hours mode, status provider, extended
 hours), the `STOCK_*_MS` resilience tunables (cache TTLs, rate-limit backoff,
 stale-trade policy), the `LOGIN_*` family (per-account login throttle),
 `PENDING_ORDERS_TICK_MS`, `PORTFOLIO_SNAPSHOT_INTERVAL_MS`,
-`WS_HEARTBEAT_INTERVAL_MS`, and the `OTEL_*` family. `env.ts` is the source of truth for the full set.
+`WS_HEARTBEAT_INTERVAL_MS`, `WS_REVALIDATE_INTERVAL_MS`, `PRICE_POLLER_MAX_SYMBOLS`,
+the `WATCHLIST_MAX_*` pair, and the `OTEL_*` family. `env.ts` is the source of truth
+for the full set.
 
 ---
 

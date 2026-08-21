@@ -37,6 +37,12 @@ export const SEARCH_CACHE_MAX_ENTRIES = 500;
 const UPSTREAM_BATCH_SIZE = 50;
 
 /**
+ * Concurrent single-symbol fetches when the inner provider has no batch
+ * endpoint. Alpaca and the mock provider are in that position.
+ */
+const MAX_SINGLE_FETCH_CONCURRENCY = 8;
+
+/**
  * Symbols per persisted-cache read. Only there to keep the bound-parameter
  * count of a single `IN (...)` well inside every driver's ceiling when an
  * operator raises `PRICE_POLLER_MAX_SYMBOLS`.
@@ -207,12 +213,20 @@ export class CachedProvider implements StockProvider {
    * {@link UPSTREAM_BATCH_SIZE} chunks. This is what keeps the price poller's
    * fan-out to a handful of upstream requests per tick instead of one per symbol.
    *
+   * Not every provider has a batch endpoint — Alpaca and the mock do not — so
+   * misses fall back to concurrency-limited single fetches here rather than in
+   * the caller. A caller cannot feature-detect its way to that fallback: this
+   * class always defines `getQuotes`, so `provider.getQuotes` is truthy however
+   * the inner provider is configured.
+   *
    * Best-effort by contract (see {@link StockProvider.getQuotes}): a symbol with
-   * no usable quote is simply absent from the map, and an upstream failure never
-   * throws — it costs that chunk, not the caller's whole batch. `RATE_LIMITED`
+   * no usable quote is simply absent from the map, and no failure — upstream,
+   * cache read, or cache write — throws out of this method. `RATE_LIMITED`
    * degrades to cached rows marked `stale: true`, mirroring {@link getQuote}.
-   * Failures are still recorded by {@link upstream}, so they stay visible in
-   * traces and metrics.
+   *
+   * Upstream failures are recorded by {@link upstream} and stay visible in
+   * traces and metrics. Cache read and write failures are not: they are database
+   * faults, not provider faults, and they surface in the caller's own logging.
    */
   async getQuotes(symbols: string[]): Promise<Map<string, StockQuote>> {
     const out = new Map<string, StockQuote>();
@@ -221,11 +235,17 @@ export class CachedProvider implements StockProvider {
 
     const rows = new Map<string, typeof schema.stockPriceCache.$inferSelect>();
     for (const batch of chunk(unique, CACHE_READ_CHUNK)) {
-      const cached = await this.db
-        .select()
-        .from(schema.stockPriceCache)
-        .where(inArray(schema.stockPriceCache.symbol, batch));
-      for (const row of cached) rows.set(row.symbol, row);
+      // A cache read failure must not fail the tick: every symbol in the failed
+      // chunk simply counts as a miss and goes upstream.
+      try {
+        const cached = await this.db
+          .select()
+          .from(schema.stockPriceCache)
+          .where(inArray(schema.stockPriceCache.symbol, batch));
+        for (const row of cached) rows.set(row.symbol, row);
+      } catch {
+        continue;
+      }
     }
 
     const now = Date.now();
@@ -241,15 +261,20 @@ export class CachedProvider implements StockProvider {
       }
     }
 
+    if (misses.length === 0) return out;
+
     const fetchBatch = this.inner.getQuotes?.bind(this.inner);
-    if (misses.length === 0 || !fetchBatch) return out;
+    if (!fetchBatch) return this.fetchMissesIndividually(misses, out);
 
     for (const batch of chunk(misses, UPSTREAM_BATCH_SIZE)) {
       try {
         const fetched = await this.upstream('getQuotes', undefined, () => fetchBatch(batch));
         for (const [sym, quote] of fetched) {
           out.set(sym, quote);
-          await this.cacheQuote(quote);
+          // Persisting is a courtesy to later readers, not part of delivering
+          // this quote — a failed write must not discard quotes already paid
+          // for upstream, including the rest of this chunk.
+          await this.cacheQuote(quote).catch(() => {});
         }
       } catch (err) {
         if (!(err instanceof StockProviderError) || err.code !== 'RATE_LIMITED') continue;
@@ -262,6 +287,26 @@ export class CachedProvider implements StockProvider {
           out.set(symbol, this.quoteFromCacheRow(symbol, row, true));
         }
       }
+    }
+    return out;
+  }
+
+  /**
+   * Fills `out` for providers with no batch endpoint, at most
+   * {@link MAX_SINGLE_FETCH_CONCURRENCY} requests in flight. Bounded rather than
+   * unlimited because the whole point of {@link getQuotes} is that one poller
+   * tick cannot turn into an unthrottled burst; a provider without a batch path
+   * needs that ceiling more, not less. A symbol whose fetch fails is left out.
+   */
+  private async fetchMissesIndividually(
+    misses: string[],
+    out: Map<string, StockQuote>,
+  ): Promise<Map<string, StockQuote>> {
+    for (const slice of chunk(misses, MAX_SINGLE_FETCH_CONCURRENCY)) {
+      const settled = await Promise.all(
+        slice.map((symbol) => this.getQuote(symbol).catch(() => null)),
+      );
+      for (const quote of settled) if (quote) out.set(quote.symbol, quote);
     }
     return out;
   }

@@ -19,27 +19,54 @@ const MAX_CONCURRENT_QUOTES = 8;
 /** The subset of a Fastify logger the poller uses. Optional everywhere. */
 export interface PricePollerLogger {
   warn(details: Record<string, number>, message: string): void;
+  error(details: Record<string, unknown>, message: string): void;
 }
 
 /**
- * True while the previous tick had to truncate. Module scope is safe because a
- * process runs one poller. The overflow condition persists across ticks, so
- * logging unconditionally would emit a line every 5 seconds for as long as it
- * lasts; log the transitions instead.
+ * Per-poller truncation bookkeeping. The overflow condition persists across
+ * ticks, so logging it unconditionally would emit a line every 5 seconds for as
+ * long as it lasts; {@link pollPrices} logs the transitions instead and needs
+ * somewhere to remember the last one.
+ *
+ * Owned by the poller rather than the module so two pollers — or two tests —
+ * cannot silence each other's warnings.
  */
-let truncating = false;
+export interface PricePollerState {
+  truncating: boolean;
+}
+
+/** Fresh {@link PricePollerState}. One per {@link startPricePoller} call. */
+export function createPricePollerState(): PricePollerState {
+  return { truncating: false };
+}
+
+const sharedState = createPricePollerState();
 
 /**
- * Fetches quotes for `symbols`, preferring the provider's batch path and
- * falling back to bounded-concurrency single fetches. Individual failures yield
- * no quote rather than failing the tick — same contract as
- * {@link StockProvider.getQuotes}.
+ * Fetches quotes for `symbols` through the provider's batch path.
+ *
+ * The single-fetch loop below is for direct callers passing a bare provider;
+ * in the running app the provider is always a `CachedProvider`, which defines
+ * `getQuotes` unconditionally and owns the fallback for inner providers that
+ * have no batch endpoint. Individual failures yield no quote rather than
+ * failing the tick — same contract as {@link StockProvider.getQuotes}.
  */
-async function fetchQuotes(provider: StockProvider, symbols: string[]): Promise<StockQuote[]> {
+async function fetchQuotes(
+  provider: StockProvider,
+  symbols: string[],
+  logger?: PricePollerLogger,
+): Promise<StockQuote[]> {
   if (provider.getQuotes) {
     try {
       return [...(await provider.getQuotes(symbols)).values()];
-    } catch {
+    } catch (err) {
+      // getQuotes is contractually best-effort, so reaching here means a fault
+      // below the provider — a database error, usually. Silence would leave the
+      // price stream dead with nothing in the log to explain it.
+      logger?.error(
+        { err, symbols: symbols.length },
+        'price poller batch fetch failed; no prices broadcast this tick',
+      );
       return [];
     }
   }
@@ -70,18 +97,25 @@ export async function pollPrices(
   provider: StockProvider,
   registry: GameClientRegistry,
   logger?: PricePollerLogger,
+  state: PricePollerState = sharedState,
 ): Promise<void> {
+  // A tick that returns before fetching has not observed an overflow. Leaving
+  // the flag set would swallow the warning when the next busy period overflows
+  // again — and "nobody is connected" is every night, not an edge case.
+  const endTickWithoutFetch = (): void => {
+    state.truncating = false;
+  };
   const { games, gamePlayers, portfolios, watchlists, watchlistItems } = schema;
 
   const activeGameIds = registry.getActiveGameIds();
-  if (activeGameIds.length === 0) return;
+  if (activeGameIds.length === 0) return endTickWithoutFetch();
 
   const activeGames = await db
     .select({ id: games.id })
     .from(games)
     .where(and(inArray(games.id, activeGameIds), eq(games.status, 'active')));
 
-  if (activeGames.length === 0) return;
+  if (activeGames.length === 0) return endTickWithoutFetch();
 
   const liveGameIds = activeGames.map((g) => g.id);
 
@@ -137,11 +171,11 @@ export async function pollPrices(
       ...watchSymbols.map((w) => w.symbol),
     ]),
   ];
-  if (ranked.length === 0) return;
+  if (ranked.length === 0) return endTickWithoutFetch();
 
   const allSymbols = ranked.slice(0, env.PRICE_POLLER_MAX_SYMBOLS);
   const overflowed = ranked.length > allSymbols.length;
-  if (overflowed && !truncating) {
+  if (overflowed && !state.truncating) {
     logger?.warn(
       {
         requested: ranked.length,
@@ -150,12 +184,12 @@ export async function pollPrices(
       },
       'price poller symbol cap reached; dropping the lowest-priority symbols each tick',
     );
-  } else if (!overflowed && truncating) {
+  } else if (!overflowed && state.truncating) {
     logger?.warn({ requested: ranked.length }, 'price poller symbol cap no longer reached');
   }
-  truncating = overflowed;
+  state.truncating = overflowed;
 
-  const validQuotes = await fetchQuotes(provider, allSymbols);
+  const validQuotes = await fetchQuotes(provider, allSymbols, logger);
   if (validQuotes.length === 0) return;
 
   for (const gameId of liveGameIds) {
@@ -175,9 +209,10 @@ export function startPricePoller(
   registry: GameClientRegistry,
   logger?: PricePollerLogger,
 ): IntervalWorker {
+  const state = createPricePollerState();
   return startIntervalWorker(
     'price-poller',
-    () => pollPrices(db, provider, registry, logger),
+    () => pollPrices(db, provider, registry, logger, state),
     POLL_INTERVAL_MS,
   );
 }

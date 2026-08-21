@@ -6,7 +6,7 @@ import type {
   StockQuote,
 } from '@markettrader/shared';
 import type { WebSocket } from 'ws';
-import { pollPrices } from '../../src/ws/price-poller.js';
+import { pollPrices, createPricePollerState } from '../../src/ws/price-poller.js';
 import { GameClientRegistry } from '../../src/ws/registry.js';
 import { createTestDb } from '../helpers/app.js';
 import { MockStockProvider } from '../helpers/mock-provider.js';
@@ -78,7 +78,7 @@ async function seedGame(
   registry: GameClientRegistry,
   username: string,
   watchlistSize: number,
-): Promise<{ socket: WebSocket & { sent: string[] } }> {
+): Promise<{ socket: WebSocket & { sent: string[] }; gameId: string }> {
   const [user] = await db
     .insert(schema.users)
     .values({ username, passwordHash: 'x' })
@@ -120,7 +120,7 @@ async function seedGame(
   registry.add(game!.id, user!.id, socket);
   const entry = registry.getEntry(game!.id, socket)!;
   entry.subscriptions.add('AAPL');
-  return { socket };
+  return { socket, gameId: game!.id };
 }
 
 describe('F19 — price poller fan-out is bounded', () => {
@@ -144,6 +144,7 @@ describe('F19 — price poller fan-out is bounded', () => {
       warn: (details: Record<string, number>, message: string) => {
         warnings.push({ details, message });
       },
+      error: () => {},
     };
 
     await pollPrices(db, provider, registry, logger);
@@ -162,6 +163,44 @@ describe('F19 — price poller fan-out is bounded', () => {
     });
   });
 
+  it('warns again after a quiet period, not once per process', async () => {
+    const db = await createTestDb();
+    const provider = new MockStockProvider();
+    const registry = new GameClientRegistry();
+
+    const { socket, gameId } = await seedGame(
+      db,
+      registry,
+      'f19-requiet-user',
+      env.PRICE_POLLER_MAX_SYMBOLS + 5,
+    );
+
+    const truncationWarnings: Record<string, number>[] = [];
+    const logger = {
+      warn: (details: Record<string, number>) => {
+        if (details.dropped !== undefined) truncationWarnings.push(details);
+      },
+      error: () => {},
+    };
+    const state = createPricePollerState();
+
+    await pollPrices(db, provider, registry, logger, state);
+    expect(truncationWarnings.length).toBe(1);
+
+    // Every night is a quiet period: nobody connected, so the tick returns
+    // before it can observe an overflow. If that left the transition flag set,
+    // the next busy day would truncate in silence.
+    registry.remove(gameId, socket);
+    await pollPrices(db, provider, registry, logger, state);
+    expect(truncationWarnings.length).toBe(1);
+
+    // Busy again: a second overflowing game with a connected client.
+    await seedGame(db, registry, 'f19-requiet-user-2', env.PRICE_POLLER_MAX_SYMBOLS + 5);
+    await pollPrices(db, provider, registry, logger, state);
+
+    expect(truncationWarnings.length).toBe(2);
+  });
+
   it('does not truncate or warn when the symbol set is inside the cap', async () => {
     const db = await createTestDb();
     const provider = new MockStockProvider();
@@ -171,6 +210,7 @@ describe('F19 — price poller fan-out is bounded', () => {
 
     const truncationWarnings: Record<string, number>[] = [];
     const logger = {
+      error: () => {},
       warn: (details: Record<string, number>, _message: string) => {
         if (details.dropped !== undefined) truncationWarnings.push(details);
       },

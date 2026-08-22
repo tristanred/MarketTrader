@@ -228,6 +228,29 @@ export const env = {
   ),
 
   /**
+   * Hard cap on how many distinct symbols one price-poller tick may fetch.
+   * The poller's symbol set is assembled from user-controlled rows (holdings,
+   * open orders, watchlists) and the provider it drains is process-wide, so an
+   * unbounded set lets one account's row count degrade prices for everyone.
+   * Symbols are prioritised holdings → open orders → watchlists, so anything
+   * dropped at the cap is display-only. Truncation is logged.
+   */
+  PRICE_POLLER_MAX_SYMBOLS: parsePositiveInt(
+    'PRICE_POLLER_MAX_SYMBOLS',
+    optional('PRICE_POLLER_MAX_SYMBOLS', '500'),
+  ),
+  /** Symbols one watchlist may hold. Adds past it are refused with 409. */
+  WATCHLIST_MAX_ITEMS: parsePositiveInt(
+    'WATCHLIST_MAX_ITEMS',
+    optional('WATCHLIST_MAX_ITEMS', '50'),
+  ),
+  /** Watchlists one user may own. Creates past it are refused with 409. */
+  WATCHLIST_MAX_PER_USER: parsePositiveInt(
+    'WATCHLIST_MAX_PER_USER',
+    optional('WATCHLIST_MAX_PER_USER', '20'),
+  ),
+
+  /**
    * How often the server sends WebSocket ping frames to connected clients, in
    * ms. Must stay comfortably below the shortest idle timeout on the path
    * (reverse-proxy `proxy_read_timeout`, NAT tables): a socket reaped by an
@@ -238,6 +261,17 @@ export const env = {
   WS_HEARTBEAT_INTERVAL_MS: parsePositiveInt(
     'WS_HEARTBEAT_INTERVAL_MS',
     optional('WS_HEARTBEAT_INTERVAL_MS', '30000'),
+  ),
+
+  /**
+   * How often live sockets are re-checked against the database, in ms. A
+   * socket's authorization is otherwise decided once at upgrade, so this bounds
+   * how long a revoked membership, a disabled account, or an expired token
+   * keeps receiving a game's event stream.
+   */
+  WS_REVALIDATE_INTERVAL_MS: parsePositiveInt(
+    'WS_REVALIDATE_INTERVAL_MS',
+    optional('WS_REVALIDATE_INTERVAL_MS', '30000'),
   ),
 
   /**
@@ -318,6 +352,17 @@ export interface ProductionEnvCheck {
 const REMOTE_DB_SCHEMES = ['libsql:', 'http:', 'https:', 'ws:', 'wss:'];
 
 /**
+ * True when `url` points at a server rather than a local file — Postgres or
+ * remote libsql. Such a URL is durable whatever its content, which is why every
+ * caller tests it before any substring match: a password containing `:memory:`
+ * must not make a real database look ephemeral.
+ */
+export function isRemoteDatabaseUrl(url: string): boolean {
+  if (url.startsWith('postgres')) return true;
+  return REMOTE_DB_SCHEMES.some((scheme) => url.startsWith(scheme));
+}
+
+/**
  * True when `url` names a database that survives a process restart. Postgres and
  * remote libsql qualify; a SQLite file qualifies only at an absolute path.
  *
@@ -327,8 +372,7 @@ const REMOTE_DB_SCHEMES = ['libsql:', 'http:', 'https:', 'ws:', 'wss:'];
  * opens a fresh, empty file and migrates it into a working-looking app.
  */
 function isDurableProductionDatabase(url: string): boolean {
-  if (url.startsWith('postgres')) return true;
-  if (REMOTE_DB_SCHEMES.some((scheme) => url.startsWith(scheme))) return true;
+  if (isRemoteDatabaseUrl(url)) return true;
   // Catches bare ':memory:' and the 'file::memory:?cache=shared' form that
   // normalizeLibsqlUrl expands it into.
   if (url.includes(':memory:')) return false;

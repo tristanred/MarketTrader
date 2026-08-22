@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import { eq } from 'drizzle-orm';
 import type { Db } from '../db/index.js';
 import { schema } from '../db/index.js';
 import { recomputeMany } from '../services/game-status.js';
@@ -31,10 +32,11 @@ function dayCounter(startIso: string, endIso: string, now: Date): { dayCurrent: 
 
 /**
  * Unauthenticated read-only routes used by the login / register pages
- * to surface "top tournaments in progress." Intentionally exposes
- * usernames and totals — the same fields the in-arena leaderboard
- * already shows to every joined participant. No emails, no IDs of
- * private resources.
+ * to surface "top tournaments in progress." Restricted to games whose
+ * `visibility` is `public`: those intentionally expose usernames and
+ * totals, the same fields the in-arena leaderboard already shows to
+ * every joined participant. Private games are reachable only by ID or
+ * invite code and must never appear here.
  */
 export function publicGamesRoutes(db: Db) {
   return async function (app: FastifyInstance): Promise<void> {
@@ -46,9 +48,11 @@ export function publicGamesRoutes(db: Db) {
         summary: 'Top active games + truncated leaderboards. No auth required.',
       },
     }, async (_request, reply) => {
-      // Pull every game and recompute statuses; `recomputeMany` is the
-      // same primitive `GET /games` uses, so "active" here means the
-      // same thing as in the authenticated list.
+      // Filter to public games *before* recomputing statuses and computing
+      // leaderboards: `computeLeaderboard` assumes its caller already
+      // authorised access to the game, and nobody authorised this one.
+      // `recomputeMany` is the same primitive `GET /games` uses, so "active"
+      // here means the same thing as in the authenticated list.
       const rows = await db
         .select({
           id: games.id,
@@ -59,7 +63,8 @@ export function publicGamesRoutes(db: Db) {
           status: games.status,
           createdAt: games.createdAt,
         })
-        .from(games);
+        .from(games)
+        .where(eq(games.visibility, 'public'));
 
       const statusMap = await recomputeMany(db, rows);
       const active = rows

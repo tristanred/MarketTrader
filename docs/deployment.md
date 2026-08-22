@@ -65,14 +65,56 @@ docker compose up -d --build
 What happens:
 
 1. `db` (Postgres 16) starts; health-checks via `pg_isready`.
-2. `server` waits for db, runs Drizzle migrations from `packages/server/drizzle/pg/` on startup (idempotent — tracked in `__drizzle_migrations`), then binds `:3000` (internal only).
+2. `server` waits for db, runs Drizzle migrations from `packages/server/drizzle/pg/` on startup (idempotent — tracked in `__drizzle_migrations`), seeds the first administrator if the database has none, then binds `:3000` (internal only).
 3. `web` (Nginx) serves the static SPA bundle on `:80` and proxies `/api/*` and `/api/games/*/live` (WebSocket) to `server:3000`.
+
+> **WebSocket credentials ride in `Sec-WebSocket-Protocol`, not the URL.** Any reverse proxy in
+> front of the API must pass that header through on the upgrade request *and* pass the server's
+> echoed value back on the 101 response — browsers fail the handshake otherwise. Nginx does both
+> by default; a proxy that whitelists headers needs it added explicitly. Server and frontend must
+> ship together: there is no query-string fallback.
 
 Tail the logs:
 
 ```sh
 docker compose logs -f server
 ```
+
+### The first administrator
+
+On a database with no admin, the server creates an `admin` account with a
+randomly generated password and prints it to stdout once, before it starts
+accepting requests:
+
+```
+================================================================
+  MarketTrader — administrator account created
+
+    username: admin
+    password: <32 random characters>
+```
+
+Capture it from `docker compose logs server` on first boot. The app shows it
+once and never again: subsequent boots find the existing admin and leave it
+alone — no second account, no password reset. If a non-admin account already
+holds the name `admin`, that account is *not* promoted; the seed uses
+`admin-<hex>` instead and the banner names it.
+
+**Rotate it.** The banner goes to stdout, so it stays in `docker compose logs`
+for as long as the log is retained. Sign in, open the admin panel's Users page,
+and reset the admin's own password (`POST /admin/users/:id/reset-password` — an
+admin may target itself). There is no self-service password change outside the
+admin surface.
+
+Registering through the app grants no privileges to anyone. Every further
+administrator is added by an existing one.
+
+**If you miss the banner** — log rotation, lost scrollback, a crash right after
+the seed committed — the account exists with a password nobody knows. It is
+recoverable: the seed decides by group membership, not by username, so deleting
+the admin's `user_groups` row makes the next boot seed a fresh administrator.
+The orphaned account stays behind and should be deleted from the admin panel
+afterwards.
 
 ## 5. TLS
 
@@ -93,17 +135,24 @@ Check the API answers, then that a registration round-trips:
 ```sh
 curl -fsS http://<public-ip>/api/health
 
+# Generate the password per run. Never commit a literal here: this account is
+# created on the live host, and a password in the repo is a working credential.
+SMOKE_USER="smoke-$$"
+SMOKE_PASS=$(openssl rand -hex 24)
+
 TOKEN=$(curl -fsS -X POST http://<public-ip>/api/auth/register \
   -H 'content-type: application/json' \
-  -d '{"username":"smoke-'"$$"'","password":"smoke-password-1"}' \
+  -d "{\"username\":\"$SMOKE_USER\",\"password\":\"$SMOKE_PASS\"}" \
   | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
 
 curl -fsS http://<public-ip>/api/games -H "authorization: Bearer $TOKEN"
 ```
 
-Note this leaves a real user row behind. Use a throwaway name and clean up.
+Registration grants no privileges, so this account is unprivileged — but it does
+leave a real user row behind. Delete it afterwards from the admin panel
+(`/admin/users`) or with `DELETE /api/admin/users/<id>` as the seeded admin.
 
-The script hits `/api/health`, registers a one-off user, and makes an authenticated `/api/games` request. Exit code 0 means the round-trip works.
+Exit code 0 on all three calls means the round-trip works.
 
 ## 7. Routine operations
 

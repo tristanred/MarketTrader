@@ -197,6 +197,92 @@ describe('CachedProvider', () => {
     });
   });
 
+  describe('getQuotes (batch)', () => {
+    const batchQuote = (symbol: string, price: number): StockQuote => ({
+      symbol,
+      price,
+      change: 0,
+      changePercent: 0,
+      fetchedAt: new Date().toISOString(),
+    });
+
+    it('serves fresh cache rows and batches only the misses in one upstream call', async () => {
+      inner.nextQuote = batchQuote('AAPL', 150);
+      await provider.getQuote('AAPL');
+
+      inner.getQuotesImpl = async (symbols) =>
+        new Map(symbols.map((s) => [s, batchQuote(s, 10)]));
+      const out = await provider.getQuotes(['AAPL', 'MSFT', 'NVDA']);
+
+      expect(out.get('AAPL')?.price).toBe(150);
+      expect(out.get('MSFT')?.price).toBe(10);
+      expect(inner.getQuotesCalls).toBe(1);
+      expect(inner.getQuotesSymbols).toEqual(['MSFT', 'NVDA']);
+    });
+
+    it('on RATE_LIMITED falls back to cached rows with stale:true instead of losing the batch', async () => {
+      inner.nextQuote = batchQuote('AAPL', 150);
+      await provider.getQuote('AAPL');
+      const past = new Date(Date.now() - 90_000).toISOString();
+      await db
+        .update(schema.stockPriceCache)
+        .set({ fetchedAt: past })
+        .where(eq(schema.stockPriceCache.symbol, 'AAPL'));
+
+      inner.getQuotesImpl = async () => {
+        throw new StockProviderError('RATE_LIMITED', 'mock');
+      };
+      const out = await provider.getQuotes(['AAPL', 'NEWSYM']);
+
+      expect(out.get('AAPL')?.price).toBe(150);
+      expect(out.get('AAPL')?.stale).toBe(true);
+      // No cache row to fall back to, so it is simply absent.
+      expect(out.has('NEWSYM')).toBe(false);
+    });
+
+    it('never throws on an upstream failure — affected symbols are just absent', async () => {
+      inner.getQuotesImpl = async () => {
+        throw new StockProviderError('PROVIDER_ERROR', 'mock');
+      };
+      await expect(provider.getQuotes(['AAPL'])).resolves.toEqual(new Map());
+    });
+
+    it('fetches misses individually when the inner provider has no batch path', async () => {
+      inner.nextQuote = batchQuote('AAPL', 150);
+      await provider.getQuote('AAPL');
+      delete inner.getQuotes;
+
+      // Alpaca and the mock provider have no getQuotes. A caller cannot detect
+      // that — CachedProvider always defines getQuotes — so if the misses were
+      // not fetched here they would never be fetched at all, and the price
+      // poller would silently stop refreshing under those providers.
+      inner.nextQuote = null;
+      const callsBefore = inner.quoteCalls;
+
+      const out = await provider.getQuotes(['AAPL', 'MSFT']);
+
+      expect(out.get('AAPL')?.price).toBe(150);
+      expect(out.get('MSFT')?.price).toBe(100);
+      expect(inner.quoteCalls - callsBefore).toBe(1); // the cache hit stayed a hit
+    });
+
+    it('keeps the quotes it already fetched when one fails on a no-batch provider', async () => {
+      delete inner.getQuotes;
+      let calls = 0;
+      inner.getQuote = async (symbol: string) => {
+        calls += 1;
+        if (symbol === 'BAD') throw new StockProviderError('SYMBOL_NOT_FOUND', 'nope');
+        return batchQuote(symbol, 42);
+      };
+
+      const out = await provider.getQuotes(['GOOD', 'BAD']);
+
+      expect(calls).toBe(2);
+      expect(out.get('GOOD')?.price).toBe(42);
+      expect(out.has('BAD')).toBe(false);
+    });
+  });
+
   describe('searchSymbols cache', () => {
     it('serves the second call from the in-memory cache', async () => {
       inner.nextSearch = [{ symbol: 'AAPL', name: 'Apple' }];

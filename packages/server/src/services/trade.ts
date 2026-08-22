@@ -1,4 +1,4 @@
-import { eq, and, sql } from 'drizzle-orm';
+import { eq, and, gte, sql } from 'drizzle-orm';
 import { SpanStatusCode } from '@opentelemetry/api';
 import type { Db } from '../db/index.js';
 import { schema } from '../db/index.js';
@@ -189,108 +189,154 @@ async function runTrade(db: Db, params: ExecuteTradeParams): Promise<ExecuteTrad
   const sharesReserved = params.sharesAlreadyReserved ?? isResting;
   const executedAt = params.executedAt ?? new Date().toISOString();
 
-  const [player] = await db
-    .select({ cashBalance: gamePlayers.cashBalance })
-    .from(gamePlayers)
-    .where(eq(gamePlayers.id, gamePlayerId))
-    .limit(1);
+  const cost = quantity * price;
 
-  if (!player) throw new Error(`GamePlayer not found: ${gamePlayerId}`);
+  // Everything the trade is validated against is read inside the transaction,
+  // and the cash and share writes are relative and carry their own guard
+  // predicate. Reading first and writing an absolute value would let two
+  // orders for the same player both pass their check against one balance and
+  // both write the same post-trade figure — the player keeps both positions
+  // and pays for one.
+  const settled = await db.transaction(async (tx) => {
+    const [player] = await tx
+      .select({ cashBalance: gamePlayers.cashBalance })
+      .from(gamePlayers)
+      .where(eq(gamePlayers.id, gamePlayerId))
+      .limit(1);
 
-  const cashBalance = Number(player.cashBalance);
+    if (!player) throw new Error(`GamePlayer not found: ${gamePlayerId}`);
 
-  const [holding] = await db
-    .select({
-      id: portfolios.id,
-      quantity: portfolios.quantity,
-      avgCostBasis: portfolios.avgCostBasis,
-      openedAt: portfolios.openedAt,
-    })
-    .from(portfolios)
-    .where(and(eq(portfolios.gamePlayerId, gamePlayerId), eq(portfolios.symbol, symbol)))
-    .limit(1);
+    const cashBalance = Number(player.cashBalance);
 
-  // Validation differs for resting orders: cash/shares were already reserved
-  // at placement, so we validate against (current cash + reservation) for
-  // buys and skip the share check for sells (shares were decremented then).
-  if (direction === 'buy') {
-    if (isResting) {
-      validateBuy(cashBalance + reservedCash, price, quantity);
-    } else {
-      validateBuy(cashBalance, price, quantity);
+    const readHolding = () =>
+      tx
+        .select({
+          id: portfolios.id,
+          quantity: portfolios.quantity,
+          avgCostBasis: portfolios.avgCostBasis,
+          openedAt: portfolios.openedAt,
+        })
+        .from(portfolios)
+        .where(and(eq(portfolios.gamePlayerId, gamePlayerId), eq(portfolios.symbol, symbol)))
+        .limit(1);
+
+    // A buy reads its holding after the cash write instead (see below), so it
+    // needs nothing here.
+    const [holding] = direction === 'sell' ? await readHolding() : [];
+
+    // Validation differs for resting orders: cash/shares were already reserved
+    // at placement, so we validate against (current cash + reservation) for
+    // buys and skip the share check for sells (shares were decremented then).
+    if (direction === 'buy') {
+      if (isResting) {
+        validateBuy(cashBalance + reservedCash, price, quantity);
+      } else {
+        validateBuy(cashBalance, price, quantity);
+      }
+    } else if (!sharesReserved) {
+      // Shares weren't pre-decremented (immediate sell or bracket child) — they
+      // must exist now, so validate against the live holding.
+      validateSell(holding?.quantity ?? 0, quantity);
+    } else if (!Number.isInteger(quantity) || quantity < 1) {
+      throw new TradeError('INVALID_QUANTITY', 'Quantity must be a positive integer');
     }
-  } else if (!sharesReserved) {
-    // Shares weren't pre-decremented (immediate sell or bracket child) — they
-    // must exist now, so validate against the live holding.
-    validateSell(holding?.quantity ?? 0, quantity);
-  } else if (!Number.isInteger(quantity) || quantity < 1) {
-    throw new TradeError('INVALID_QUANTITY', 'Quantity must be a positive integer');
-  }
 
-  let newCash: number;
-  let newQty: number;
-  let newAvg: number;
-
-  if (direction === 'buy') {
-    // For a resting buy, the reservation has already been removed from
-    // cashBalance; refund it then deduct the actual cost.
-    newCash = cashBalance + (isResting ? reservedCash : 0) - quantity * price;
-    newQty = (holding?.quantity ?? 0) + quantity;
-    newAvg = computeNewAvgCostBasis(
-      holding?.quantity ?? 0,
-      Number(holding?.avgCostBasis ?? price),
-      quantity,
-      price,
-    );
-  } else {
-    newCash = cashBalance + quantity * price;
-    // When shares were already decremented at placement, the holding is net of
-    // this sell — don't subtract again. Bracket children weren't reserved, so
-    // their shares must be decremented now (the portfolio write below mirrors).
-    newQty = (holding?.quantity ?? 0) - (sharesReserved ? 0 : quantity);
-    newAvg = Number(holding?.avgCostBasis ?? 0);
-  }
-
-  // Derive close metrics for non-resting sells from the pre-update holding.
-  // Resting sells already mutated the row at placement, so cost basis isn't
-  // available here — return zeros and let the caller skip downstream wiring.
-  const sellAvgCost = Number(holding?.avgCostBasis ?? 0);
-  const realizedPnl =
-    direction === 'sell' && !isResting ? (price - sellAvgCost) * quantity : 0;
-  const realizedPnlPct =
-    direction === 'sell' && !isResting && sellAvgCost > 0 ? price / sellAvgCost - 1 : 0;
-  const openedAtForHold =
-    direction === 'sell' && !isResting ? holding?.openedAt ?? null : null;
-  const holdDurationMs = openedAtForHold
-    ? new Date(executedAt).getTime() - new Date(openedAtForHold).getTime()
-    : 0;
-  const fullyClosed = direction === 'sell' && !isResting && newQty === 0;
-
-  const tradeRow = await db.transaction(async (tx) => {
-    await tx.update(gamePlayers).set({ cashBalance: newCash }).where(eq(gamePlayers.id, gamePlayerId));
+    // Derive close metrics for non-resting sells from the pre-update holding.
+    // Resting sells already mutated the row at placement, so cost basis isn't
+    // available here — return zeros and let the caller skip downstream wiring.
+    const sellAvgCost = Number(holding?.avgCostBasis ?? 0);
+    const realizedPnl =
+      direction === 'sell' && !isResting ? (price - sellAvgCost) * quantity : 0;
+    const realizedPnlPct =
+      direction === 'sell' && !isResting && sellAvgCost > 0 ? price / sellAvgCost - 1 : 0;
+    const openedAtForHold =
+      direction === 'sell' && !isResting ? holding?.openedAt ?? null : null;
+    const holdDurationMs = openedAtForHold
+      ? new Date(executedAt).getTime() - new Date(openedAtForHold).getTime()
+      : 0;
+    let fullyClosed = false;
 
     if (direction === 'buy') {
-      if (holding) {
+      // A resting buy's reservation is already out of cashBalance, so only the
+      // shortfall above it has to come from the live balance — and it may be
+      // negative, which just refunds the unused part of the reservation.
+      const fromBalance = cost - (isResting ? reservedCash : 0);
+      const deducted = await tx
+        .update(gamePlayers)
+        .set({ cashBalance: sql`${gamePlayers.cashBalance} - ${fromBalance}` })
+        .where(and(eq(gamePlayers.id, gamePlayerId), gte(gamePlayers.cashBalance, fromBalance)))
+        .returning({ id: gamePlayers.id });
+      if (deducted.length === 0) {
+        throw new TradeError('INSUFFICIENT_FUNDS', 'Insufficient cash balance for this purchase');
+      }
+    } else {
+      await tx
+        .update(gamePlayers)
+        .set({ cashBalance: sql`${gamePlayers.cashBalance} + ${cost}` })
+        .where(eq(gamePlayers.id, gamePlayerId));
+    }
+
+    if (direction === 'buy') {
+      const [current] = await readHolding();
+      if (current) {
         // Add-on buy: do not touch openedAt — position is the same one.
-        await tx.update(portfolios).set({ quantity: newQty, avgCostBasis: newAvg }).where(eq(portfolios.id, holding.id));
+        //
+        // Both columns are written from the row's own current values rather
+        // than from `current`, which is only used to decide add-on vs new
+        // position. An absolute write would be a lost update on PostgreSQL
+        // READ COMMITTED: the sell paths (decrementHolding, releaseReservation,
+        // and the pending reserve/cancel pair) touch `portfolios` WITHOUT
+        // touching `gamePlayers`, so the cash-row lock taken above does not
+        // serialize them, and a concurrent resting sell committed inside this
+        // transaction would be clobbered — minting the shares it removed.
+        const [updated] = await tx
+          .update(portfolios)
+          .set({
+            quantity: sql`${portfolios.quantity} + ${quantity}`,
+            avgCostBasis: sql`(${portfolios.quantity} * ${portfolios.avgCostBasis} + ${quantity * price}) / (${portfolios.quantity} + ${quantity})`,
+          })
+          .where(eq(portfolios.id, current.id))
+          .returning({ id: portfolios.id });
+        if (!updated) {
+          // The position was closed and its row deleted while we were here.
+          throw new TradeError('INVALID_ORDER', 'Position changed during execution; retry the trade');
+        }
       } else {
         // Brand-new position — stamp openedAt so hold-duration metrics work.
-        await tx.insert(portfolios).values({ gamePlayerId, symbol, quantity: newQty, avgCostBasis: newAvg, openedAt: executedAt });
+        // A concurrent buy that got here first loses on unique(gamePlayerId,
+        // symbol) and rolls back, rather than creating a second row.
+        await tx.insert(portfolios).values({ gamePlayerId, symbol, quantity, avgCostBasis: price, openedAt: executedAt });
         await onPositionOpened(tx as unknown as Db, {
           gamePlayerId,
           symbol,
           openedAt: executedAt,
           currentPrice: price,
-          quantity: newQty,
-          avgCostBasis: newAvg,
+          quantity,
+          avgCostBasis: price,
         });
       }
     } else if (!sharesReserved) {
-      if (newQty === 0) {
-        await tx.delete(portfolios).where(and(eq(portfolios.gamePlayerId, gamePlayerId), eq(portfolios.symbol, symbol)));
-      } else {
-        await tx.update(portfolios).set({ quantity: newQty }).where(and(eq(portfolios.gamePlayerId, gamePlayerId), eq(portfolios.symbol, symbol)));
+      // Shares weren't pre-decremented (immediate sell or bracket child), so
+      // take them now — guarded, so an order that raced this one to the same
+      // shares fails instead of driving the holding negative.
+      const [remaining] = await tx
+        .update(portfolios)
+        .set({ quantity: sql`${portfolios.quantity} - ${quantity}` })
+        .where(
+          and(
+            eq(portfolios.gamePlayerId, gamePlayerId),
+            eq(portfolios.symbol, symbol),
+            gte(portfolios.quantity, quantity),
+          ),
+        )
+        .returning({ id: portfolios.id, quantity: portfolios.quantity });
+      if (!remaining) {
+        throw new TradeError('INSUFFICIENT_SHARES', 'Insufficient shares for this sale');
       }
+      if (remaining.quantity === 0) {
+        await tx.delete(portfolios).where(eq(portfolios.id, remaining.id));
+      }
+      fullyClosed = !isResting && remaining.quantity === 0;
     }
 
     // Stats writers must run inside the same tx as the trade write. Trade-level
@@ -373,7 +419,7 @@ async function runTrade(db: Db, params: ExecuteTradeParams): Promise<ExecuteTrad
       price: Number(trade.price),
       executedAt: trade.executedAt,
     };
-    return result;
+    return { trade: result, realizedPnl, realizedPnlPct, holdDurationMs, fullyClosed };
   });
 
   const symbolsAfter = await db
@@ -382,12 +428,5 @@ async function runTrade(db: Db, params: ExecuteTradeParams): Promise<ExecuteTrad
     .where(eq(portfolios.gamePlayerId, gamePlayerId));
   const distinctSymbols = symbolsAfter.length;
 
-  return {
-    trade: tradeRow,
-    realizedPnl,
-    realizedPnlPct,
-    holdDurationMs,
-    fullyClosed,
-    distinctSymbols,
-  };
+  return { ...settled, distinctSymbols };
 }

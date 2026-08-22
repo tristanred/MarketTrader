@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
-import { createTestApp, createTestAppWithDb } from './helpers/app.js';
+import { createTestApp, createTestAppWithDb, registerAdmin } from './helpers/app.js';
 import { schema } from '../src/db/index.js';
 
 /**
@@ -13,25 +13,11 @@ import { schema } from '../src/db/index.js';
 describe('REST bearer tokens — only a live access token authenticates', () => {
   let app: FastifyInstance;
 
-  // The first registrant is bootstrapped into the admin group, so this account
-  // reaches both guards: `authenticate` and `requireAdmin`.
+  // Explicitly put in the admin group so this account reaches both guards:
+  // `authenticate` and `requireAdmin`.
   let adminToken: string;
   let adminRefreshToken: string;
   let adminId: string;
-
-  async function register(username: string) {
-    const res = await app.inject({
-      method: 'POST',
-      url: '/auth/register',
-      payload: { username, password: 'password123' },
-    });
-    if (res.statusCode !== 201) throw new Error(`register failed: ${res.statusCode} ${res.body}`);
-    return {
-      token: res.json<{ token: string }>().token,
-      userId: res.json<{ user: { id: string } }>().user.id,
-      refreshToken: res.cookies.find((c) => c.name === 'refreshToken')?.value ?? '',
-    };
-  }
 
   const getGames = (token: string) =>
     app.inject({ method: 'GET', url: '/games', headers: { Authorization: `Bearer ${token}` } });
@@ -41,7 +27,7 @@ describe('REST bearer tokens — only a live access token authenticates', () => 
 
   beforeAll(async () => {
     app = await createTestApp();
-    const admin = await register('tokentype-admin');
+    const admin = await registerAdmin(app, 'tokentype-admin');
     adminToken = admin.token;
     adminRefreshToken = admin.refreshToken;
     adminId = admin.userId;

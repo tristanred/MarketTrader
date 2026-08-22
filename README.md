@@ -125,7 +125,7 @@ pnpm workspace monorepo. The `shared` package is the single source of truth for 
 | Server framework    | Fastify 5                      | Lowest overhead, schema-first, async-native               |
 | ORM                 | Drizzle ORM                    | Type-safe SQL, zero runtime overhead, dual-dialect        |
 | Database (prod)     | PostgreSQL 16                  | ACID, proven at scale                                     |
-| Database (dev/test) | SQLite (better-sqlite3)        | Zero setup, in-memory for tests                           |
+| Database (dev/test) | SQLite (@libsql/client)        | Zero setup, in-memory for tests                           |
 | WebSocket           | `@fastify/websocket`           | Native Fastify integration, no Socket.io overhead         |
 | Auth                | JWT + argon2                   | Short-lived access tokens (15 min), 7-day refresh cookies |
 | Frontend framework  | React 19                       | Concurrent features, stable ecosystem                     |
@@ -159,6 +159,8 @@ That's it. `pnpm dev` runs a small bootstrap step that:
 - Runs pending Drizzle migrations against `./dev.db`
 
 It then starts the server (`:3000`) and frontend (`:5173`) in parallel. The frontend proxies `/api` to the server, so both services run independently.
+
+On a database with no administrator, the server creates an `admin` account with a randomly generated password and prints it to the console once at startup — grab it from the `pnpm dev` output. Registering through the app grants no privileges to anyone; further admins are added from the admin panel.
 
 The default SQLite client is `@libsql/client` and password hashing uses `@node-rs/argon2`, both of which ship prebuilt napi-rs binaries for Windows, Linux, and macOS — no C/C++ toolchain required.
 
@@ -194,8 +196,8 @@ pnpm build       # Full production build
 ### Regenerating achievement docs
 
 ```bash
-# Requires `pnpm dev` running and an admin account (defaults: tristan / abcd1234).
-pnpm docs:achievements
+# Requires `pnpm dev` running and an admin account of your own.
+DOCS_ADMIN_USER=… DOCS_ADMIN_PASSWORD=… pnpm docs:achievements
 ```
 
 Re-captures one preview PNG per achievement and rewrites `docs/achievements.md`.

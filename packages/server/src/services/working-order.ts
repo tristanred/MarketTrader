@@ -1,4 +1,4 @@
-import { eq, and, inArray, sql, isNull, or } from 'drizzle-orm';
+import { eq, and, gte, inArray, sql, isNull, or } from 'drizzle-orm';
 import type { Db } from '../db/index.js';
 import { schema } from '../db/index.js';
 import type {
@@ -12,8 +12,19 @@ import type {
 import type { StockProvider } from '../providers/index.js';
 import { TradeError } from '../providers/index.js';
 import { executeTrade, type ExecuteTradeResult } from './trade.js';
+import { assertTradableSymbol } from './symbol.js';
 
 type TradeRow = typeof schema.trades.$inferSelect;
+
+/**
+ * Ceiling on `working` + `pending` rows one game-player may hold open.
+ *
+ * Resting rows are re-quoted by the trigger worker and the price poller on
+ * every tick, so an unbounded pile of them is an unbounded outbound-request
+ * amplifier against the shared upstream provider. Nothing expires them today:
+ * `expireDayOrders` needs `expiresAt`, which the trade route never sets.
+ */
+export const MAX_OPEN_ORDERS_PER_PLAYER = 50;
 
 /**
  * Maps a `trades` row in the `working` or `pending` (resting-order) lifecycle
@@ -120,6 +131,11 @@ function validateWorkingOrderShape(input: PlaceWorkingOrderInput): void {
     throw new TradeError('INVALID_QUANTITY', 'Quantity must be a positive integer');
   }
 
+  // A working row outlives the request that created it and is handed back to
+  // the provider on every worker tick, so the ticker has to be well-formed
+  // before it is stored — not merely short enough.
+  assertTradableSymbol(input.symbol);
+
   switch (orderType) {
     case 'limit':
       if (limitPrice == null || limitPrice <= 0) {
@@ -221,8 +237,9 @@ export async function placeWorkingOrder(
   } = input;
 
   // Preflight checks against current availability — done outside the txn so
-  // the error path stays cheap. The txn re-reads cash/portfolio to avoid the
-  // narrow race where two concurrent placements both pass preflight.
+  // the error path stays cheap. They are advisory only: the reservation writes
+  // inside the txn carry their own guard predicates, which is what actually
+  // stops two concurrent placements from both passing preflight.
   if (orderType === 'bracket') {
     // Entry-direction reservation only; the children are implicit until parent fills.
     if (direction === 'buy') {
@@ -260,6 +277,23 @@ export async function placeWorkingOrder(
   }
 
   return db.transaction(async (tx) => {
+    const rowsToInsert = orderType === 'bracket' ? 3 : 1;
+    const open = await tx
+      .select({ id: trades.id })
+      .from(trades)
+      .where(
+        and(
+          eq(trades.gamePlayerId, gamePlayerId),
+          or(eq(trades.status, 'working'), eq(trades.status, 'pending')),
+        ),
+      );
+    if (open.length + rowsToInsert > MAX_OPEN_ORDERS_PER_PLAYER) {
+      throw new TradeError(
+        'TOO_MANY_OPEN_ORDERS',
+        `Too many open orders (limit ${MAX_OPEN_ORDERS_PER_PLAYER}); cancel one first`,
+      );
+    }
+
     const reservedCash =
       direction === 'buy' && orderType !== 'bracket' ? computeBuyReservation(input) : null;
 
@@ -381,51 +415,53 @@ export async function placeWorkingOrder(
     return [rowToWorkingOrder(row)];
 
     /**
-     * Re-reads cash inside the txn and deducts `amount`, throwing
-     * `INSUFFICIENT_FUNDS` (with `errMsg`) if the player can't cover it. The
-     * re-read closes the race where two concurrent placements both pass the
-     * pre-txn preflight.
+     * Deducts `amount` from cash inside the txn, throwing `INSUFFICIENT_FUNDS`
+     * (with `errMsg`) if the player can't cover it.
+     *
+     * The write is relative and carries its own affordability predicate, so it
+     * can neither overwrite a concurrently-committed balance nor go negative.
+     * Re-reading and writing an absolute value would still lose updates under
+     * PostgreSQL READ COMMITTED, where a blocked UPDATE resumes against the
+     * newer row.
      */
     async function deductCashReservation(
       txn: typeof tx,
       amount: number,
       errMsg: string,
     ): Promise<void> {
-      const [player] = await txn
-        .select({ cashBalance: gamePlayers.cashBalance })
-        .from(gamePlayers)
-        .where(eq(gamePlayers.id, gamePlayerId))
-        .limit(1);
-      if (!player) throw new Error(`GamePlayer disappeared: ${gamePlayerId}`);
-      const cash = Number(player.cashBalance);
-      if (amount > cash) {
+      const deducted = await txn
+        .update(gamePlayers)
+        .set({ cashBalance: sql`${gamePlayers.cashBalance} - ${amount}` })
+        .where(and(eq(gamePlayers.id, gamePlayerId), gte(gamePlayers.cashBalance, amount)))
+        .returning({ id: gamePlayers.id });
+      if (deducted.length === 0) {
         throw new TradeError('INSUFFICIENT_FUNDS', errMsg);
       }
-      await txn
-        .update(gamePlayers)
-        .set({ cashBalance: cash - amount })
-        .where(eq(gamePlayers.id, gamePlayerId));
     }
 
     /**
-     * Re-reads the holding inside the txn and removes `quantity` shares
-     * (deleting the row at zero), throwing `INSUFFICIENT_SHARES` (with `errMsg`)
-     * if the player holds fewer than `quantity`.
+     * Removes `quantity` shares from the holding inside the txn (deleting the
+     * row at zero), throwing `INSUFFICIENT_SHARES` (with `errMsg`) if the
+     * player holds fewer than `quantity`. Guarded and relative for the same
+     * reason as {@link deductCashReservation}.
      */
     async function decrementHolding(txn: typeof tx, errMsg: string): Promise<void> {
-      const [holding] = await txn
-        .select({ id: portfolios.id, quantity: portfolios.quantity })
-        .from(portfolios)
-        .where(and(eq(portfolios.gamePlayerId, gamePlayerId), eq(portfolios.symbol, symbol)))
-        .limit(1);
-      if (!holding || holding.quantity < quantity) {
+      const [remaining] = await txn
+        .update(portfolios)
+        .set({ quantity: sql`${portfolios.quantity} - ${quantity}` })
+        .where(
+          and(
+            eq(portfolios.gamePlayerId, gamePlayerId),
+            eq(portfolios.symbol, symbol),
+            gte(portfolios.quantity, quantity),
+          ),
+        )
+        .returning({ id: portfolios.id, quantity: portfolios.quantity });
+      if (!remaining) {
         throw new TradeError('INSUFFICIENT_SHARES', errMsg);
       }
-      const newQty = holding.quantity - quantity;
-      if (newQty === 0) {
-        await txn.delete(portfolios).where(eq(portfolios.id, holding.id));
-      } else {
-        await txn.update(portfolios).set({ quantity: newQty }).where(eq(portfolios.id, holding.id));
+      if (remaining.quantity === 0) {
+        await txn.delete(portfolios).where(eq(portfolios.id, remaining.id));
       }
     }
   });
@@ -507,25 +543,20 @@ export async function cancelWorkingOrder(
 
   /**
    * Refunds cash (buy) or restores shares (sell) for a working row.
-   * No-op for bracket children whose parent hasn't filled — their reservation
-   * is held on the parent, not the child.
+   * No-op for bracket take-profit/stop-loss children: only the entry ever
+   * reserves, so a child has nothing of its own to give back.
    */
   async function releaseReservation(
     tx: Parameters<Parameters<Db['transaction']>[0]>[0],
     row: TradeRow,
   ): Promise<void> {
-    // Bracket children with an unfilled parent hold no reservation of their
-    // own — the parent owns it. Skip the refund in that case.
-    if (row.parentTradeId != null) {
-      const [parent] = await tx
-        .select({ status: trades.status })
-        .from(trades)
-        .where(eq(trades.id, row.parentTradeId))
-        .limit(1);
-      if (parent?.status !== 'executed') return;
-      // Parent already filled — child's reservation is the share/cash
-      // implicit from the parent's fill, which we restore below.
-    }
+    // Bracket children rest without a reservation of their own — placement
+    // neither deducts cash nor decrements the holding for them (see the
+    // insert block in `placeWorkingOrder`), and the fill path compensates by
+    // passing `sharesAlreadyReserved: false`. This predicate is the exact
+    // negation of that one; gating on the *parent's* status instead would
+    // credit shares/cash the row never took.
+    if (row.parentTradeId != null && row.bracketRole !== 'entry') return;
 
     if (row.direction === 'buy' && row.reservedCash != null) {
       const refund = Number(row.reservedCash);
@@ -534,22 +565,19 @@ export async function cancelWorkingOrder(
         .set({ cashBalance: sql`${gamePlayers.cashBalance} + ${refund}` })
         .where(eq(gamePlayers.id, row.gamePlayerId));
     } else if (row.direction === 'sell') {
-      const [holding] = await tx
-        .select({ id: portfolios.id, quantity: portfolios.quantity })
-        .from(portfolios)
+      const restored = await tx
+        .update(portfolios)
+        .set({ quantity: sql`${portfolios.quantity} + ${row.quantity}` })
         .where(
           and(
             eq(portfolios.gamePlayerId, row.gamePlayerId),
             eq(portfolios.symbol, row.symbol),
           ),
         )
-        .limit(1);
-      if (holding) {
-        await tx
-          .update(portfolios)
-          .set({ quantity: holding.quantity + row.quantity })
-          .where(eq(portfolios.id, holding.id));
-      } else {
+        .returning({ id: portfolios.id });
+      if (restored.length === 0) {
+        // No row to increment because the reservation took the holding to zero
+        // and `decrementHolding` deleted it. Recreate the lot.
         await tx.insert(portfolios).values({
           gamePlayerId: row.gamePlayerId,
           symbol: row.symbol,

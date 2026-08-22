@@ -9,21 +9,30 @@ import {
 import { TICKER_TAPE_QUERY_KEY } from '@/api/systemSettings';
 import { useAuthStore } from '@/stores/authStore';
 import { useConnectionStore } from '@/stores/connectionStore';
+import { WS_AUTH_SUBPROTOCOL } from '@/lib/wsAuth';
+import { tryRefresh } from '@/lib/api';
+
+vi.mock('@/lib/api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/api')>();
+  return { ...actual, tryRefresh: vi.fn(async () => true) };
+});
 import type { IndexQuote, WsIndicesEvent, WsTickerTapeConfigChangedEvent } from '@markettrader/shared';
 import type React from 'react';
 
 class MockSocket {
   static instances: MockSocket[] = [];
   url: string;
+  protocols: string[];
   readyState = 1;
   onopen: (() => void) | null = null;
   onmessage: ((e: { data: string }) => void) | null = null;
-  onclose: (() => void) | null = null;
+  onclose: ((evt?: { code: number }) => void) | null = null;
   onerror: (() => void) | null = null;
   closed = false;
 
-  constructor(url: string) {
+  constructor(url: string, protocols?: string | string[]) {
     this.url = url;
+    this.protocols = protocols === undefined ? [] : [protocols].flat();
     MockSocket.instances.push(this);
     setTimeout(() => this.onopen?.(), 0);
   }
@@ -31,6 +40,13 @@ class MockSocket {
     this.closed = true;
     this.readyState = 3;
     this.onclose?.();
+  }
+
+  /** Server-initiated close carrying a status code. */
+  closeWith(code: number) {
+    this.closed = true;
+    this.readyState = 3;
+    this.onclose?.({ code });
   }
   emit(msg: object) {
     this.onmessage?.({ data: JSON.stringify(msg) });
@@ -51,6 +67,7 @@ describe('useIndicesSocket', () => {
     // @ts-expect-error — minimal mock satisfying the surface the hook uses
     globalThis.WebSocket = MockSocket;
     MockSocket.instances = [];
+    vi.mocked(tryRefresh).mockClear();
     useAuthStore.setState({ token: 'tok', user: { id: 'u', username: 'u', groups: [] } });
     useConnectionStore.setState({ game: 'idle', global: 'idle', retryNonce: 0 });
     vi.useFakeTimers();
@@ -122,6 +139,32 @@ describe('useIndicesSocket', () => {
     };
     socket.emit(event);
     expect(spy).toHaveBeenCalledWith({ queryKey: TICKER_TAPE_QUERY_KEY });
+  });
+
+  it('offers the token as a subprotocol and keeps it out of the URL', () => {
+    const qc = new QueryClient();
+    renderHook(() => useIndicesSocket(), { wrapper: wrapper(qc) });
+    const socket = MockSocket.instances[0]!;
+    expect(socket.url).toContain('/ws/live');
+    // The URL is written verbatim to proxy and process logs, so the credential
+    // must never appear in it — see the server's F6/F22 regression test.
+    expect(socket.url).not.toContain('tok');
+    expect(socket.protocols).toEqual([WS_AUTH_SUBPROTOCOL, 'tok']);
+  });
+
+  it('refreshes the credential when an established socket is closed as unauthorized', async () => {
+    const qc = new QueryClient();
+    renderHook(() => useIndicesSocket(), { wrapper: wrapper(qc) });
+    await tick(0);
+    const socket = MockSocket.instances[0]!;
+
+    // The server closes admitted sockets with 1008 once the token expires.
+    await tick(10_000);
+    await act(async () => socket.closeWith(1008));
+
+    expect(vi.mocked(tryRefresh)).toHaveBeenCalledTimes(1);
+    await tick(60_000);
+    expect(MockSocket.instances).toHaveLength(1);
   });
 
   it('does not open a socket when there is no auth token', () => {

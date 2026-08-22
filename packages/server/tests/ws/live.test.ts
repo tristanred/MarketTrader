@@ -5,6 +5,7 @@ import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../../src/app.js';
 import { createTestDb } from '../helpers/app.js';
 import { MockStockProvider } from '../helpers/mock-provider.js';
+import { WS_AUTH_SUBPROTOCOL } from '../../src/ws/subprotocol.js';
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -34,8 +35,12 @@ async function createActiveGame(app: FastifyInstance, token: string) {
 }
 
 function connectWs(port: number, gameId: string, token?: string): WebSocket {
-  const query = token ? `?token=${token}` : '';
-  return new WebSocket(`ws://127.0.0.1:${port}/games/${gameId}/live${query}`);
+  const url = `ws://127.0.0.1:${port}/games/${gameId}/live`;
+  // The credential is offered as a subprotocol, never in the URL — see
+  // tests/security/f06-f22-ws-token-not-in-query.test.ts.
+  return token
+    ? new WebSocket(url, [WS_AUTH_SUBPROTOCOL, token])
+    : new WebSocket(url);
 }
 
 function waitForOpen(ws: WebSocket, ms = 2000): Promise<void> {

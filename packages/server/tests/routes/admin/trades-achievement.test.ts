@@ -3,17 +3,9 @@ import type { FastifyInstance } from 'fastify';
 import type { AddressInfo } from 'net';
 import WebSocket from 'ws';
 import { buildApp } from '../../../src/app.js';
-import { createTestDb } from '../../helpers/app.js';
+import { createTestDb, registerAdmin } from '../../helpers/app.js';
 import { MockStockProvider } from '../../helpers/mock-provider.js';
-
-async function registerUser(app: FastifyInstance, username: string) {
-  const res = await app.inject({
-    method: 'POST',
-    url: '/auth/register',
-    payload: { username, password: 'password123' },
-  });
-  return res.json<{ token: string; user: { id: string } }>();
-}
+import { WS_AUTH_SUBPROTOCOL } from '../../../src/ws/subprotocol.js';
 
 async function createGame(app: FastifyInstance, token: string) {
   const res = await app.inject({
@@ -41,8 +33,7 @@ async function createGame(app: FastifyInstance, token: string) {
  *    clients refresh their portfolio/activity panels.
  *
  * Both share one `app`+`adminToken` because the in-memory SQLite is shared
- * within a Vitest worker, so the "first registered user becomes admin" check
- * would only promote one user across two separate describes.
+ * within a Vitest worker, so a second app would buy nothing.
  */
 describe('POST /admin/trades/:id/force-execute — bus + WS integration', () => {
   let app: FastifyInstance;
@@ -62,8 +53,7 @@ describe('POST /admin/trades/:id/force-execute — bus + WS integration', () => 
     });
     await app.listen({ port: 0, host: '127.0.0.1' });
     port = (app.server.address() as AddressInfo).port;
-    // First-registered globally becomes admin.
-    adminToken = (await registerUser(app, `admin-${Math.random().toString(36).slice(2)}`)).token;
+    adminToken = (await registerAdmin(app, `admin-${Math.random().toString(36).slice(2)}`)).token;
   });
 
   afterAll(async () => {
@@ -168,7 +158,8 @@ describe('POST /admin/trades/:id/force-execute — bus + WS integration', () => 
     // sockets in the game (the admin owns the game by virtue of creating it,
     // so registration is automatic — game owners are implicit members).
     const ws = new WebSocket(
-      `ws://127.0.0.1:${port}/games/${game.id}/live?token=${adminToken}`,
+      `ws://127.0.0.1:${port}/games/${game.id}/live`,
+      [WS_AUTH_SUBPROTOCOL, adminToken],
     );
     await new Promise<void>((resolve, reject) => {
       const t = setTimeout(() => reject(new Error('WS open timeout')), 2000);

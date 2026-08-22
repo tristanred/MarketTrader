@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import type { FastifyInstance } from 'fastify';
-import { createTestApp } from '../helpers/app.js';
+import { createTestApp, registerAdmin } from '../helpers/app.js';
 
 async function registerUser(app: FastifyInstance, username: string) {
   const res = await app.inject({
@@ -23,16 +23,16 @@ async function loginToken(app: FastifyInstance, username: string, password = 'pa
   return res.json<{ token: string }>().token;
 }
 
-// All admin tests run against a single shared app + db. The very first
-// registered user (`admin0`) is the bootstrap admin; everyone else is
-// unprivileged unless we explicitly promote them.
+// All admin tests run against a single shared app + db. `admin0` is put in the
+// admin group explicitly by the helper; everyone else is unprivileged, since
+// registration grants no membership to anyone.
 let app: FastifyInstance;
 let adminToken: string;
 let adminId: string;
 
 beforeAll(async () => {
   app = await createTestApp();
-  const admin = await registerUser(app, 'admin0');
+  const admin = await registerAdmin(app, 'admin0');
   adminToken = admin.token;
   adminId = admin.userId;
 });
@@ -42,7 +42,7 @@ afterAll(async () => {
 });
 
 describe('admin auth bootstrap', () => {
-  it('grants admin only to the first registered user', async () => {
+  it('admits a group member and refuses a plain registration', async () => {
     const ok = await app.inject({
       method: 'GET',
       url: '/admin/users',

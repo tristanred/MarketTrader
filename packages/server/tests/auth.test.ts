@@ -29,8 +29,8 @@ describe('POST /auth/register', () => {
     expect(typeof body.token).toBe('string');
     expect(body.user.username).toBe('alice');
     expect(typeof body.user.id).toBe('string');
-    // First-ever registrant is bootstrapped into the admin group.
-    expect(body.user.groups).toEqual(['admin']);
+    // Registration grants no group membership, not even to the first account.
+    expect(body.user.groups).toEqual([]);
   });
 
   it('returns 409 when username is already taken', async () => {

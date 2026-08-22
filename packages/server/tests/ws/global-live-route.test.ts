@@ -6,6 +6,7 @@ import { buildApp } from '../../src/app.js';
 import { createTestDb } from '../helpers/app.js';
 import { MockStockProvider } from '../helpers/mock-provider.js';
 import { MockMarketStatusProvider } from '../helpers/mock-market-status.js';
+import { WS_AUTH_SUBPROTOCOL } from '../../src/ws/subprotocol.js';
 
 async function registerUser(app: FastifyInstance, username: string) {
   const res = await app.inject({
@@ -64,7 +65,7 @@ describe('GET /ws/live (global socket)', () => {
   });
 
   it('rejects connections with an invalid token (close 1008)', async () => {
-    const ws = new WebSocket(`ws://127.0.0.1:${port}/ws/live?token=garbage`);
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/ws/live`, [WS_AUTH_SUBPROTOCOL, 'garbage']);
     const code = await waitForClose(ws);
     expect(code).toBe(1008);
   });
@@ -74,20 +75,20 @@ describe('GET /ws/live (global socket)', () => {
       { id: 'whoever', username: 'global-ws-user', type: 'refresh' },
       { expiresIn: '7d' },
     );
-    const ws = new WebSocket(`ws://127.0.0.1:${port}/ws/live?token=${refreshToken}`);
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/ws/live`, [WS_AUTH_SUBPROTOCOL, refreshToken]);
     const code = await waitForClose(ws);
     expect(code).toBe(1008);
   });
 
   it('rejects a token with no type claim (close 1008)', async () => {
     const untyped = app.jwt.sign({ id: 'whoever', username: 'global-ws-user' }, { expiresIn: '15m' });
-    const ws = new WebSocket(`ws://127.0.0.1:${port}/ws/live?token=${untyped}`);
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/ws/live`, [WS_AUTH_SUBPROTOCOL, untyped]);
     const code = await waitForClose(ws);
     expect(code).toBe(1008);
   });
 
   it('accepts a valid token and stays open', async () => {
-    const ws = new WebSocket(`ws://127.0.0.1:${port}/ws/live?token=${token}`);
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/ws/live`, [WS_AUTH_SUBPROTOCOL, token]);
     await waitForOpen(ws);
     expect(ws.readyState).toBe(WebSocket.OPEN);
     ws.close();

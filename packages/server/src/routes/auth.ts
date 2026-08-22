@@ -7,7 +7,6 @@ import type { Db } from '../db/index.js';
 import { schema } from '../db/index.js';
 import { isUniqueConstraintError } from '../db/errors.js';
 import { env } from '../env.js';
-import { ADMIN_GROUP_ID } from '../constants/groups.js';
 import type { FailedLoginTracker } from '../services/failed-login.js';
 import { REFRESH_TOKEN_TYPE, signAccessToken, signRefreshToken } from '../plugins/jwt.js';
 
@@ -74,7 +73,7 @@ async function loadUserGroups(db: Db, userId: string): Promise<string[]> {
 export function authRoutes(db: Db, loginThrottle: FailedLoginTracker) {
   return async function (rawApp: FastifyInstance): Promise<void> {
     const app = rawApp.withTypeProvider<ZodTypeProvider>();
-    const { users, userGroups } = schema;
+    const { users } = schema;
 
     // Logged once when the throttle engages, not on every subsequent rejection —
     // a locked account under sustained attack would otherwise flood the log.
@@ -97,30 +96,13 @@ export function authRoutes(db: Db, loginThrottle: FailedLoginTracker) {
       const passwordHash = await hash(password);
       let user: { id: string; username: string } | undefined;
       try {
-        // Insert user and (atomically) grant admin if no admin exists yet.
-        // Doing both in one tx makes the bootstrap race-safe: two simultaneous
-        // first-registers can't both become admin.
-        user = await db.transaction(async (tx) => {
-          const [inserted] = await tx
-            .insert(users)
-            .values({ username, passwordHash })
-            .returning({ id: users.id, username: users.username });
-          if (!inserted) throw new Error('insert returned no row');
-
-          const [existingAdmin] = await tx
-            .select({ userId: userGroups.userId })
-            .from(userGroups)
-            .where(eq(userGroups.groupId, ADMIN_GROUP_ID))
-            .limit(1);
-
-          if (!existingAdmin) {
-            await tx
-              .insert(userGroups)
-              .values({ userId: inserted.id, groupId: ADMIN_GROUP_ID });
-          }
-
-          return inserted;
-        });
+        // Registration grants no group membership, ever. The first admin comes
+        // from the boot-time seed in `db/seed-admin.ts`; promotions after that
+        // go through an existing admin.
+        [user] = await db
+          .insert(users)
+          .values({ username, passwordHash })
+          .returning({ id: users.id, username: users.username });
       } catch (err: unknown) {
         if (isUniqueConstraintError(err)) {
           return reply.status(409).send({ error: 'Username already taken' });

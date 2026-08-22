@@ -116,7 +116,14 @@ const db = DATABASE_URL.startsWith('postgres')
 **Refresh token:** 7-day expiry, stored in HttpOnly cookie.  
 **Password hashing:** argon2 (preferred over bcrypt; more resistant to GPU attacks).
 
-**Reason:** Simple username/password auth eliminates OAuth provider dependencies and is straightforward to implement and maintain. JWTs are stateless, which is important for WebSocket authentication (the token is passed as a query param on connection). Refresh tokens prevent users from being logged out every 15 minutes without compromising short-lived access token security.
+**Reason:** Simple username/password auth eliminates OAuth provider dependencies and is straightforward to implement and maintain. JWTs are stateless, which is important for WebSocket authentication. Refresh tokens prevent users from being logged out every 15 minutes without compromising short-lived access token security.
+
+**Amended 2026-08-20:** the WebSocket token was originally passed as a query
+parameter. It is not any more — a query string is written verbatim into
+Fastify's request log and the reverse proxy's access log, which turned every
+socket connection into a logged credential. The token is now offered in
+`Sec-WebSocket-Protocol` and the server echoes back only a scheme marker. The
+stateless-JWT rationale above is unchanged; only the transport moved.
 
 ---
 

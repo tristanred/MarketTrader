@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import type { FastifyInstance } from 'fastify';
-import { createTestApp } from '../../helpers/app.js';
+import { createTestApp, registerAdmin } from '../../helpers/app.js';
 
 async function registerUser(app: FastifyInstance, username: string) {
   const res = await app.inject({
@@ -52,8 +52,7 @@ describe('admin achievement routes', () => {
   let adminToken: string;
   beforeAll(async () => {
     app = await createTestApp();
-    // First-registered becomes admin; reuse this token in admin-only tests.
-    adminToken = (await registerUser(app, `admin-${Math.random().toString(36).slice(2)}`)).token;
+    adminToken = (await registerAdmin(app, `admin-${Math.random().toString(36).slice(2)}`)).token;
   });
   afterAll(async () => { await app.close(); });
 

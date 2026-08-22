@@ -23,6 +23,40 @@ import { meters, tracer } from '../observability/telemetry.js';
 const SEARCH_ENRICH_TOP_N = 10;
 
 /**
+ * Most distinct queries the in-memory search cache retains. `GET /stocks/search`
+ * is unauthenticated and its query string is caller-chosen, so an unbounded map
+ * grows for as long as someone sends fresh terms. Oldest insertion is evicted.
+ */
+export const SEARCH_CACHE_MAX_ENTRIES = 500;
+
+/**
+ * Symbols per upstream batch quote. Keeps one poller tick from turning into a
+ * single enormous request, and bounds how much a transient upstream failure
+ * costs — a failed batch loses only its own symbols for that tick.
+ */
+const UPSTREAM_BATCH_SIZE = 50;
+
+/**
+ * Concurrent single-symbol fetches when the inner provider has no batch
+ * endpoint. Alpaca and the mock provider are in that position.
+ */
+const MAX_SINGLE_FETCH_CONCURRENCY = 8;
+
+/**
+ * Symbols per persisted-cache read. Only there to keep the bound-parameter
+ * count of a single `IN (...)` well inside every driver's ceiling when an
+ * operator raises `PRICE_POLLER_MAX_SYMBOLS`.
+ */
+const CACHE_READ_CHUNK = 200;
+
+/** Splits `items` into consecutive runs of at most `size`. */
+function chunk<T>(items: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
+  return out;
+}
+
+/**
  * A {@link StockProvider} decorator that adds two caching layers on top of an
  * inner provider:
  *
@@ -30,8 +64,9 @@ const SEARCH_ENRICH_TOP_N = 10;
  *     within `STOCK_CACHE_TTL_MS` skip the upstream fetch entirely. On a fresh
  *     fetch the cache row is upserted.
  *  2. **Search cache** — an in-memory `Map<query, results>` with TTL
- *     `STOCK_SEARCH_CACHE_TTL_MS`. Search responses are static for a query
- *     within minutes; caching them protects against autocomplete bursts.
+ *     `STOCK_SEARCH_CACHE_TTL_MS` and at most {@link SEARCH_CACHE_MAX_ENTRIES}
+ *     keys. Search responses are static for a query within minutes; caching
+ *     them protects against autocomplete bursts.
  *
  * The decorator also implements **graceful stale fallback** for `getQuote`:
  * when the inner provider throws `RATE_LIMITED` and the cache row is no older
@@ -117,19 +152,7 @@ export class CachedProvider implements StockProvider {
 
     if (cached && ageMs < env.STOCK_CACHE_TTL_MS) {
       meters.quoteCacheLookups.add(1, { result: 'hit' });
-      const marketState = this.marketStateBySymbol.get(symbol);
-      return {
-        symbol,
-        price: Number(cached.price),
-        change: Number(cached.change),
-        changePercent: Number(cached.changePercent),
-        fetchedAt: cached.fetchedAt,
-        ...(marketState && { marketState }),
-        ...(cached.volume != null && { volume: Number(cached.volume) }),
-        ...(cached.open != null && { open: Number(cached.open) }),
-        ...(cached.high != null && { high: Number(cached.high) }),
-        ...(cached.low != null && { low: Number(cached.low) }),
-      };
+      return this.quoteFromCacheRow(symbol, cached);
     }
 
     meters.quoteCacheLookups.add(1, { result: 'miss' });
@@ -150,25 +173,142 @@ export class CachedProvider implements StockProvider {
         // Serving a stale price is the app degrading, not failing. It needs its
         // own bucket — folding it into `hit` would hide a rate-limit outage.
         meters.quoteCacheLookups.add(1, { result: 'stale' });
-        const marketState = this.marketStateBySymbol.get(symbol);
-        return {
-          symbol,
-          price: Number(cached.price),
-          change: Number(cached.change),
-          changePercent: Number(cached.changePercent),
-          fetchedAt: cached.fetchedAt,
-          stale: true,
-          ...(marketState && { marketState }),
-          ...(cached.volume != null && { volume: Number(cached.volume) }),
-          ...(cached.open != null && { open: Number(cached.open) }),
-          ...(cached.high != null && { high: Number(cached.high) }),
-          ...(cached.low != null && { low: Number(cached.low) }),
-        };
+        return this.quoteFromCacheRow(symbol, cached, true);
       }
       throw err;
     }
     await this.cacheQuote(quote);
     return quote;
+  }
+
+  /**
+   * Rebuilds a {@link StockQuote} from a persisted cache row, re-attaching the
+   * market state from the in-memory shadow map. Pass `stale` when the row is
+   * being served because the upstream is unavailable.
+   */
+  private quoteFromCacheRow(
+    symbol: string,
+    row: typeof schema.stockPriceCache.$inferSelect,
+    stale = false,
+  ): StockQuote {
+    const marketState = this.marketStateBySymbol.get(symbol);
+    return {
+      symbol,
+      price: Number(row.price),
+      change: Number(row.change),
+      changePercent: Number(row.changePercent),
+      fetchedAt: row.fetchedAt,
+      ...(stale && { stale: true }),
+      ...(marketState && { marketState }),
+      ...(row.volume != null && { volume: Number(row.volume) }),
+      ...(row.open != null && { open: Number(row.open) }),
+      ...(row.high != null && { high: Number(row.high) }),
+      ...(row.low != null && { low: Number(row.low) }),
+    };
+  }
+
+  /**
+   * Batch quote for many symbols at once: one read of the persisted cache, then
+   * the misses through the inner provider's batch path in
+   * {@link UPSTREAM_BATCH_SIZE} chunks. This is what keeps the price poller's
+   * fan-out to a handful of upstream requests per tick instead of one per symbol.
+   *
+   * Not every provider has a batch endpoint — Alpaca and the mock do not — so
+   * misses fall back to concurrency-limited single fetches here rather than in
+   * the caller. A caller cannot feature-detect its way to that fallback: this
+   * class always defines `getQuotes`, so `provider.getQuotes` is truthy however
+   * the inner provider is configured.
+   *
+   * Best-effort by contract (see {@link StockProvider.getQuotes}): a symbol with
+   * no usable quote is simply absent from the map, and no failure — upstream,
+   * cache read, or cache write — throws out of this method. `RATE_LIMITED`
+   * degrades to cached rows marked `stale: true`, mirroring {@link getQuote}.
+   *
+   * Upstream failures are recorded by {@link upstream} and stay visible in
+   * traces and metrics. Cache read and write failures are not: they are database
+   * faults, not provider faults, and they surface in the caller's own logging.
+   */
+  async getQuotes(symbols: string[]): Promise<Map<string, StockQuote>> {
+    const out = new Map<string, StockQuote>();
+    const unique = [...new Set(symbols)];
+    if (unique.length === 0) return out;
+
+    const rows = new Map<string, typeof schema.stockPriceCache.$inferSelect>();
+    for (const batch of chunk(unique, CACHE_READ_CHUNK)) {
+      // A cache read failure must not fail the tick: every symbol in the failed
+      // chunk simply counts as a miss and goes upstream.
+      try {
+        const cached = await this.db
+          .select()
+          .from(schema.stockPriceCache)
+          .where(inArray(schema.stockPriceCache.symbol, batch));
+        for (const row of cached) rows.set(row.symbol, row);
+      } catch {
+        continue;
+      }
+    }
+
+    const now = Date.now();
+    const misses: string[] = [];
+    for (const symbol of unique) {
+      const row = rows.get(symbol);
+      if (row && now - new Date(row.fetchedAt).getTime() < env.STOCK_CACHE_TTL_MS) {
+        meters.quoteCacheLookups.add(1, { result: 'hit' });
+        out.set(symbol, this.quoteFromCacheRow(symbol, row));
+      } else {
+        meters.quoteCacheLookups.add(1, { result: 'miss' });
+        misses.push(symbol);
+      }
+    }
+
+    if (misses.length === 0) return out;
+
+    const fetchBatch = this.inner.getQuotes?.bind(this.inner);
+    if (!fetchBatch) return this.fetchMissesIndividually(misses, out);
+
+    for (const batch of chunk(misses, UPSTREAM_BATCH_SIZE)) {
+      try {
+        const fetched = await this.upstream('getQuotes', undefined, () => fetchBatch(batch));
+        for (const [sym, quote] of fetched) {
+          out.set(sym, quote);
+          // Persisting is a courtesy to later readers, not part of delivering
+          // this quote — a failed write must not discard quotes already paid
+          // for upstream, including the rest of this chunk.
+          await this.cacheQuote(quote).catch(() => {});
+        }
+      } catch (err) {
+        if (!(err instanceof StockProviderError) || err.code !== 'RATE_LIMITED') continue;
+        for (const symbol of batch) {
+          const row = rows.get(symbol);
+          if (!row || now - new Date(row.fetchedAt).getTime() > env.STOCK_STALE_PRICE_MAX_AGE_MS) {
+            continue;
+          }
+          meters.quoteCacheLookups.add(1, { result: 'stale' });
+          out.set(symbol, this.quoteFromCacheRow(symbol, row, true));
+        }
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Fills `out` for providers with no batch endpoint, at most
+   * {@link MAX_SINGLE_FETCH_CONCURRENCY} requests in flight. Bounded rather than
+   * unlimited because the whole point of {@link getQuotes} is that one poller
+   * tick cannot turn into an unthrottled burst; a provider without a batch path
+   * needs that ceiling more, not less. A symbol whose fetch fails is left out.
+   */
+  private async fetchMissesIndividually(
+    misses: string[],
+    out: Map<string, StockQuote>,
+  ): Promise<Map<string, StockQuote>> {
+    for (const slice of chunk(misses, MAX_SINGLE_FETCH_CONCURRENCY)) {
+      const settled = await Promise.all(
+        slice.map((symbol) => this.getQuote(symbol).catch(() => null)),
+      );
+      for (const quote of settled) if (quote) out.set(quote.symbol, quote);
+    }
+    return out;
   }
 
   /**
@@ -257,11 +397,21 @@ export class CachedProvider implements StockProvider {
     if (hit && Date.now() - hit.fetchedAt < env.STOCK_SEARCH_CACHE_TTL_MS) {
       base = hit.results;
     } else {
+      // The key is what upstream gets. Any two inputs that collapse to the same
+      // key must produce the same upstream query, or one caller's results end up
+      // cached under another caller's term. Whitespace and case are not the only
+      // pair that collapses — U+212A lowercases to 'k' — so deriving both from
+      // one value is the only version of this that stays true.
+      //
       // A search-path rate-limit must still surface as 429 — keep this OUTSIDE
       // the best-effort enrichment try/catch.
       base = await this.upstream('searchSymbols', undefined, () =>
-        this.inner.searchSymbols(query),
+        this.inner.searchSymbols(key),
       );
+      if (this.searchCache.size >= SEARCH_CACHE_MAX_ENTRIES) {
+        const oldest = this.searchCache.keys().next();
+        if (!oldest.done) this.searchCache.delete(oldest.value);
+      }
       this.searchCache.set(key, { results: base, fetchedAt: Date.now() });
     }
 

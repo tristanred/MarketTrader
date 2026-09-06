@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -9,7 +8,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -52,8 +50,17 @@ function toIsoOrEmpty(local: string): string {
   return Number.isNaN(d.getTime()) ? local : d.toISOString();
 }
 
-export function CreateGameDialog() {
-  const [open, setOpen] = useState(false);
+interface CreateGameDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}
+
+/**
+ * Controlled game-creation form. The caller owns `open` because the action
+ * that opens it lives in {@link GamesListMenu} — a trigger nested in the menu
+ * would be unmounted by the menu's own close while the dialog took focus.
+ */
+export function CreateGameDialog({ open, onOpenChange }: CreateGameDialogProps) {
   const createGame = useCreateGame();
 
   const defaults: FormValues = {
@@ -86,7 +93,7 @@ export function CreateGameDialog() {
         visibility: values.isPrivate ? 'private' : 'public',
       });
       toast({ title: 'Game created', variant: 'success' });
-      setOpen(false);
+      onOpenChange(false);
       form.reset(defaults);
     } catch (err) {
       toastApiError(err, 'Failed to create game');
@@ -94,10 +101,7 @@ export function CreateGameDialog() {
   });
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button className="font-mono uppercase tracking-[0.1em]">+ New game</Button>
-      </DialogTrigger>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>New game</DialogTitle>

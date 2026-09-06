@@ -81,6 +81,7 @@ vi.mock('@/api/watchlists', () => ({
   useCreateWatchlist: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useRenameWatchlist: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useDeleteWatchlist: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useSetWatchlistNote: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
 
 vi.mock('@/api/stocks', async () => {

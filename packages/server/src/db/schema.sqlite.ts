@@ -300,7 +300,8 @@ export const watchlists = sqliteTable(
 /**
  * Symbols on a watchlist. Ordered by `addedAt` for stable display.
  * Cascades on watchlist delete. `(watchlistId, symbol)` is unique so adding
- * an already-present symbol is a no-op.
+ * an already-present symbol is a no-op. `note` is the user's free-form memo
+ * for the symbol and dies with the row when the symbol is removed.
  */
 export const watchlistItems = sqliteTable(
   'watchlist_items',
@@ -312,6 +313,8 @@ export const watchlistItems = sqliteTable(
       .notNull()
       .references(() => watchlists.id, { onDelete: 'cascade' }),
     symbol: text('symbol').notNull(),
+    /** Free-form user memo for this symbol. Null when never written; capped at 1000 chars by the route. */
+    note: text('note'),
     addedAt: text('added_at')
       .default(sql`(datetime('now'))`)
       .notNull(),

@@ -196,4 +196,179 @@ describe('Watchlist routes', () => {
     });
     expect(res.statusCode).toBe(400);
   });
+
+  describe('symbol notes', () => {
+    async function listWith(token: string, name: string, symbol: string): Promise<Watchlist> {
+      const list = await createList(app, token, name);
+      await app.inject({
+        method: 'POST',
+        url: `/watchlists/${list.id}/items`,
+        headers: { Authorization: `Bearer ${token}` },
+        payload: { symbol },
+      });
+      return list;
+    }
+
+    it('omits notes for symbols that have none', async () => {
+      const list = await listWith(aliceToken, 'NoteEmpty', 'AAPL');
+      const res = await app.inject({
+        method: 'GET',
+        url: '/watchlists',
+        headers: { Authorization: `Bearer ${aliceToken}` },
+      });
+      const found = res.json<Watchlist[]>().find((w) => w.id === list.id);
+      expect(found?.symbols).toEqual(['AAPL']);
+      expect(found?.notes ?? {}).toEqual({});
+    });
+
+    it('stores a note against the symbol and returns the updated list', async () => {
+      const list = await listWith(aliceToken, 'NoteWrite', 'NVDA');
+      const res = await app.inject({
+        method: 'PATCH',
+        url: `/watchlists/${list.id}/items/NVDA`,
+        headers: { Authorization: `Bearer ${aliceToken}` },
+        payload: { note: 'Add under 900. Earnings 11/19.' },
+      });
+      expect(res.statusCode).toBe(200);
+      expect(res.json<Watchlist>().notes).toEqual({ NVDA: 'Add under 900. Earnings 11/19.' });
+    });
+
+    it('surfaces a stored note on GET /watchlists', async () => {
+      const list = await listWith(aliceToken, 'NoteRead', 'MSFT');
+      await app.inject({
+        method: 'PATCH',
+        url: `/watchlists/${list.id}/items/MSFT`,
+        headers: { Authorization: `Bearer ${aliceToken}` },
+        payload: { note: 'Azure margin watch' },
+      });
+      const res = await app.inject({
+        method: 'GET',
+        url: '/watchlists',
+        headers: { Authorization: `Bearer ${aliceToken}` },
+      });
+      const found = res.json<Watchlist[]>().find((w) => w.id === list.id);
+      expect(found?.notes).toEqual({ MSFT: 'Azure margin watch' });
+    });
+
+    it('lowercases in the path still match the stored symbol', async () => {
+      const list = await listWith(aliceToken, 'NoteCase', 'TSLA');
+      const res = await app.inject({
+        method: 'PATCH',
+        url: `/watchlists/${list.id}/items/tsla`,
+        headers: { Authorization: `Bearer ${aliceToken}` },
+        payload: { note: 'delivery numbers' },
+      });
+      expect(res.statusCode).toBe(200);
+      expect(res.json<Watchlist>().notes).toEqual({ TSLA: 'delivery numbers' });
+    });
+
+    it('clears the note when sent an empty string', async () => {
+      const list = await listWith(aliceToken, 'NoteClear', 'AMD');
+      await app.inject({
+        method: 'PATCH',
+        url: `/watchlists/${list.id}/items/AMD`,
+        headers: { Authorization: `Bearer ${aliceToken}` },
+        payload: { note: 'temporary' },
+      });
+      const res = await app.inject({
+        method: 'PATCH',
+        url: `/watchlists/${list.id}/items/AMD`,
+        headers: { Authorization: `Bearer ${aliceToken}` },
+        payload: { note: '' },
+      });
+      expect(res.statusCode).toBe(200);
+      expect(res.json<Watchlist>().notes ?? {}).toEqual({});
+    });
+
+    it('treats a whitespace-only note as a clear', async () => {
+      const list = await listWith(aliceToken, 'NoteBlank', 'INTC');
+      await app.inject({
+        method: 'PATCH',
+        url: `/watchlists/${list.id}/items/INTC`,
+        headers: { Authorization: `Bearer ${aliceToken}` },
+        payload: { note: 'something' },
+      });
+      const res = await app.inject({
+        method: 'PATCH',
+        url: `/watchlists/${list.id}/items/INTC`,
+        headers: { Authorization: `Bearer ${aliceToken}` },
+        payload: { note: '   \n  ' },
+      });
+      expect(res.statusCode).toBe(200);
+      expect(res.json<Watchlist>().notes ?? {}).toEqual({});
+    });
+
+    it('404s for a symbol that is not on the list', async () => {
+      const list = await listWith(aliceToken, 'NoteMissing', 'AAPL');
+      const res = await app.inject({
+        method: 'PATCH',
+        url: `/watchlists/${list.id}/items/GOOG`,
+        headers: { Authorization: `Bearer ${aliceToken}` },
+        payload: { note: 'never added' },
+      });
+      expect(res.statusCode).toBe(404);
+    });
+
+    it("404s on another user's list rather than leaking its existence", async () => {
+      const list = await listWith(aliceToken, 'NoteForeign', 'AAPL');
+      const res = await app.inject({
+        method: 'PATCH',
+        url: `/watchlists/${list.id}/items/AAPL`,
+        headers: { Authorization: `Bearer ${bobToken}` },
+        payload: { note: 'not mine' },
+      });
+      expect(res.statusCode).toBe(404);
+    });
+
+    it('rejects a note past the 1000-character cap', async () => {
+      const list = await listWith(aliceToken, 'NoteTooLong', 'AAPL');
+      const res = await app.inject({
+        method: 'PATCH',
+        url: `/watchlists/${list.id}/items/AAPL`,
+        headers: { Authorization: `Bearer ${aliceToken}` },
+        payload: { note: 'x'.repeat(1001) },
+      });
+      expect(res.statusCode).toBe(400);
+    });
+
+    it('accepts a note exactly at the cap', async () => {
+      const list = await listWith(aliceToken, 'NoteAtCap', 'AAPL');
+      const res = await app.inject({
+        method: 'PATCH',
+        url: `/watchlists/${list.id}/items/AAPL`,
+        headers: { Authorization: `Bearer ${aliceToken}` },
+        payload: { note: 'x'.repeat(1000) },
+      });
+      expect(res.statusCode).toBe(200);
+      expect(res.json<Watchlist>().notes?.['AAPL']).toHaveLength(1000);
+    });
+
+    it('drops the note when the symbol is removed from the list', async () => {
+      const list = await listWith(aliceToken, 'NoteEvict', 'AAPL');
+      await app.inject({
+        method: 'PATCH',
+        url: `/watchlists/${list.id}/items/AAPL`,
+        headers: { Authorization: `Bearer ${aliceToken}` },
+        payload: { note: 'gone soon' },
+      });
+      await app.inject({
+        method: 'DELETE',
+        url: `/watchlists/${list.id}/items/AAPL`,
+        headers: { Authorization: `Bearer ${aliceToken}` },
+      });
+      await app.inject({
+        method: 'POST',
+        url: `/watchlists/${list.id}/items`,
+        headers: { Authorization: `Bearer ${aliceToken}` },
+        payload: { symbol: 'AAPL' },
+      });
+      const res = await app.inject({
+        method: 'GET',
+        url: '/watchlists',
+        headers: { Authorization: `Bearer ${aliceToken}` },
+      });
+      const found = res.json<Watchlist[]>().find((w) => w.id === list.id);
+      expect(found?.notes ?? {}).toEqual({});
+    });
+  });
 });

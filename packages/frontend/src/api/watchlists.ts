@@ -4,6 +4,7 @@ import type {
   AddWatchlistSymbolRequest,
   CreateWatchlistRequest,
   RenameWatchlistRequest,
+  SetWatchlistNoteRequest,
   Watchlist,
 } from '@markettrader/shared';
 
@@ -76,6 +77,28 @@ export function useRemoveWatchlistSymbol() {
       }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: watchlistKeys.all });
+    },
+  });
+}
+
+/**
+ * Sets or clears the note on one symbol of a watchlist. A blank `note` clears
+ * it. Called from the note popover's autosave, so it writes the returned list
+ * straight into the cache instead of invalidating — a refetch mid-typing would
+ * hand the open textarea a stale value.
+ */
+export function useSetWatchlistNote() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, symbol, body }: { id: string; symbol: string; body: SetWatchlistNoteRequest }) =>
+      apiFetch<Watchlist>(`/watchlists/${id}/items/${encodeURIComponent(symbol)}`, {
+        method: 'PATCH',
+        body,
+      }),
+    onSuccess: (updated) => {
+      qc.setQueryData<Watchlist[]>(watchlistKeys.all, (prev) =>
+        prev?.map((w) => (w.id === updated.id ? updated : w)),
+      );
     },
   });
 }

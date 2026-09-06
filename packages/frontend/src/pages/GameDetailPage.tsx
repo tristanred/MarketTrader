@@ -68,6 +68,7 @@ export function GameDetailPage() {
   }, [watchlists.data, selectedWatchlistId]);
   const watchlistSymbols = activeWatchlist?.symbols ?? [];
   const activeWatchlistId = activeWatchlist?.id ?? null;
+  const watchlistNotes = activeWatchlist?.notes ?? {};
 
   // Derive a stable key from the sorted symbol set, then materialize the
   // array from that key. Same key → same array identity → the WS effect
@@ -104,6 +105,7 @@ export function GameDetailPage() {
       gameData={game.data}
       portfolioData={portfolio.data}
       watchlistSymbols={watchlistSymbols}
+      watchlistNotes={watchlistNotes}
       watchlists={watchlists.data ?? []}
       activeWatchlistId={activeWatchlistId}
       tradeHistory={tradeHistory.data ?? []}
@@ -117,6 +119,8 @@ interface ArenaBodyProps {
   gameData: NonNullable<ReturnType<typeof useGame>['data']>;
   portfolioData: ReturnType<typeof usePortfolio>['data'];
   watchlistSymbols: string[];
+  /** Notes keyed by symbol for the active list; empty when none are written. */
+  watchlistNotes: Record<string, string>;
   watchlists: NonNullable<ReturnType<typeof useWatchlists>['data']>;
   activeWatchlistId: string | null;
   tradeHistory: NonNullable<ReturnType<typeof useTradeHistory>['data']>;
@@ -129,6 +133,7 @@ function ArenaBody({
   gameData,
   portfolioData,
   watchlistSymbols,
+  watchlistNotes,
   watchlists,
   activeWatchlistId,
   tradeHistory,
@@ -180,7 +185,10 @@ function ArenaBody({
   // Watchlist rows: only the symbol; each row subscribes to its own live
   // price inside <WatchlistPanel> so a tick on one symbol doesn't
   // re-render its siblings.
-  const watchlistRows = watchlistSymbols.map((symbol) => ({ symbol }));
+  const watchlistRows = watchlistSymbols.map((symbol) => {
+    const note = watchlistNotes[symbol];
+    return { symbol, ...(note ? { note } : {}) };
+  });
 
   // Holdings rows: ship the server-side last-known price + P&L as a baseline.
   // <HoldingsPanel> rows subscribe to their own symbol's live tick to override

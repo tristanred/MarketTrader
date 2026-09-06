@@ -1,0 +1,1 @@
+ALTER TABLE `watchlist_items` ADD `note` text;

@@ -23,11 +23,34 @@ const symbolSchema = z
     message: 'invalid symbol',
   });
 
+const noteSchema = z
+  .string()
+  .max(1000)
+  .transform((s) => s.trim());
+
 const createBodySchema = z.object({ name: nameSchema });
 const renameBodySchema = z.object({ name: nameSchema });
 const addItemBodySchema = z.object({ symbol: symbolSchema });
+const setNoteBodySchema = z.object({ note: noteSchema });
 const watchlistIdParamsSchema = z.object({ id: z.string() });
 const watchlistItemParamsSchema = z.object({ id: z.string(), symbol: z.string() });
+
+/**
+ * Folds item rows into the sparse `notes` map of the {@link Watchlist} contract.
+ * Returns `null` when no row carries one, so the field is omitted rather than
+ * shipped as an empty object on the overwhelmingly common no-notes list.
+ */
+function collectNotes(
+  items: Array<{ symbol: string; note: string | null }>,
+): Record<string, string> | null {
+  let notes: Record<string, string> | null = null;
+  for (const item of items) {
+    if (!item.note) continue;
+    notes ??= {};
+    notes[item.symbol] = item.note;
+  }
+  return notes;
+}
 
 /**
  * Loads a single watchlist owned by `userId` plus its symbols in addedAt order.
@@ -45,11 +68,18 @@ async function loadWatchlistForUser(
     .where(and(eq(watchlists.id, watchlistId), eq(watchlists.userId, userId)));
   if (!row) return null;
   const items = await db
-    .select({ symbol: watchlistItems.symbol })
+    .select({ symbol: watchlistItems.symbol, note: watchlistItems.note })
     .from(watchlistItems)
     .where(eq(watchlistItems.watchlistId, watchlistId))
     .orderBy(asc(watchlistItems.addedAt));
-  return { id: row.id, name: row.name, createdAt: row.createdAt, symbols: items.map((i) => i.symbol) };
+  const notes = collectNotes(items);
+  return {
+    id: row.id,
+    name: row.name,
+    createdAt: row.createdAt,
+    symbols: items.map((i) => i.symbol),
+    ...(notes ? { notes } : {}),
+  };
 }
 
 /**
@@ -59,6 +89,7 @@ async function loadWatchlistForUser(
  * - `PATCH  /watchlists/:id`          — rename a watchlist the caller owns.
  * - `DELETE /watchlists/:id`          — delete a watchlist the caller owns (cascades items).
  * - `POST   /watchlists/:id/items`    — add a symbol (idempotent).
+ * - `PATCH  /watchlists/:id/items/:symbol` — set or clear a symbol's note.
  * - `DELETE /watchlists/:id/items/:symbol` — remove a symbol (idempotent).
  *
  * Watchlists are user-scoped, not game-scoped. Any `:id` that does not belong
@@ -95,6 +126,7 @@ export function watchlistRoutes(db: Db) {
         .select({
           watchlistId: watchlistItems.watchlistId,
           symbol: watchlistItems.symbol,
+          note: watchlistItems.note,
           addedAt: watchlistItems.addedAt,
         })
         .from(watchlistItems)
@@ -102,19 +134,24 @@ export function watchlistRoutes(db: Db) {
         .where(eq(watchlists.userId, userId))
         .orderBy(asc(watchlistItems.addedAt));
 
-      const symbolsByList = new Map<string, string[]>();
+      const itemsByList = new Map<string, Array<{ symbol: string; note: string | null }>>();
       for (const item of items) {
-        const list = symbolsByList.get(item.watchlistId) ?? [];
-        list.push(item.symbol);
-        symbolsByList.set(item.watchlistId, list);
+        const list = itemsByList.get(item.watchlistId) ?? [];
+        list.push({ symbol: item.symbol, note: item.note });
+        itemsByList.set(item.watchlistId, list);
       }
 
-      const result: Watchlist[] = lists.map((l) => ({
-        id: l.id,
-        name: l.name,
-        createdAt: l.createdAt,
-        symbols: symbolsByList.get(l.id) ?? [],
-      }));
+      const result: Watchlist[] = lists.map((l) => {
+        const listItems = itemsByList.get(l.id) ?? [];
+        const notes = collectNotes(listItems);
+        return {
+          id: l.id,
+          name: l.name,
+          createdAt: l.createdAt,
+          symbols: listItems.map((i) => i.symbol),
+          ...(notes ? { notes } : {}),
+        };
+      });
       return reply.status(200).send(result);
     });
 
@@ -253,6 +290,46 @@ export function watchlistRoutes(db: Db) {
             // Concurrent insert race — unique constraint kicked in; treat as idempotent.
           }
         }
+        const updated = await loadWatchlistForUser(db, watchlistId, userId);
+        return reply.status(200).send(updated);
+      },
+    );
+
+    app.patch(
+      '/watchlists/:id/items/:symbol',
+      {
+        onRequest: rawApp.authenticate,
+        // Autosaved from a textarea as the user types, so the client debounces
+        // and this bounds what a stuck debounce (or a script) can push through.
+        config: { rateLimit: { max: 120, timeWindow: '1 minute' } },
+        schema: {
+          tags: ['Watchlists'],
+          summary: "Set or clear a symbol's note on a watchlist.",
+          security: [{ bearerAuth: [] }],
+          params: watchlistItemParamsSchema,
+          body: setNoteBodySchema,
+        },
+      },
+      async (request, reply) => {
+        const userId = request.user.id;
+        const watchlistId = request.params.id;
+        const symbol = request.params.symbol.toUpperCase();
+        const { note } = request.body;
+
+        const existing = await loadWatchlistForUser(db, watchlistId, userId);
+        if (!existing) return reply.status(404).send({ error: 'Watchlist not found' });
+        // Unlike the sibling DELETE, this is not a no-op on an absent symbol —
+        // a note with nothing to attach to would be silently discarded.
+        if (!existing.symbols.includes(symbol)) {
+          return reply.status(404).send({ error: 'Symbol not on this watchlist' });
+        }
+
+        await db
+          .update(watchlistItems)
+          // Blank clears rather than storing '', so `collectNotes` stays sparse.
+          .set({ note: note.length > 0 ? note : null })
+          .where(and(eq(watchlistItems.watchlistId, watchlistId), eq(watchlistItems.symbol, symbol)));
+
         const updated = await loadWatchlistForUser(db, watchlistId, userId);
         return reply.status(200).send(updated);
       },

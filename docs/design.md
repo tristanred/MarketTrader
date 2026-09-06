@@ -59,11 +59,47 @@ See the spec for full schema. Summary:
 | `Portfolio` | Current stock holdings per player per game |
 | `Trade` | Immutable log of every buy/sell executed |
 | `StockPriceCache` | Short-lived cache of fetched stock prices |
+| `Watchlist` / `WatchlistItem` | User-owned symbol lists, global to the user rather than scoped to a game |
 
 `Game` carries two discoverability fields:
 
 - `visibility` — `public` | `private`. Public games appear in `GET /games/browse`. Defaults to `public`; games created before this field existed were adopted as public.
 - `inviteCode` — short share token behind `/join/:code`. Nullable: pre-existing games mint one on first share. Only ever returned to members; `GET /games/browse` omits it.
+
+### Watchlist symbol notes
+
+Each `WatchlistItem` carries a nullable `note` — the user's free-form memo for
+that symbol, written from a floating editor beside the ticker in the arena's
+watchlist panel.
+
+- `PATCH /watchlists/:id/items/:symbol` sets it; a blank or whitespace-only body
+  clears it, so there is no separate delete verb. A symbol that is not on the
+  list answers 404 rather than creating one.
+- Capped at 1000 characters by the route's Zod schema, deliberately *not* by a
+  `WATCHLIST_MAX_*` env var — those exist to bound the price poller's per-tick
+  symbol set, and a note adds no symbols.
+- `Watchlist.notes` in `packages/shared` is a sparse `Record<string, string>`
+  and is omitted entirely when no symbol on the list carries one, so the common
+  case costs nothing on `GET /watchlists`.
+- Notes die with their row: removing a symbol from the list drops its note, and
+  re-adding the symbol starts blank.
+- The editor autosaves — 700 ms after typing stops, and again on close. There
+  is no save control, so closing or dismissing never discards an edit. A write
+  that fails on close has no status strip left to report into, so it raises a
+  toast and keeps the unsaved text in the box; reopening the note restores that
+  text and the debounce retries on its own.
+- It resizes from any of its four corners, each holding the opposite edges
+  still. The right-hand rail leaves no room to grow eastward, so the west
+  corners are the ones that matter; the east ones stop at the viewport margin
+  rather than sliding the note out from under the cursor.
+- Corner drags move the note through Radix's `alignOffset`/`sideOffset` rather
+  than a CSS transform. A transform would move it without Radix knowing, and its
+  collision handling would measure the stale position and shove the note back
+  mid-drag.
+- Its dragged size is remembered across every note in `localStorage`
+  (`mt:note-size`), clamped to the viewport on read so a size stored on a wide
+  monitor cannot open off-screen on a phone. Where it was dragged *to* is not
+  remembered — each note re-anchors to its own row.
 
 ---
 

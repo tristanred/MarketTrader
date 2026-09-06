@@ -7,6 +7,7 @@ import {
   useDeleteWatchlist,
   useRenameWatchlist,
 } from '@/api/watchlists';
+import { SymbolNotePopover } from './SymbolNotePopover';
 import { useLiveStore } from '@/stores/liveStore';
 import { cn } from '@/lib/utils';
 import type { Watchlist } from '@markettrader/shared';
@@ -17,6 +18,8 @@ export interface WatchlistRow {
   last?: number;
   /** Optional last-known change percent; live ticks override per-row. */
   changePct?: number;
+  /** The user's note for this symbol, when they've written one. */
+  note?: string;
 }
 
 export interface WatchlistPanelProps {
@@ -392,6 +395,7 @@ export function WatchlistPanel({
               <WatchRowItem
                 key={r.symbol}
                 row={r}
+                watchlistId={watchlistId}
                 {...(onSelect ? { onSelect } : {})}
               />
             ))}
@@ -404,9 +408,11 @@ export function WatchlistPanel({
 
 const WatchRowItem = memo(function WatchRowItem({
   row,
+  watchlistId,
   onSelect,
 }: {
   row: WatchlistRow;
+  watchlistId: string | null;
   onSelect?: (symbol: string) => void;
 }) {
   // Live ticks for this specific symbol — primitives so Object.is equality
@@ -416,30 +422,45 @@ const WatchRowItem = memo(function WatchRowItem({
   const last = livePrice ?? row.last;
   const changePct = liveChangePct ?? row.changePct;
   return (
-    <li>
-      <button
-        type="button"
-        onClick={onSelect ? () => onSelect(row.symbol) : undefined}
-        disabled={!onSelect}
+    <li
+      className={cn(
+        'group relative grid grid-cols-[1fr_auto_auto] items-baseline gap-2 rounded-[3px] py-1 text-xs',
+        onSelect && 'hover:bg-hairline',
+      )}
+    >
+      {/* The select target covers the whole row from behind, so the note button
+          can sit inline beside the ticker — a <button> cannot nest another. */}
+      {onSelect ? (
+        <button
+          type="button"
+          aria-label={`Select ${row.symbol}`}
+          onClick={() => onSelect(row.symbol)}
+          className="absolute inset-0 cursor-pointer rounded-[3px] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+        />
+      ) : null}
+      <span className="pointer-events-none relative flex min-w-0 items-center gap-1">
+        <span className="truncate font-mono text-accent">{row.symbol}</span>
+        {watchlistId ? (
+          <SymbolNotePopover
+            symbol={row.symbol}
+            watchlistId={watchlistId}
+            {...(row.note ? { note: row.note } : {})}
+          />
+        ) : null}
+      </span>
+      <span className="pointer-events-none relative font-mono text-text">
+        {last !== undefined ? fmt(last) : '—'}
+      </span>
+      <span
         className={cn(
-          'grid w-full grid-cols-[1fr_auto_auto] items-baseline gap-2 py-1 text-xs',
-          onSelect && 'cursor-pointer hover:bg-hairline',
-          !onSelect && 'cursor-default',
+          'pointer-events-none relative font-mono',
+          changePct === undefined && 'text-muted',
+          changePct !== undefined && changePct >= 0 && 'text-gain',
+          changePct !== undefined && changePct < 0 && 'text-loss',
         )}
       >
-        <span className="font-mono text-accent text-left">{row.symbol}</span>
-        <span className="font-mono text-text">{last !== undefined ? fmt(last) : '—'}</span>
-        <span
-          className={cn(
-            'font-mono',
-            changePct === undefined && 'text-muted',
-            changePct !== undefined && changePct >= 0 && 'text-gain',
-            changePct !== undefined && changePct < 0 && 'text-loss',
-          )}
-        >
-          {changePct === undefined ? '—' : fmtPct(changePct)}
-        </span>
-      </button>
+        {changePct === undefined ? '—' : fmtPct(changePct)}
+      </span>
     </li>
   );
 });

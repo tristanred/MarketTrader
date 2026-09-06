@@ -172,9 +172,8 @@ describe('GameDetailPage', () => {
     const user = userEvent.setup();
     render(wrap());
     expect(screen.getByTestId('stockchart')).toHaveTextContent('chart-AAPL');
-    // The Holdings table renders NVDA twice (Symbol + Name columns); both
-    // cells live in the same row so clicking the first match triggers the
-    // row-level onSelect handler.
+    // The holdings rail is the first NVDA in DOM order; clicking its ticker
+    // bubbles to the row button's onSelect handler.
     await user.click(screen.getAllByText('NVDA')[0]!);
     expect(screen.getByTestId('stockchart')).toHaveTextContent('chart-NVDA');
   });

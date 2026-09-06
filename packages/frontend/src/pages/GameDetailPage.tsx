@@ -196,8 +196,8 @@ function ArenaBody({
   const holdingRows =
     portfolioData?.holdings.map((h) => ({
       symbol: h.symbol,
-      // Server doesn't return company names with holdings yet; fall back to
-      // the symbol so the Name column isn't a row of empty cells.
+      // Server doesn't return company names with holdings yet; HoldingsPanel
+      // suppresses the name line while it equals the symbol.
       name: h.symbol,
       quantity: h.quantity,
       avgCost: h.avgCostBasis,
@@ -313,11 +313,15 @@ function ArenaBody({
     // `min-width: auto`, so any panel with a wide intrinsic minimum would
     // otherwise push the track out and scroll the whole document sideways
     // rather than being constrained by its column.
-    <main className="mx-auto grid w-full max-w-[1600px] grid-cols-1 gap-2 p-3 lg:grid-cols-[280px_1fr_300px]">
+    <main className="mx-auto grid w-full max-w-[1600px] grid-cols-1 gap-2 p-3 lg:grid-cols-[300px_1fr_300px]">
       <aside className="flex min-w-0 flex-col gap-2">
         <PortfolioPanel value={myPortfolioValue} pnlPct={myPnlPct} cash={myCash} dayPnl={myDayPnl} />
+        {/* Totals first, then the positions they're made of. The pair stays in
+            this order when the grid collapses to one column, so holdings is
+            always directly beneath the portfolio. */}
+        <HoldingsPanel rows={holdingRows} onSelect={setSelectedSymbol} />
         {/* On narrow viewports the grid collapses to one column, so surface
-            the search bar right under the portfolio (above the quote). At
+            the search bar at the foot of this rail (above the quote). At
             lg+ the right rail owns it. */}
         <SymbolSearchPanel onSelect={setSelectedSymbol} className="lg:hidden" />
       </aside>
@@ -332,7 +336,6 @@ function ArenaBody({
         />
         <ChartPanel symbol={selectedSymbol} />
         <OhlcStrip open={ohlcv?.open} high={ohlcv?.high} low={ohlcv?.low} volume={ohlcv?.volume} />
-        <HoldingsPanel rows={holdingRows} onSelect={setSelectedSymbol} />
         <OpenOrdersList gameId={gameId} />
         {/* Leaderboard moved here from the left rail to gain horizontal room
             for per-row sparklines and full-length usernames. */}

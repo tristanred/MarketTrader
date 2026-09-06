@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
@@ -38,7 +39,8 @@ vi.mock('@/api/games', () => ({
 }));
 
 vi.mock('@/components/CreateGameDialog', () => ({
-  CreateGameDialog: () => <button>+ NEW GAME</button>,
+  CreateGameDialog: ({ open }: { open: boolean }) =>
+    open ? <div role="dialog">Set up a virtual trading tournament.</div> : null,
 }));
 
 import { GamesListPage } from '@/pages/GamesListPage';
@@ -53,17 +55,57 @@ function wrap(ui: React.ReactElement) {
 }
 
 describe('GamesListPage', () => {
-  it('renders the page heading and the new-game action', () => {
+  it('keeps the new-game action out of sight until the menu is opened', () => {
     gamesData.length = 0;
     render(wrap(<GamesListPage />));
     expect(screen.getByText('Your games')).toBeInTheDocument();
-    expect(screen.getByText(/new game/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /games menu/i })).toBeInTheDocument();
+    expect(screen.queryByText(/new game/i)).not.toBeInTheDocument();
   });
 
-  it('renders an empty state when there are no games', () => {
+  it('reveals the new-game action once the menu is opened', async () => {
+    gamesData.length = 0;
+    const user = userEvent.setup();
+    render(wrap(<GamesListPage />));
+    await user.click(screen.getByRole('button', { name: /games menu/i }));
+    expect(await screen.findByRole('menu')).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: /new game/i })).toBeInTheDocument();
+  });
+
+  it('lands keyboard focus on the first item when the menu opens', async () => {
+    gamesData.length = 0;
+    const user = userEvent.setup();
+    render(wrap(<GamesListPage />));
+    await user.click(screen.getByRole('button', { name: /games menu/i }));
+    expect(await screen.findByRole('menuitem', { name: /new game/i })).toHaveFocus();
+  });
+
+  it('returns focus to the trigger when the menu is dismissed', async () => {
+    gamesData.length = 0;
+    const user = userEvent.setup();
+    render(wrap(<GamesListPage />));
+    const trigger = screen.getByRole('button', { name: /games menu/i });
+    await user.click(trigger);
+    await screen.findByRole('menu');
+    await user.keyboard('{Escape}');
+    expect(trigger).toHaveFocus();
+  });
+
+  it('opens the create-game dialog from the menu', async () => {
+    gamesData.length = 0;
+    const user = userEvent.setup();
+    render(wrap(<GamesListPage />));
+    await user.click(screen.getByRole('button', { name: /games menu/i }));
+    await user.click(await screen.findByRole('menuitem', { name: /new game/i }));
+    expect(await screen.findByText(/set up a virtual trading tournament/i)).toBeInTheDocument();
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+  });
+
+  it('points a viewer with no games at the menu rather than a button', () => {
     gamesData.length = 0;
     render(wrap(<GamesListPage />));
     expect(screen.getByText(/no games yet/i)).toBeInTheDocument();
+    expect(screen.getByText(/menu to create one/i)).toBeInTheDocument();
   });
 
   it('renders one row-card per game with name + status', () => {

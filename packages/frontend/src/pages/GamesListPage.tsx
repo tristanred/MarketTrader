@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom';
 import { ChevronRight } from 'lucide-react';
 import { useGames } from '@/api/games';
 import { BrowseGamesSection } from '@/components/game/BrowseGamesSection';
-import { CreateGameDialog } from '@/components/CreateGameDialog';
+import { GamesListMenu } from '@/components/GamesListMenu';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Panel, PanelBody } from '@/components/panel';
 import { cn, formatUSD } from '@/lib/utils';
@@ -32,7 +32,7 @@ export function GamesListPage() {
           <h1 className="text-xl font-bold tracking-[-0.025em] text-text-strong">Your games</h1>
           <p className="text-xs text-muted">Tournaments you've joined.</p>
         </div>
-        <CreateGameDialog />
+        <GamesListMenu />
       </div>
 
       {games.isLoading && (
@@ -55,7 +55,7 @@ export function GamesListPage() {
         <Panel>
           <PanelBody>
             <p className="py-8 text-center font-mono text-xs text-muted">
-              No games yet — create one to get started.
+              No games yet — use the menu to create one, or join an open game below.
             </p>
           </PanelBody>
         </Panel>

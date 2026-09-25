@@ -272,7 +272,11 @@ export class YahooProvider implements StockProvider {
 
     interface ChartBar {
       date?: Date | string | number;
+      open?: number | null;
+      high?: number | null;
+      low?: number | null;
       close?: number | null;
+      volume?: number | null;
     }
     interface ChartResult {
       quotes?: ChartBar[];
@@ -299,7 +303,11 @@ export class YahooProvider implements StockProvider {
       if (!q || q.close == null || !q.date) continue;
       bars.push({
         time: Math.floor(new Date(q.date).getTime() / 1000),
+        ...(q.open != null && { open: q.open }),
+        ...(q.high != null && { high: q.high }),
+        ...(q.low != null && { low: q.low }),
         close: q.close,
+        ...(q.volume != null && { volume: q.volume }),
       });
     }
     return bars;

@@ -334,7 +334,7 @@ function ArenaBody({
             ? { onTrade: (direction: TradeDirection) => openTradeOrder(selectedSymbol, direction) }
             : {})}
         />
-        <ChartPanel symbol={selectedSymbol} />
+        <ChartPanel symbol={selectedSymbol} gameId={gameId} />
         <OhlcStrip open={ohlcv?.open} high={ohlcv?.high} low={ohlcv?.low} volume={ohlcv?.volume} />
         <OpenOrdersList gameId={gameId} />
         {/* Leaderboard moved here from the left rail to gain horizontal room

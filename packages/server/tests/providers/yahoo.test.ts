@@ -223,3 +223,24 @@ describe('YahooProvider rate-limit handling', () => {
     });
   });
 });
+
+describe('YahooProvider.getHistory', () => {
+  it('maps OHLCV and omits fields the upstream returned as null', async () => {
+    const provider = new YahooProvider();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (provider as any).client = {
+      chart: vi.fn().mockResolvedValue({
+        quotes: [
+          { date: new Date(1_000_000), open: 1, high: 3, low: 0.5, close: 2, volume: 100 },
+          { date: new Date(2_000_000), open: null, high: null, low: null, close: 2.5, volume: null },
+          { date: new Date(3_000_000), close: null },
+        ],
+      }),
+    };
+    const bars = await provider.getHistory('AAPL', '1mo');
+    expect(bars).toEqual([
+      { time: 1000, open: 1, high: 3, low: 0.5, close: 2, volume: 100 },
+      { time: 2000, close: 2.5 },
+    ]);
+  });
+});

@@ -156,6 +156,12 @@ Both browser hooks (`useGameSocket`, `useIndicesSocket`) reconnect through `Reco
 
 Once the attempt budget is spent the hook stops and publishes `offline` on `useConnectionStore`; the `LIVE` pill in `StatusStrip` becomes a retry button. A give-up state also re-tests itself when the browser comes back online or the tab returns to the foreground.
 
+### Price chart
+
+`ChartCanvas` (`frontend/src/components/StockChart.tsx`) draws `GET /stocks/:symbol/history` as a line, area or candlestick series, with an optional volume pane. The choice is a per-browser preference in `chartPrefsStore` (localStorage key `mt:chart`). History bars carry optional `open/high/low/volume`, and a provider that only has closes renders flat candles. The response's `barSeconds` (from `RANGE_BAR_SECONDS` in `providers/interface.ts`) lets the client fold live ticks into the current candle during regular hours.
+
+Inside a game the chart also overlays the viewer's own executed trades as buy/sell markers, snapped to the plotted bar at or before each fill, plus a dashed avg-cost line for a held position. A `trade_executed` event for the viewer's own user id refreshes both. Note that that event's `playerId` is a *user* id.
+
 ---
 
 ## Feature Roadmap (post-MVP)
@@ -167,7 +173,6 @@ These are candidates for future design cycles. None are committed.
 - **Admin tools** — game creator can remove players, extend game end date
 - **Game templates** — preset configurations (e.g., "30-day $10k challenge")
 - **Notifications** — push/email when a trade executes or when you move up/down the leaderboard
-- **Historical price charts** — candlestick chart for each symbol the player holds
 
 ---
 

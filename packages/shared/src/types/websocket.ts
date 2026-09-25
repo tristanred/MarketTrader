@@ -17,6 +17,7 @@ export interface WsPriceUpdateEvent {
 export interface WsTradeExecutedEvent {
   event: 'trade_executed';
   data: {
+    /** The trader's *user* id — not their gamePlayer id. */
     playerId: string;
     symbol: string;
     direction: TradeDirection;

@@ -7,6 +7,20 @@ import type {
 } from '@markettrader/shared';
 
 /**
+ * Bar width, in seconds, that every provider uses for each history range.
+ * Returned to clients as `barSeconds` so they can fold live ticks into the
+ * current bar without duplicating this table.
+ */
+export const RANGE_BAR_SECONDS: Record<StockHistoryRange, number> = {
+  '1d': 300,
+  '5d': 900,
+  '1mo': 3600,
+  '3mo': 86_400,
+  '6mo': 86_400,
+  '1y': 86_400,
+};
+
+/**
  * Abstraction layer for fetching real-time stock data. All price lookups must
  * go through this interface — never call Yahoo Finance / Alpaca / Polygon
  * directly from route handlers or services.
@@ -28,9 +42,9 @@ export interface StockProvider {
   /** Returns matching equity symbols for an autocomplete query. */
   searchSymbols(query: string): Promise<StockSearchResult[]>;
   /**
-   * Returns historical closing prices for the symbol covering the given range.
-   * Bars are sorted by ascending time. Bar resolution is provider-defined per
-   * range — intraday for `1d`/`5d`, daily for longer ranges.
+   * Returns historical bars for the symbol covering the given range, sorted by
+   * ascending time. Bar width must match {@link RANGE_BAR_SECONDS}; OHLC and
+   * volume are filled when the upstream supplies them.
    */
   getHistory(symbol: string, range: StockHistoryRange): Promise<StockHistoryBar[]>;
   /**

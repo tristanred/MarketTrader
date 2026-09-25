@@ -3,7 +3,7 @@ import { z } from 'zod';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import type { Db } from '../db/index.js';
 import type { StockProvider } from '../providers/index.js';
-import { StockProviderError } from '../providers/index.js';
+import { RANGE_BAR_SECONDS, StockProviderError } from '../providers/index.js';
 import { env } from '../env.js';
 
 const symbolParamsSchema = z.object({
@@ -89,6 +89,7 @@ export function stockRoutes(_db: Db, provider: StockProvider) {
             symbol,
             range,
             bars,
+            barSeconds: RANGE_BAR_SECONDS[range],
             fetchedAt: new Date().toISOString(),
           });
         } catch (err) {

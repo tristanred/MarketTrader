@@ -71,3 +71,26 @@ describe('GET /stocks/search', () => {
     expect(res.statusCode).toBe(400);
   });
 });
+
+describe('GET /stocks/:symbol/history', () => {
+  let app: FastifyInstance;
+
+  beforeAll(async () => {
+    app = await createTestApp();
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  it.each([
+    ['1d', 300],
+    ['5d', 900],
+    ['1mo', 3600],
+    ['1y', 86_400],
+  ])('reports barSeconds for range %s', async (range, barSeconds) => {
+    const res = await app.inject({ method: 'GET', url: `/stocks/AAPL/history?range=${range}` });
+    expect(res.statusCode).toBe(200);
+    expect(res.json<{ barSeconds: number }>().barSeconds).toBe(barSeconds);
+  });
+});

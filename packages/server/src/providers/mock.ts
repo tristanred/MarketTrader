@@ -6,6 +6,7 @@ import type {
   StockSearchResult,
 } from '@markettrader/shared';
 import type { StockProvider } from './interface.js';
+import { RANGE_BAR_SECONDS } from './interface.js';
 
 /**
  * Deterministic price table used by {@link MockProvider}. Keys are uppercase
@@ -78,16 +79,23 @@ export class MockProvider implements StockProvider {
 
     const base = this.prices[sym] ?? 100;
     const nowSec = Math.floor(Date.now() / 1000);
-    const stepSec = range === '1d' ? 60 * 5 : 24 * 60 * 60;
+    const stepSec = RANGE_BAR_SECONDS[range];
 
     const bars: StockHistoryBar[] = [];
     let last = base;
     for (let i = 0; i < n; i++) {
       const delta = (next() - 0.5) * base * 0.01;
+      const open = last;
       const close = +(last + delta).toFixed(2);
+      const high = +(Math.max(open, close) + next() * base * 0.004).toFixed(2);
+      const low = +(Math.min(open, close) - next() * base * 0.004).toFixed(2);
       bars.push({
         time: nowSec - (n - 1 - i) * stepSec,
+        open,
+        high,
+        low,
         close,
+        volume: Math.round(50_000 + next() * 450_000),
       });
       last = close;
     }

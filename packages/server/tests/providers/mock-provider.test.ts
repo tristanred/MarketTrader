@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { MockProvider, MOCK_PRICE_MAP } from '../../src/providers/mock.js';
+import { RANGE_BAR_SECONDS } from '../../src/providers/interface.js';
 
 describe('MockProvider.getQuote', () => {
   it('returns the deterministic price from the built-in map', async () => {
@@ -59,6 +60,22 @@ describe('MockProvider.getHistory', () => {
     for (let i = 1; i < bars.length; i++) {
       expect(bars[i]!.time).toBeGreaterThan(bars[i - 1]!.time);
     }
+  });
+
+  it('returns internally consistent OHLC bars with volume', async () => {
+    const p = new MockProvider();
+    const bars = await p.getHistory('AAPL', '5d');
+    for (const b of bars) {
+      expect(b.low).toBeLessThanOrEqual(Math.min(b.open!, b.close));
+      expect(b.high).toBeGreaterThanOrEqual(Math.max(b.open!, b.close));
+      expect(b.volume).toBeGreaterThan(0);
+    }
+  });
+
+  it('spaces bars by RANGE_BAR_SECONDS', async () => {
+    const p = new MockProvider();
+    const bars = await p.getHistory('AAPL', '5d');
+    expect(bars[1]!.time - bars[0]!.time).toBe(RANGE_BAR_SECONDS['5d']);
   });
 
   it('produces deterministic close prices across calls', async () => {

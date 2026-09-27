@@ -327,6 +327,14 @@ function ArenaBody({
       </aside>
 
       <section className="flex min-w-0 flex-col gap-2">
+        {/* Center column rather than a rail for horizontal room (per-row
+            sparklines, full-length usernames); first so standings are the
+            first thing seen on the page. */}
+        <LeaderboardPanel
+          gameId={gameId}
+          entries={gameData.leaderboard ?? []}
+          startingBalance={gameData.startingBalance}
+        />
         <QuoteHeader
           symbol={selectedSymbol}
           {...quoteData}
@@ -337,13 +345,6 @@ function ArenaBody({
         <ChartPanel symbol={selectedSymbol} gameId={gameId} />
         <OhlcStrip open={ohlcv?.open} high={ohlcv?.high} low={ohlcv?.low} volume={ohlcv?.volume} />
         <OpenOrdersList gameId={gameId} />
-        {/* Leaderboard moved here from the left rail to gain horizontal room
-            for per-row sparklines and full-length usernames. */}
-        <LeaderboardPanel
-          gameId={gameId}
-          entries={gameData.leaderboard ?? []}
-          startingBalance={gameData.startingBalance}
-        />
       </section>
 
       <aside className="flex min-w-0 flex-col gap-2">

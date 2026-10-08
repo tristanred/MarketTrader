@@ -72,8 +72,9 @@ export async function refreshMarketMovers(
 /**
  * Generates daily picks for every pending or active game that has none for
  * the last completed session. Picks need no intraday data, so this runs at any
- * time of day. All games share one batch quote; if it fails, picks are still
- * stored with null prices rather than leaving the game without a list.
+ * time of day. All games share one batch quote. When quoting fails outright
+ * the picks are still stored, with null prices, so the page is usable; later
+ * ticks re-quote such all-null rows in place until the provider answers.
  */
 export async function refreshGamePicks(
   db: Db,
@@ -92,8 +93,12 @@ export async function refreshGamePicks(
   const liveIds = candidates.filter((g) => nowIso < g.endDate).map((g) => g.id);
   if (liveIds.length === 0) return;
 
-  const done = await db
-    .select({ gameId: schema.gameDiscoverPicks.gameId })
+  const existing = await db
+    .select({
+      id: schema.gameDiscoverPicks.id,
+      gameId: schema.gameDiscoverPicks.gameId,
+      items: schema.gameDiscoverPicks.items,
+    })
     .from(schema.gameDiscoverPicks)
     .where(
       and(
@@ -101,31 +106,38 @@ export async function refreshGamePicks(
         inArray(schema.gameDiscoverPicks.gameId, liveIds),
       ),
     );
-  const doneIds = new Set(done.map((r) => r.gameId));
+  const doneIds = new Set(existing.map((r) => r.gameId));
   const pending = liveIds
     .filter((id) => !doneIds.has(id))
     .map((id) => ({ id, picks: sampleDailyPicks(id, sessionDate) }));
-  if (pending.length === 0) return;
+  // Only rows with no price at all: a single missing quote is usually a
+  // delisted symbol, and retrying it every tick would never succeed.
+  const unpriced = existing
+    .map((r) => ({ id: r.id, items: JSON.parse(r.items) as DiscoverItem[] }))
+    .filter((r) => r.items.length > 0 && r.items.every((i) => i.price === null));
+  if (pending.length === 0 && unpriced.length === 0) return;
 
-  const symbols = [...new Set(pending.flatMap((g) => g.picks.map((p) => p.symbol)))];
+  const symbols = [
+    ...new Set([
+      ...pending.flatMap((g) => g.picks.map((p) => p.symbol)),
+      ...unpriced.flatMap((r) => r.items.map((i) => i.symbol)),
+    ]),
+  ];
   let quotes = new Map<string, StockQuote>();
   try {
     quotes = (await provider.getQuotes?.(symbols)) ?? quotes;
   } catch (err) {
     onError?.(err, 'picks:quotes');
   }
+  const priced = (item: DiscoverItem): DiscoverItem => {
+    const q = quotes.get(item.symbol);
+    return { ...item, price: q?.price ?? null, changePct: q?.changePercent ?? null };
+  };
 
   for (const game of pending) {
-    const items: DiscoverItem[] = game.picks.map((p) => {
-      const q = quotes.get(p.symbol);
-      return {
-        symbol: p.symbol,
-        name: p.name,
-        price: q?.price ?? null,
-        changePct: q?.changePercent ?? null,
-        sector: p.sector,
-      };
-    });
+    const items = game.picks.map((p) =>
+      priced({ symbol: p.symbol, name: p.name, price: null, changePct: null, sector: p.sector }),
+    );
     try {
       await db
         .insert(schema.gameDiscoverPicks)
@@ -138,6 +150,19 @@ export async function refreshGamePicks(
         .onConflictDoNothing();
     } catch (err) {
       onError?.(err, `picks:${game.id}`);
+    }
+  }
+
+  for (const row of unpriced) {
+    const items = row.items.map(priced);
+    if (items.every((i) => i.price === null)) continue;
+    try {
+      await db
+        .update(schema.gameDiscoverPicks)
+        .set({ items: JSON.stringify(items), generatedAt: nowIso })
+        .where(eq(schema.gameDiscoverPicks.id, row.id));
+    } catch (err) {
+      onError?.(err, `picks:reprice:${row.id}`);
     }
   }
 }

@@ -129,7 +129,11 @@ the arena's right rail. Full design: `docs/superpowers/specs/2026-10-07-discover
   describe the day in progress, which would otherwise be stored as the previous
   close. Each list is fetched on its own, and a failed or empty one leaves no
   row, so a later tick retries it rather than locking in a gap for the day.
-- Prices are a snapshot taken at generation, not live — the page says when.
+- Prices are a snapshot taken at generation, not live — the page says when. If
+  the batch quote fails outright (a cold cache under a 429), picks are stored
+  without prices so the page still works, and later ticks re-quote that row in
+  place. A row with only *some* prices missing is left alone: that is usually a
+  delisted symbol, which no retry fixes.
   Discover symbols never join the price poller or the game socket, so the
   feature adds nothing to the poller's per-tick symbol set.
 - Rows older than 14 sessions' worth of days are pruned by the same worker.

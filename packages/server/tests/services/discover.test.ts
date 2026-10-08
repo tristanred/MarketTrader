@@ -207,6 +207,42 @@ describe('refreshGamePicks', () => {
     expect(items).toHaveLength(DAILY_PICKS_COUNT);
     expect(items.every((i) => i.price === null && i.changePct === null)).toBe(true);
   });
+
+  it('re-prices an all-null row on a later tick once quotes come back', async () => {
+    const gameId = await seedGame(db, 'active');
+    const provider = new FakeProvider();
+    const working = provider.getQuotes.bind(provider);
+    // What CachedProvider returns under a 429 with a cold cache: no throw, no rows.
+    provider.getQuotes = async () => new Map();
+    await refreshGamePicks(db, provider, TUE_AFTER_CLOSE);
+
+    provider.getQuotes = working;
+    await refreshGamePicks(db, provider, WED_PRE_MARKET);
+
+    const rows = await db
+      .select()
+      .from(schema.gameDiscoverPicks)
+      .where(eq(schema.gameDiscoverPicks.gameId, gameId));
+    expect(rows).toHaveLength(1);
+    const items = JSON.parse(rows[0]!.items) as DiscoverItem[];
+    expect(items.every((i) => i.price === 50)).toBe(true);
+  });
+
+  it('does not retry a row where only some quotes are missing', async () => {
+    await seedGame(db, 'active');
+    const provider = new FakeProvider();
+    const working = provider.getQuotes.bind(provider);
+    // Every symbol but one gets a quote — e.g. a delisted constituent.
+    provider.getQuotes = async (symbols) => {
+      const all = await working(symbols);
+      all.delete(symbols[0]!);
+      return all;
+    };
+    await refreshGamePicks(db, provider, TUE_AFTER_CLOSE);
+    provider.quoteBatches = [];
+    await refreshGamePicks(db, provider, WED_PRE_MARKET);
+    expect(provider.quoteBatches).toHaveLength(0);
+  });
 });
 
 describe('getDiscoverForGame', () => {

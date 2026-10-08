@@ -160,5 +160,9 @@ Where the build deliberately differs from the plan above:
   of the move, capped at ±5%) with sector filter chips instead of sector
   headings — 20 picks across 11 sectors made for tiny groups. Movers are compact
   ranked panels captioned with their session date.
+- **All-null picks self-heal.** `CachedProvider.getQuotes` never throws — under a
+  429 it returns stale rows or nothing — so a rate-limited first tick would have
+  locked in a price-less list for a whole trading day. Later ticks re-quote any of
+  the session's rows whose prices are *all* null and update them in place.
 - **Refactors:** `GameTradeDialogs` (quote + trade dialogs, shared by the arena
   and Discover) and `GameCrumb` (shared with the leaderboard page) were extracted.

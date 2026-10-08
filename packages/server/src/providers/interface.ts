@@ -1,4 +1,6 @@
 import type {
+  DiscoverItem,
+  MarketMoverKind,
   StockDetails,
   StockHistoryBar,
   StockHistoryRange,
@@ -53,6 +55,13 @@ export interface StockProvider {
    * Implementations should fill what they can and leave the rest undefined.
    */
   getDetails(symbol: string): Promise<StockDetails>;
+  /**
+   * Optional market-wide list (top gainers, losers, most active, trending) of
+   * at most `count` tradable equities, as of the moment of the call. Only the
+   * Discover worker uses it; providers without such data leave it undefined
+   * and Discover shows its daily picks alone.
+   */
+  getMarketMovers?(kind: MarketMoverKind, count: number): Promise<DiscoverItem[]>;
 }
 
 /**

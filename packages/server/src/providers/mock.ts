@@ -1,4 +1,6 @@
 import type {
+  DiscoverItem,
+  MarketMoverKind,
   StockDetails,
   StockHistoryBar,
   StockHistoryRange,
@@ -21,6 +23,38 @@ export const MOCK_PRICE_MAP: Record<string, number> = {
   TSLA: 240,
   AMZN: 200,
   META: 500,
+};
+
+/** Fixed market-mover lists for {@link MockProvider}: `[symbol, changePct]` pairs. */
+const MOCK_MOVERS: Record<MarketMoverKind, ReadonlyArray<readonly [string, number]>> = {
+  gainers: [
+    ['NVDA', 6.2],
+    ['TSLA', 4.8],
+    ['AMD', 3.9],
+    ['PLTR', 3.1],
+    ['SMCI', 2.7],
+  ],
+  losers: [
+    ['INTC', -5.4],
+    ['BA', -3.8],
+    ['NKE', -2.9],
+    ['PFE', -2.2],
+    ['DIS', -1.6],
+  ],
+  active: [
+    ['AAPL', 0.8],
+    ['NVDA', 6.2],
+    ['TSLA', 4.8],
+    ['AMZN', -0.4],
+    ['F', 1.1],
+  ],
+  trending: [
+    ['META', 1.9],
+    ['MSFT', 0.5],
+    ['GOOG', -0.7],
+    ['NFLX', 2.3],
+    ['UBER', -1.2],
+  ],
 };
 
 /**
@@ -46,6 +80,15 @@ export class MockProvider implements StockProvider {
       fetchedAt: new Date().toISOString(),
       marketState: 'REGULAR',
     };
+  }
+
+  async getMarketMovers(kind: MarketMoverKind, count: number): Promise<DiscoverItem[]> {
+    return MOCK_MOVERS[kind].slice(0, count).map(([symbol, changePct]) => ({
+      symbol,
+      name: `${symbol} Mock Corp.`,
+      price: this.prices[symbol] ?? 100,
+      changePct,
+    }));
   }
 
   async searchSymbols(query: string): Promise<StockSearchResult[]> {

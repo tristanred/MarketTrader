@@ -101,3 +101,25 @@ describe('MockProvider.getDetails', () => {
     expect(Number.isNaN(Date.parse(d.fetchedAt))).toBe(false);
   });
 });
+
+describe('MockProvider.getMarketMovers', () => {
+  it('returns deterministic lists priced from the mock price table', async () => {
+    const provider = new MockProvider({ NVDA: 123 });
+    const gainers = await provider.getMarketMovers('gainers', 3);
+    expect(gainers).toHaveLength(3);
+    expect(gainers[0]).toEqual({
+      symbol: 'NVDA',
+      name: 'NVDA Mock Corp.',
+      price: 123,
+      changePct: 6.2,
+    });
+    expect(await provider.getMarketMovers('gainers', 3)).toEqual(gainers);
+  });
+
+  it('serves all four kinds', async () => {
+    const provider = new MockProvider();
+    for (const kind of ['gainers', 'losers', 'active', 'trending'] as const) {
+      expect((await provider.getMarketMovers(kind, 5)).length).toBe(5);
+    }
+  });
+});

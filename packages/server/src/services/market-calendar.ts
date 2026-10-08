@@ -72,6 +72,24 @@ export function mostRecentTradingSession(now: Date = new Date()): TradingSession
   };
 }
 
+/**
+ * Returns the most recent NYSE regular session that has fully closed. Same as
+ * {@link mostRecentTradingSession} except that during a live session it
+ * returns the previous trading day instead of the partial one in progress.
+ */
+export function lastCompletedTradingSession(now: Date = new Date()): TradingSession {
+  const recent = mostRecentTradingSession(now);
+  if (!isRegularSessionOpen(now)) return recent;
+  return mostRecentTradingSession(new Date(recent.start.getTime() - 1));
+}
+
+/** True while `now` falls inside a regular NYSE session (09:30–16:00 ET on a trading day). */
+export function isRegularSessionOpen(now: Date = new Date()): boolean {
+  const p = nyParts(now);
+  const minutes = p.hour * 60 + p.minute;
+  return isTradingDay(p) && minutes >= 9 * 60 + 30 && minutes < 16 * 60;
+}
+
 interface NyParts {
   year: number;
   /** 1-indexed month, matching humans (and the `Date` constructor wants 0-indexed). */
@@ -137,10 +155,7 @@ export interface SessionCloseOptions {
  * {@link mostRecentTradingSession}: an order placed the day after Thanksgiving
  * expires ~3h later than the real close. Still bounded, which is what matters.
  */
-export function nextSessionClose(
-  now: Date = new Date(),
-  options: SessionCloseOptions = {},
-): Date {
+export function nextSessionClose(now: Date = new Date(), options: SessionCloseOptions = {}): Date {
   const closeHour = options.includeExtended ? 20 : 16;
   const today = nyParts(now);
   if (isTradingDay(today)) {

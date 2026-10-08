@@ -481,3 +481,46 @@ export const positionHighWater = pgTable(
   },
   (t) => [primaryKey({ columns: [t.gamePlayerId, t.symbol] })],
 );
+
+/**
+ * Market-wide Discover lists, one row per list per NYSE session. Mirrors the
+ * SQLite variant; `items` is JSON-encoded text in both dialects so the service
+ * code stays dialect-neutral.
+ */
+export const discoverMarketMovers = pgTable(
+  'discover_market_movers',
+  {
+    id: text('id')
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    sessionDate: text('session_date').notNull(),
+    kind: text('kind', { enum: ['gainers', 'losers', 'active', 'trending'] }).notNull(),
+    items: text('items').notNull(),
+    fetchedAt: timestamp('fetched_at', { mode: 'string', withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [unique().on(t.sessionDate, t.kind)],
+);
+
+/**
+ * A game's Discover daily picks for one NYSE session. Mirrors the SQLite
+ * variant; `items` is JSON-encoded text.
+ */
+export const gameDiscoverPicks = pgTable(
+  'game_discover_picks',
+  {
+    id: text('id')
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    gameId: text('game_id')
+      .notNull()
+      .references(() => games.id, { onDelete: 'cascade' }),
+    sessionDate: text('session_date').notNull(),
+    items: text('items').notNull(),
+    generatedAt: timestamp('generated_at', { mode: 'string', withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [unique().on(t.gameId, t.sessionDate)],
+);

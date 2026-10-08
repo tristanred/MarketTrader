@@ -1,6 +1,7 @@
 export * from './types/achievement.js';
 export * from './types/admin.js';
 export * from './types/auth.js';
+export * from './types/discover.js';
 export * from './types/featured-game.js';
 export * from './types/game.js';
 export * from './types/leaderboard-history.js';

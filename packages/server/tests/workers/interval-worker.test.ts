@@ -86,4 +86,16 @@ describe('startIntervalWorker', () => {
     expect(caught).toBe(err);
     expect(calls).toBeGreaterThanOrEqual(2);
   });
+
+  it('fires the first tick at start with immediate, and not without it', async () => {
+    const eager = vi.fn(async () => {});
+    const lazy = vi.fn(async () => {});
+    const a = startIntervalWorker('test-immediate', eager, 10_000, undefined, { immediate: true });
+    const b = startIntervalWorker('test-not-immediate', lazy, 10_000);
+    await sleep(5);
+    expect(eager).toHaveBeenCalledTimes(1);
+    expect(lazy).not.toHaveBeenCalled();
+    await a.stop();
+    await b.stop();
+  });
 });

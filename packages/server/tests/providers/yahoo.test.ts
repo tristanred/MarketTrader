@@ -244,3 +244,97 @@ describe('YahooProvider.getHistory', () => {
     ]);
   });
 });
+
+describe('YahooProvider.getMarketMovers', () => {
+  function stubClient(provider: YahooProvider, stubs: Record<string, unknown>) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (provider as any).client = stubs;
+  }
+
+  const equity = (symbol: string, price: number, changePct: number) => ({
+    symbol,
+    shortName: `${symbol} Inc.`,
+    quoteType: 'EQUITY',
+    regularMarketPrice: price,
+    regularMarketChangePercent: changePct,
+  });
+
+  it('maps a screener to items, keeping only tradable equities and capping at count', async () => {
+    const provider = new YahooProvider();
+    const screener = vi.fn().mockResolvedValue({
+      quotes: [
+        equity('AAA', 10, 12.5),
+        { ...equity('SPYX', 50, 9), quoteType: 'ETF' },
+        equity('BBB', 20, 8),
+        { ...equity('CCC', 30, 7), regularMarketPrice: undefined },
+        equity('DDD', 40, 6),
+      ],
+    });
+    stubClient(provider, { screener });
+
+    const items = await provider.getMarketMovers('gainers', 2);
+
+    expect(screener).toHaveBeenCalledWith({ scrIds: 'day_gainers', count: 6 });
+    expect(items).toEqual([
+      { symbol: 'AAA', name: 'AAA Inc.', price: 10, changePct: 12.5 },
+      { symbol: 'BBB', name: 'BBB Inc.', price: 20, changePct: 8 },
+    ]);
+  });
+
+  it('uses the most_actives screener for "active" and day_losers for "losers"', async () => {
+    const provider = new YahooProvider();
+    const screener = vi.fn().mockResolvedValue({ quotes: [] });
+    stubClient(provider, { screener });
+
+    await provider.getMarketMovers('active', 5);
+    await provider.getMarketMovers('losers', 5);
+
+    expect(screener.mock.calls.map((c) => c[0].scrIds)).toEqual(['most_actives', 'day_losers']);
+  });
+
+  it('enriches trending tickers with a quote, dropping non-equities and odd tickers', async () => {
+    const provider = new YahooProvider();
+    stubClient(provider, {
+      trendingSymbols: vi.fn().mockResolvedValue({
+        quotes: [{ symbol: 'ZZZ' }, { symbol: 'BTC-USD' }, { symbol: 'ES=F' }, { symbol: 'AAA' }],
+      }),
+      quote: vi.fn().mockResolvedValue(
+        new Map<string, unknown>([
+          ['AAA', equity('AAA', 10, 1)],
+          ['ZZZ', equity('ZZZ', 5, -2)],
+          ['BTC-USD', { ...equity('BTC-USD', 60000, 3), quoteType: 'CRYPTOCURRENCY' }],
+        ]),
+      ),
+    });
+
+    const items = await provider.getMarketMovers('trending', 5);
+
+    expect(items.map((i) => i.symbol)).toEqual(['ZZZ', 'AAA']);
+  });
+
+  it('recovers a screener result from benign schema drift', async () => {
+    const provider = new YahooProvider();
+    const validationErr = Object.assign(new Error('Failed Yahoo Schema validation'), {
+      name: 'FailedYahooValidationError',
+      result: { quotes: [equity('AAA', 10, 4)] },
+    });
+    stubClient(provider, { screener: vi.fn().mockRejectedValue(validationErr) });
+
+    const items = await provider.getMarketMovers('gainers', 5);
+    expect(items.map((i) => i.symbol)).toEqual(['AAA']);
+  });
+
+  it('maps a 429 to RATE_LIMITED and other failures to PROVIDER_ERROR', async () => {
+    const limited = new YahooProvider();
+    stubClient(limited, { screener: vi.fn().mockRejectedValue(new Error('Too Many Requests')) });
+    await expect(limited.getMarketMovers('gainers', 5)).rejects.toMatchObject({
+      code: 'RATE_LIMITED',
+    });
+
+    const broken = new YahooProvider();
+    stubClient(broken, { trendingSymbols: vi.fn().mockRejectedValue(new Error('boom')) });
+    await expect(broken.getMarketMovers('trending', 5)).rejects.toMatchObject({
+      code: 'PROVIDER_ERROR',
+    });
+  });
+});

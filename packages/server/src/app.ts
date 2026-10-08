@@ -17,6 +17,7 @@ import { stockRoutes } from './routes/stocks.js';
 import { tradingRoutes } from './routes/trading.js';
 import { marketStatusRoutes } from './routes/market-status.js';
 import { watchlistRoutes } from './routes/watchlists.js';
+import { discoverRoutes } from './routes/discover.js';
 import { adminRoutes } from './routes/admin/index.js';
 import { registerAdminGuard } from './plugins/admin-guard.js';
 import { SystemSettingsService } from './services/system-settings.js';
@@ -38,6 +39,7 @@ import { startWsHeartbeat } from './ws/heartbeat.js';
 import { startPricePoller } from './ws/price-poller.js';
 import { startPendingOrdersWorker } from './workers/pending-orders.js';
 import { startPortfolioSnapshotWorker } from './workers/portfolio-snapshot.js';
+import { startDiscoverWorker } from './workers/discover.js';
 import { attachErrorCapture } from './observability/error-capture.js';
 import { registerOtel } from './plugins/otel.js';
 import { EventBus } from './events/bus.js';
@@ -147,6 +149,7 @@ export async function buildApp(
   );
   await app.register(marketStatusRoutes(marketStatusProvider));
   await app.register(watchlistRoutes(db));
+  await app.register(discoverRoutes(db));
   await app.register(systemSettingsRoutes(systemSettings));
   await app.register(achievementsRoutes(db, achievementEngine));
   await registerAdminGuard(app, db);
@@ -195,6 +198,11 @@ export async function buildApp(
     });
     app.addHook('onClose', async () => {
       await snapshotWorker.stop();
+    });
+
+    const discoverWorker = startDiscoverWorker({ db, provider, logger: app.log });
+    app.addHook('onClose', async () => {
+      await discoverWorker.stop();
     });
 
     // Engine tick: feeds time-based achievements without external triggers.

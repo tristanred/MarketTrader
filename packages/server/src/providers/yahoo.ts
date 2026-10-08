@@ -1,5 +1,7 @@
 import YahooFinance from 'yahoo-finance2';
 import type {
+  DiscoverItem,
+  MarketMoverKind,
   MarketState,
   StockDetails,
   StockHistoryBar,
@@ -25,6 +27,19 @@ import type { StockProvider } from './interface.js';
 import { StockProviderError } from './interface.js';
 import { env } from '../env.js';
 import { mostRecentTradingSession } from '../services/market-calendar.js';
+import { isTradableSymbol } from '../services/symbol.js';
+
+const SCREENER_IDS = {
+  gainers: 'day_gainers',
+  losers: 'day_losers',
+  active: 'most_actives',
+} as const;
+
+/**
+ * Over-fetch factor for market-mover lists: Yahoo's lists mix in ETFs, ADRs
+ * with odd tickers, futures and crypto, which are filtered out afterwards.
+ */
+const MOVERS_OVERFETCH = 3;
 
 /**
  * Maps the public range key to a (lookback, interval) pair for the Yahoo chart
@@ -56,8 +71,9 @@ function is429(err: unknown): boolean {
  * it to keep benign schema drift from failing the call. Returns `undefined` for
  * any other error so the caller maps it through the normal error path.
  *
- * Scoped to `searchSymbols` deliberately: recovering an unvalidated `getQuote`
- * payload could feed a subtly-wrong price into trade execution (business rule #1).
+ * Scoped to display-only calls (`searchSymbols`, `getMarketMovers`) deliberately:
+ * recovering an unvalidated `getQuote` payload could feed a subtly-wrong price
+ * into trade execution (business rule #1).
  */
 function recoverYahooValidationResult(err: unknown): unknown {
   if (
@@ -348,4 +364,100 @@ export class YahooProvider implements StockProvider {
       name: q.shortname ?? q.longname ?? q.symbol,
     }));
   }
+
+  async getMarketMovers(kind: MarketMoverKind, count: number): Promise<DiscoverItem[]> {
+    this.throwIfRateLimited();
+    const rows =
+      kind === 'trending' ? await this.trendingRows(count) : await this.screenerRows(kind, count);
+    return rows.flatMap(toDiscoverItem).slice(0, count);
+  }
+
+  private async screenerRows(
+    kind: Exclude<MarketMoverKind, 'trending'>,
+    count: number,
+  ): Promise<unknown[]> {
+    let result: { quotes?: unknown };
+    try {
+      result = await this.client.screener({
+        scrIds: SCREENER_IDS[kind],
+        count: count * MOVERS_OVERFETCH,
+      });
+    } catch (err) {
+      if (is429(err)) this.trip429();
+      const recovered = recoverYahooValidationResult(err);
+      if (recovered === undefined) {
+        throw new StockProviderError('PROVIDER_ERROR', `Yahoo Finance screener failed for ${kind}`);
+      }
+      result = recovered as { quotes?: unknown };
+    }
+    return Array.isArray(result?.quotes) ? (result.quotes as unknown[]) : [];
+  }
+
+  /** Trending only returns tickers, so a batch quote supplies name, price, and type. */
+  private async trendingRows(count: number): Promise<unknown[]> {
+    let symbols: string[];
+    try {
+      const result = await this.client.trendingSymbols('US', { count: count * MOVERS_OVERFETCH });
+      symbols = result.quotes.map((q) => q.symbol);
+    } catch (err) {
+      if (is429(err)) this.trip429();
+      const recovered = recoverYahooValidationResult(err) as { quotes?: unknown } | undefined;
+      if (recovered === undefined) {
+        throw new StockProviderError('PROVIDER_ERROR', 'Yahoo Finance trending symbols failed');
+      }
+      symbols = (Array.isArray(recovered.quotes) ? recovered.quotes : [])
+        .map((q: unknown) => (q as { symbol?: unknown }).symbol)
+        .filter((sym): sym is string => typeof sym === 'string');
+    }
+    const candidates = symbols.filter(isTradableSymbol);
+    if (candidates.length === 0) return [];
+
+    let rows: Map<string, unknown>;
+    try {
+      rows = await this.client.quote(candidates, {
+        return: 'map',
+        fields: [
+          'symbol',
+          'shortName',
+          'longName',
+          'quoteType',
+          'regularMarketPrice',
+          'regularMarketChangePercent',
+        ],
+      });
+    } catch (err) {
+      if (is429(err)) this.trip429();
+      const recovered = recoverYahooValidationResult(err);
+      if (!(recovered instanceof Map)) {
+        throw new StockProviderError('PROVIDER_ERROR', 'Yahoo Finance trending quotes failed');
+      }
+      rows = recovered as Map<string, unknown>;
+    }
+    // Keep Yahoo's trending order rather than the map's.
+    return candidates.map((sym) => rows.get(sym)).filter((row) => row != null);
+  }
+}
+
+/**
+ * Narrows one Yahoo quote-shaped row (screener or quote) to a Discover item.
+ * Returns `[]` for anything that isn't a tradable equity with a price, so it
+ * can be used with `flatMap`.
+ */
+function toDiscoverItem(raw: unknown): DiscoverItem[] {
+  if (!raw || typeof raw !== 'object') return [];
+  const row = raw as Record<string, unknown>;
+  const symbol = row.symbol;
+  if (typeof symbol !== 'string' || !isTradableSymbol(symbol)) return [];
+  if (row.quoteType !== 'EQUITY') return [];
+  if (typeof row.regularMarketPrice !== 'number') return [];
+  const name = row.shortName ?? row.longName;
+  return [
+    {
+      symbol,
+      name: typeof name === 'string' ? name : null,
+      price: row.regularMarketPrice,
+      changePct:
+        typeof row.regularMarketChangePercent === 'number' ? row.regularMarketChangePercent : null,
+    },
+  ];
 }

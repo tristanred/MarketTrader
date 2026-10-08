@@ -38,6 +38,10 @@ vi.mock('@/api/games', async () => {
   };
 });
 
+vi.mock('@/api/discover', () => ({
+  useDiscover: () => ({ data: { status: 'preparing' }, isLoading: false, isError: false }),
+}));
+
 vi.mock('@/api/trades', () => ({
   usePortfolio: () => ({
     data: {

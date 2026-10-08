@@ -21,13 +21,13 @@ import {
   OhlcStrip,
   HoldingsPanel,
   WatchlistPanel,
+  DiscoverPanel,
   ActivityPanel,
   SymbolSearchPanel,
 } from '@/components/game/arena';
 import { JoinGameCard } from '@/components/game/arena/JoinGameCard';
 import { OpenOrdersList } from '@/components/OpenOrdersList';
-import { TradeOrderDialog } from '@/components/TradeOrderDialog';
-import { QuoteInfoDialog } from '@/components/QuoteInfoDialog';
+import { GameTradeDialogs } from '@/components/GameTradeDialogs';
 import { useQuoteDialogStore } from '@/stores/quoteDialogStore';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ApiError } from '@/lib/api';
@@ -164,23 +164,8 @@ function ArenaBody({
     return () => setArenaSelect(null);
   }, [setSelectedSymbol]);
 
-  // The trade/quote dialogs live in a global store so chrome (ticker tape,
-  // status strip) can open them. Reset on unmount so a leftover open state
-  // doesn't follow the user to another game or out of arena.
-  useEffect(() => {
-    return () => {
-      const s = useQuoteDialogStore.getState();
-      s.closeTradeOrder();
-      s.closeQuote();
-    };
-  }, []);
   const user = useAuthStore((s) => s.user);
-  const quoteDialog = useQuoteDialogStore();
   const openTradeOrder = useQuoteDialogStore((s) => s.openTradeOrder);
-  const closeTradeOrder = useQuoteDialogStore((s) => s.closeTradeOrder);
-  const tradeOrderOpen = useQuoteDialogStore((s) => s.tradeOrderOpen);
-  const tradeOrderSymbol = useQuoteDialogStore((s) => s.tradeOrderSymbol);
-  const tradeOrderDirection = useQuoteDialogStore((s) => s.tradeOrderDirection);
 
   // Watchlist rows: only the symbol; each row subscribes to its own live
   // price inside <WatchlistPanel> so a tick on one symbol doesn't
@@ -349,6 +334,7 @@ function ArenaBody({
 
       <aside className="flex min-w-0 flex-col gap-2">
         <SymbolSearchPanel onSelect={setSelectedSymbol} className="hidden lg:block" />
+        <DiscoverPanel gameId={gameId} onSelect={setSelectedSymbol} />
         <WatchlistPanel
           rows={watchlistRows}
           onSelect={setSelectedSymbol}
@@ -359,39 +345,14 @@ function ArenaBody({
         <ActivityPanel events={activityEvents} />
       </aside>
 
-      <QuoteInfoDialog
-        open={quoteDialog.open}
-        symbol={quoteDialog.symbol}
+      {/* The dialogs live in a global store so chrome (ticker tape, status
+          strip) can open them. Trading from the quote modal pivots the arena
+          to that ticker — the modal lets players jump symbols mid-quote. */}
+      <GameTradeDialogs
         gameId={gameId}
-        onOpenChange={(open) => {
-          if (!open) quoteDialog.closeQuote();
-        }}
-        onTradeClick={(s) => {
-          // QuoteInfoDialog auto-closes after this handler; pivot the
-          // arena's selected symbol to whichever ticker the user clicked
-          // Trade on (the modal lets them jump symbols mid-quote) so
-          // TradeOrderDialog opens for the right one.
-          setSelectedSymbol(s);
-          openTradeOrder(s, 'buy');
-        }}
-      />
-      <TradeOrderDialog
-        open={tradeOrderOpen}
-        initialSymbol={tradeOrderSymbol ?? selectedSymbol}
-        initialDirection={tradeOrderDirection}
-        gameId={gameId}
-        allowShortSelling={gameData.allowShortSelling ?? false}
-        allowLimitOrders={gameData.allowLimitOrders ?? false}
-        allowStopOrders={gameData.allowStopOrders ?? false}
-        allowBracketOrders={gameData.allowBracketOrders ?? false}
-        allowGTC={gameData.allowGTC ?? false}
-        onOpenChange={(open) => {
-          if (!open) closeTradeOrder();
-        }}
-        onSeeQuote={(s) => {
-          closeTradeOrder();
-          quoteDialog.openQuote(s);
-        }}
+        game={gameData}
+        fallbackSymbol={selectedSymbol}
+        onTradeSymbol={setSelectedSymbol}
       />
     </main>
   );

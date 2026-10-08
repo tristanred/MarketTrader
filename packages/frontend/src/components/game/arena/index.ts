@@ -7,3 +7,4 @@ export { HoldingsPanel, type HoldingRow, type HoldingsPanelProps } from './Holdi
 export { SymbolSearchPanel, type SymbolSearchPanelProps } from './SymbolSearchPanel';
 export { WatchlistPanel, type WatchlistRow, type WatchlistPanelProps } from './WatchlistPanel';
 export { ActivityPanel, type ActivityEvent, type ActivityPanelProps } from './ActivityPanel';
+export { DiscoverPanel, type DiscoverPanelProps } from './DiscoverPanel';

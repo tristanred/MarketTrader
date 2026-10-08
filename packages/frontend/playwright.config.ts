@@ -39,6 +39,8 @@ export default defineConfig({
         STOCK_PROVIDER: 'mock',
         MARKET_STATUS_PROVIDER: 'static',
         MARKET_HOURS_MODE: 'instant',
+        // Fast Discover worker so a freshly created game gets its list within a test.
+        DISCOVER_REFRESH_INTERVAL_MS: '1000',
       },
     },
     {

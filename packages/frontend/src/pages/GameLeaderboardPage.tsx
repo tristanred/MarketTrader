@@ -9,6 +9,7 @@ import { PortfolioRaceChart } from '@/components/leaderboard/PortfolioRaceChart'
 import { Podium } from '@/components/leaderboard/Podium';
 import { StandingsTable } from '@/components/leaderboard/StandingsTable';
 import { analyseHistory } from '@/components/leaderboard/analyse-history';
+import { GameCrumb } from '@/components/GameCrumb';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ApiError } from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -58,7 +59,7 @@ export function GameLeaderboardPage() {
   return (
     <main className="mx-auto grid w-full max-w-[1640px] grid-cols-1 gap-3 p-3 lg:grid-cols-[1fr_340px]">
       <div className="flex flex-col gap-3">
-        <Crumb gameId={gameId} gameName={gameData.name} />
+        <GameCrumb gameId={gameId} gameName={gameData.name} current="Leaderboard" />
 
         <header>
           <h1 className="text-[22px] font-semibold tracking-tight text-text-strong">
@@ -106,25 +107,6 @@ export function GameLeaderboardPage() {
         <RaceHighlightsPanel highlights={highlights} />
       </aside>
     </main>
-  );
-}
-
-function Crumb({ gameId, gameName }: { gameId: string; gameName: string }) {
-  return (
-    <nav
-      aria-label="Breadcrumb"
-      className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.14em] text-muted"
-    >
-      <Link to="/" className="hover:text-text">
-        Games
-      </Link>
-      <span className="text-hairline-strong">/</span>
-      <Link to={`/games/${gameId}`} className="hover:text-text">
-        {gameName}
-      </Link>
-      <span className="text-hairline-strong">/</span>
-      <span className="text-text">Leaderboard</span>
-    </nav>
   );
 }
 

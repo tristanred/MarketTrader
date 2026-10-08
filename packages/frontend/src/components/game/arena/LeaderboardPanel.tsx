@@ -34,7 +34,8 @@ const RANGE_OPTIONS: { key: LeaderboardHistoryRange; label: string }[] = [
   { key: 'all', label: 'ALL' },
 ];
 
-const VISIBLE_ROWS = 10;
+// Kept short so the selected-symbol blocks below keep most of the column.
+const VISIBLE_ROWS = 5;
 const SPARKLINE_MAX_POINTS = 60;
 
 /**
@@ -50,9 +51,9 @@ const SPARKLINE_MAX_POINTS = 60;
  */
 const ROW_GRID = cn(
   'grid items-center gap-2 sm:gap-3',
-  'grid-cols-[24px_minmax(0,1fr)_auto_auto_14px]',
-  'sm:grid-cols-[28px_minmax(0,1fr)_100px_70px_70px_18px]',
-  'lg:grid-cols-[28px_minmax(0,1.4fr)_minmax(0,1fr)_100px_70px_70px_18px]',
+  'grid-cols-[24px_minmax(0,1fr)_auto_auto]',
+  'sm:grid-cols-[28px_minmax(0,1fr)_100px_70px_70px]',
+  'lg:grid-cols-[28px_minmax(0,1.4fr)_minmax(0,1fr)_100px_70px_70px]',
 );
 
 /** Cells that drop out on narrow viewports. Order must match {@link ROW_GRID}. */
@@ -60,7 +61,7 @@ const TREND_CELL = 'hidden lg:block';
 const DELTA_CELL = 'hidden sm:block';
 
 /**
- * Centre-column leaderboard. Defaults to showing the top 10 with the current
+ * Centre-column leaderboard. Defaults to showing the top {@link VISIBLE_ROWS} with the current
  * user pinned to the top regardless of rank. An expand widget at the foot
  * reveals the full field. Each row carries a 240×24 sparkline derived from
  * `GET /games/:id/leaderboard/history`. Sparklines refresh automatically on
@@ -228,7 +229,6 @@ function ColumnHeader() {
       <span className="text-right">Value</span>
       <span className="text-right">P&amp;L</span>
       <span className={cn(DELTA_CELL, 'text-right')}>Δ24h</span>
-      <span />
     </div>
   );
 }
@@ -278,7 +278,6 @@ function PinnedYouRow({
       <span className={cn(DELTA_CELL, 'text-right font-mono text-xs', toneClass(d24))}>
         {d24 == null ? '—' : formatPnl(d24)}
       </span>
-      <span className="text-right text-muted">›</span>
     </div>
   );
 }
@@ -332,7 +331,6 @@ const LeaderboardRow = memo(function LeaderboardRow({
       <span className={cn(DELTA_CELL, 'text-right font-mono text-[11px]', d24 == null ? 'text-muted' : toneClass(d24))}>
         {d24 == null ? '—' : formatPnl(d24)}
       </span>
-      <span className="text-right text-muted">›</span>
     </li>
   );
 });
@@ -351,7 +349,7 @@ function ExpandFooter({
   onToggle: () => void;
 }) {
   // When collapsed: name where the user is in the hidden tail.
-  // When expanded: explicit "show top 10" affordance.
+  // When expanded: explicit "collapse to top N" affordance.
   const label = expanded
     ? `Collapse to top ${VISIBLE_ROWS}`
     : `Show all ${hiddenCount + VISIBLE_ROWS} players`;

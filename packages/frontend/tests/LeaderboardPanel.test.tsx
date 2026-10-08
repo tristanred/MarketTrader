@@ -92,7 +92,7 @@ describe('LeaderboardPanel', () => {
     const button = screen.getByRole('button', { name: /show all 30 players/i });
     expect(button.getAttribute('aria-expanded')).toBe('false');
     fireEvent.click(button);
-    expect(screen.getByRole('button', { name: /collapse to top 10/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /collapse to top 5/i })).toBeInTheDocument();
   });
 
   it('renders a LIVE indicator and a Full view link', () => {

@@ -56,12 +56,21 @@ export interface StockSearchResult {
 /** Time ranges supported by the history endpoint. */
 export type StockHistoryRange = '1d' | '5d' | '1mo' | '3mo' | '6mo' | '1y';
 
-/** A single historical bar — close-only is enough for a line chart. */
+/**
+ * A single historical bar. `open`/`high`/`low`/`volume` are optional so a
+ * provider that only has closes still yields a line chart; consumers fall
+ * back to `close` when drawing candles.
+ */
 export interface StockHistoryBar {
   /** Unix epoch seconds — what lightweight-charts expects as its `time` key. */
   time: number;
+  open?: number;
+  high?: number;
+  low?: number;
   /** Close price for the bar. */
   close: number;
+  /** Shares traded during the bar. */
+  volume?: number;
 }
 
 /** Response body for GET /stocks/:symbol/history. */
@@ -69,6 +78,8 @@ export interface StockHistoryResponse {
   symbol: string;
   range: StockHistoryRange;
   bars: StockHistoryBar[];
+  /** Nominal width of one bar in seconds (e.g. 300 for 5-minute bars). */
+  barSeconds: number;
   /** ISO 8601 timestamp of when the upstream returned this series. */
   fetchedAt: string;
 }

@@ -5,8 +5,10 @@ import { MemoryRouter } from 'react-router-dom';
 import type React from 'react';
 
 vi.mock('@/components/StockChart', () => ({
-  StockChart: ({ symbols }: { symbols: string[] }) => (
-    <div data-testid="stockchart">{symbols.join(',') || '(none)'}</div>
+  StockChart: ({ symbols, gameId }: { symbols: string[]; gameId?: string }) => (
+    <div data-testid="stockchart" data-game-id={gameId ?? ''}>
+      {symbols.join(',') || '(none)'}
+    </div>
   ),
 }));
 
@@ -21,6 +23,11 @@ describe('ChartPanel', () => {
   it('renders the StockChart with the given symbol when present', () => {
     render(wrap(<ChartPanel symbol="AAPL" />));
     expect(screen.getByTestId('stockchart')).toHaveTextContent('AAPL');
+  });
+
+  it('forwards gameId so the chart can overlay the viewer\'s trades', () => {
+    render(wrap(<ChartPanel symbol="AAPL" gameId="g1" />));
+    expect(screen.getByTestId('stockchart')).toHaveAttribute('data-game-id', 'g1');
   });
 
   it('renders an empty-state when symbol is null', () => {

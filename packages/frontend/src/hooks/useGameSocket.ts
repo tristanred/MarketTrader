@@ -45,6 +45,9 @@ export function useGameSocket(gameId: string, symbols: string[], myGamePlayerId:
   const { handle: handleAchievementUnlock } = useAchievementUnlockStream(gameId, myGamePlayerId);
   const handleAchievementUnlockRef = useRef(handleAchievementUnlock);
   handleAchievementUnlockRef.current = handleAchievementUnlock;
+  const myUserId = useAuthStore((s) => s.user?.id ?? null);
+  const myUserIdRef = useRef(myUserId);
+  myUserIdRef.current = myUserId;
 
   const wsRef = useRef<WebSocket | null>(null);
   const symbolsRef = useRef<string[]>(symbols);
@@ -105,6 +108,13 @@ export function useGameSocket(gameId: string, symbols: string[], myGamePlayerId:
             // A working order may have just flipped to executed — refresh.
             void qcRef.current.invalidateQueries({ queryKey: tradeKeys.working(gameId) });
             void qcRef.current.invalidateQueries({ queryKey: tradeKeys.pending(gameId) });
+            // `playerId` here is a user id. Our own fill — including a resting
+            // order the settler just filled — needs a chart marker and a fresh
+            // avg-cost line.
+            if (parsed.data.playerId === myUserIdRef.current) {
+              void qcRef.current.invalidateQueries({ queryKey: tradeKeys.history(gameId), exact: true });
+              void qcRef.current.invalidateQueries({ queryKey: tradeKeys.portfolio(gameId) });
+            }
           } else if (parsed.event === 'order_placed') {
             void qcRef.current.invalidateQueries({ queryKey: tradeKeys.working(gameId) });
           } else if (parsed.event === 'order_cancelled') {

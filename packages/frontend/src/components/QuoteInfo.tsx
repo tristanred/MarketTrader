@@ -188,7 +188,7 @@ export function QuoteInfo({
             </Button>
           ))}
         </div>
-        <ChartCanvas symbol={symbol} range={range} />
+        <ChartCanvas symbol={symbol} range={range} gameId={gameId} />
       </div>
 
       {holding && <PositionCard holding={holding} />}

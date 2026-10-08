@@ -166,6 +166,7 @@ function ArenaBody({
 
   const user = useAuthStore((s) => s.user);
   const openTradeOrder = useQuoteDialogStore((s) => s.openTradeOrder);
+  const openQuote = useQuoteDialogStore((s) => s.openQuote);
 
   // Watchlist rows: only the symbol; each row subscribes to its own live
   // price inside <WatchlistPanel> so a tick on one symbol doesn't
@@ -324,7 +325,10 @@ function ArenaBody({
           symbol={selectedSymbol}
           {...quoteData}
           {...(selectedSymbol
-            ? { onTrade: (direction: TradeDirection) => openTradeOrder(selectedSymbol, direction) }
+            ? {
+                onTrade: (direction: TradeDirection) => openTradeOrder(selectedSymbol, direction),
+                onOpenQuote: () => openQuote(selectedSymbol),
+              }
             : {})}
         />
         <ChartPanel symbol={selectedSymbol} gameId={gameId} />

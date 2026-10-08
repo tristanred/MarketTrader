@@ -4,6 +4,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import { useAuthStore } from '@/stores/authStore';
+import { useQuoteDialogStore } from '@/stores/quoteDialogStore';
 
 vi.mock('@/api/games', async () => {
   const actual = await vi.importActual<typeof import('@/api/games')>('@/api/games');
@@ -117,6 +118,9 @@ vi.mock('@/components/StockChart', () => ({
   StockChart: ({ symbols }: { symbols: string[] }) => (
     <div data-testid="stockchart">chart-{symbols.join(',') || 'none'}</div>
   ),
+  // Used by the quote window, which opens from the quote strip's ticker.
+  ChartCanvas: () => null,
+  RANGES: [],
 }));
 
 import { GameDetailPage } from '@/pages/GameDetailPage';
@@ -180,6 +184,13 @@ describe('GameDetailPage', () => {
     // bubbles to the row button's onSelect handler.
     await user.click(screen.getAllByText('NVDA')[0]!);
     expect(screen.getByTestId('stockchart')).toHaveTextContent('chart-NVDA');
+  });
+
+  it('opens the quote window from the selected ticker in the quote strip', async () => {
+    const user = userEvent.setup();
+    render(wrap());
+    await user.click(screen.getByRole('button', { name: 'AAPL details' }));
+    expect(useQuoteDialogStore.getState()).toMatchObject({ open: true, symbol: 'AAPL' });
   });
 
   it('marks the current user row in the leaderboard', () => {

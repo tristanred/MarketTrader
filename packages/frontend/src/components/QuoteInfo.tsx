@@ -188,7 +188,9 @@ export function QuoteInfo({
             </Button>
           ))}
         </div>
-        <ChartCanvas symbol={symbol} range={range} gameId={gameId} />
+        {/* The quote view scrolls (a capped dialog, or the symbol page), so the
+            wheel must reach it rather than zoom the chart. */}
+        <ChartCanvas symbol={symbol} range={range} gameId={gameId} wheelZoom={false} />
       </div>
 
       {holding && <PositionCard holding={holding} />}

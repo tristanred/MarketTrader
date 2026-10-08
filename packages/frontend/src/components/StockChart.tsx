@@ -128,15 +128,19 @@ const CHART_TYPES: { key: ChartType; label: string }[] = [
  * Price chart for one symbol and range: line, area or candlesticks, with an
  * optional volume pane. When `gameId` is given, the viewer's fills are drawn as
  * buy/sell markers and their average cost as a dashed price line.
+ * `wheelZoom={false}` leaves the mouse wheel to the surrounding scroll
+ * container (drag and pinch still pan and zoom).
  */
 export function ChartCanvas({
   symbol,
   range,
   gameId,
+  wheelZoom = true,
 }: {
   symbol: string;
   range: StockHistoryRange;
   gameId?: string | undefined;
+  wheelZoom?: boolean;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -182,6 +186,8 @@ export function ChartCanvas({
       grid: { vertLines: { color: '#2a2a2a33' }, horzLines: { color: '#2a2a2a33' } },
       // rightOffset keeps labels on markers at the newest bar (fresh fills) readable.
       timeScale: { timeVisible: true, secondsVisible: true, rightOffset: 4 },
+      handleScroll: { mouseWheel: wheelZoom },
+      handleScale: { mouseWheel: wheelZoom },
     });
     chartRef.current = chart;
 
@@ -196,7 +202,16 @@ export function ChartCanvas({
       chart.remove();
       chartRef.current = null;
     };
+    // wheelZoom only seeds the options; the effect below keeps it in sync
+    // without tearing down the chart.
   }, []);
+
+  useEffect(() => {
+    chartRef.current?.applyOptions({
+      handleScroll: { mouseWheel: wheelZoom },
+      handleScale: { mouseWheel: wheelZoom },
+    });
+  }, [wheelZoom]);
 
   // Rebuild the main series on chart-type or history change. Declared before
   // the tick effect so a symbol switch resets the tail refs before new ticks

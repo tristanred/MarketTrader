@@ -347,7 +347,7 @@ export function TradeOrderDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[680px] p-0 gap-0 overflow-hidden">
+      <DialogContent className="sm:max-w-[680px] p-0 gap-0 overflow-hidden flex flex-col">
         <DialogHeader className="sr-only">
           <DialogTitle>Trade Order</DialogTitle>
         </DialogHeader>
@@ -396,7 +396,9 @@ export function TradeOrderDialog({
           </div>
         )}
 
-        <div className="max-h-[70dvh] overflow-y-auto px-6 py-5 space-y-5">
+        {/* Takes whatever height the capped dialog leaves, so the symbol header
+            above and the order footer below stay pinned on short screens. */}
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5 space-y-5">
           {/* Symbol search — only shown when no symbol is selected yet */}
           {!activeSymbol && (
             <div className="relative">

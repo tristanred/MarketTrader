@@ -129,7 +129,8 @@ preference.
 - **Manual spans** — `trade.execute` (`services/trade.ts`), `provider.*`
   (`providers/cached-provider.ts`), `worker.tick` (`workers/interval-worker.ts`). Every
   background loop routes through `startIntervalWorker`, so instrumenting it once covers the price
-  poller, the pending-orders settler, and the portfolio-snapshot worker.
+  poller, the pending-orders settler, the portfolio-snapshot worker, and the Discover worker
+  (`worker=discover`; its provider calls appear as `operation=getMarketMovers`).
 - **Not instrumented: the database.** There is no OTel instrumentation for `postgres`
   (postgres.js) or `@libsql/client`, and `instrumentation-pg` targets `pg`, which this project
   does not use. The manual spans above cover the hot paths instead.

@@ -1,7 +1,7 @@
 # Discover — Design Spec
 
 **Date:** 2026-10-07
-**Status:** Approved (brainstorming + plan review) — implementing
+**Status:** Implemented on `feat/discover` — see §Implementation notes for deviations
 **Author:** Tristan (with Claude Code)
 
 ---
@@ -30,7 +30,7 @@ Players tend to trade the handful of tickers they already know. **Discover** sho
 | D2 | **Entry points.** A "Discover" link in `AppHeader` on game pages, beside Achievements. An arena right-rail teaser panel with 3 items and a "See all ↗" chip. The page lives at `/games/:gameId/discover`. |
 | D3 | **Rollover after market close.** The list key is the date of the **last completed** trading session. A list stays fixed through the next trading day, and weekends and holidays keep the last session's list. |
 | D4 | **Background generation only.** An interval worker generates everything. `GET /games/:id/discover` makes no provider calls. It returns the newest stored list, flagged by `sessionDate`, or an empty "being prepared" state. |
-| D5 | **No live prices on the page.** Each item stores price and change % from generation time, shown as "as of Mon close". Opening a row uses the existing quote dialog, which fetches live. Discover symbols never join the price poller or the game socket. |
+| D5 | **No live prices on the page.** Each item stores price and change % from generation time, and the page stamps that time ("Prices as of Tue, 4:05 PM EDT") — a game created mid-session gets intraday prices, so "as of the close" would be wrong. Opening a row uses the existing quote dialog, which fetches live. Discover symbols never join the price poller or the game socket. |
 | D6 | **Movers are fetched only between the close and the next open.** Yahoo's screeners always describe the trading day *in progress*. A fetch at 10:00 ET Tuesday would return Tuesday's first-30-minute movers, stored as "Monday's close", which would be wrong. So the worker fetches movers in the window from 16:00 ET until the next 09:30 open, which in practice means the first tick after the close (~16:05). If the server is down for the entire window, that day's movers are skipped and the daily picks still appear. |
 | D7 | **Each movers list fails on its own.** A failed Yahoo call doesn't block the other lists, and a missing list is retried on later ticks within the window. A failure is never stored as an empty list. |
 | D8 | **Game status.** Pending and active games get lists. Ended games get no new lists: the page shows a "game over" empty state and the teaser is hidden. |
@@ -56,7 +56,7 @@ type DiscoverResponse = { status: 'ready'; list: DiscoverList } | { status: 'pre
    - **Mock** (`providers/mock.ts`): deterministic lists.
    - **CachedProvider**: pass through via `upstream()` to get the span and metrics. No cache layer is needed because results are persisted.
 3. **S&P 500 universe.** `services/discover/sp500.ts` is a checked-in constant of all ~503 S&P 500 constituents as `{ symbol, name, sector }`, with a header comment giving the as-of date. There is no provider API for index membership, so the list is refreshed by hand when it drifts; record that in `docs/design.md` under Known Gaps. Normalize symbols to Yahoo form (`BRK.B` becomes `BRK-B`). `services/discover/picks.ts` hashes `gameId:sessionDate` into a seeded PRNG (mulberry32) and samples 20 symbols without replacement. The function is pure and deterministic.
-4. **Schema.** Add both tables to both `schema.sqlite.ts` and `schema.pg.ts`, with a table comment each. JSON payload is stored as `text` in SQLite (like `system_settings.value`) and as `jsonb` in Postgres.
+4. **Schema.** Add both tables to both `schema.sqlite.ts` and `schema.pg.ts`, with a table comment each. JSON payload is stored as `text` in **both** dialects (like `system_settings.value`) — see Implementation notes.
    - `discover_market_movers`: `(sessionDate, kind)` unique, `items`, `fetchedAt`. Global, one row per movers list per day.
    - `game_discover_picks`: `gameId` FK with `onDelete: cascade`, `(gameId, sessionDate)` unique, `items`, `generatedAt`.
    - Generate migrations with `pnpm --filter server db:generate` for both dialects. Never hand-edit them.
@@ -136,3 +136,29 @@ type DiscoverResponse = { status: 'ready'; list: DiscoverList } | { status: 'pre
 - Admin controls over the universe.
 - Alpaca movers.
 - Per-user personalisation and "add to watchlist" from Discover.
+
+## Implementation notes
+
+Where the build deliberately differs from the plan above:
+
+- **`items` is `text`, not `jsonb`, on Postgres.** Every query runs through the
+  SQLite table objects (`db/index.ts` exports `schema = sqliteSchema` for both
+  drivers), so a `jsonb` column would come back pre-parsed on Postgres and as a
+  string on SQLite. The blob is always read and written whole by key, so `jsonb`'s
+  query operators and indexes would go unused.
+- **Timestamps are written explicitly** (`new Date().toISOString()`) rather than
+  by column default, so SQLite stores ISO strings; Postgres's
+  `YYYY-MM-DD HH:MM:SS+00` read-back is normalised in `getDiscoverForGame`.
+- **`startIntervalWorker` gained `{ immediate: true }`.** Without it a restart
+  leaves every game on "preparing" for a full interval.
+- **The route judges `ended` from `endDate` as well as `status`**, without calling
+  `recomputeGameStatus`: the stored status can lag, and recomputing would run the
+  game-end side effects from a read endpoint.
+- **Frontend polls every 60 s while `preparing`**, every 15 min otherwise (the
+  endpoint is a DB read, so polling is cheap).
+- **Page design:** the picks render as a heat grid (tile tint = direction and size
+  of the move, capped at ±5%) with sector filter chips instead of sector
+  headings — 20 picks across 11 sectors made for tiny groups. Movers are compact
+  ranked panels captioned with their session date.
+- **Refactors:** `GameTradeDialogs` (quote + trade dialogs, shared by the arena
+  and Discover) and `GameCrumb` (shared with the leaderboard page) were extracted.

@@ -60,6 +60,8 @@ See the spec for full schema. Summary:
 | `Trade` | Immutable log of every buy/sell executed |
 | `StockPriceCache` | Short-lived cache of fetched stock prices |
 | `Watchlist` / `WatchlistItem` | User-owned symbol lists, global to the user rather than scoped to a game |
+| `DiscoverMarketMovers` | One market-wide Discover list (gainers, losers, most active, trending) per NYSE session, shared by every game |
+| `GameDiscoverPicks` | A game's 20 Discover daily picks for one NYSE session |
 
 `Game` carries two discoverability fields:
 
@@ -100,6 +102,37 @@ watchlist panel.
   (`mt:note-size`), clamped to the viewport on read so a size stored on a wide
   monitor cannot open off-screen on a phone. Where it was dragged *to* is not
   remembered — each note re-anchors to its own row.
+
+### Discover
+
+A per-game page (`/games/:gameId/discover`) of stocks to consider trading, so
+players look past the handful of tickers they already know. Reached from a
+Discover link in the top nav on game pages and from a three-row teaser panel in
+the arena's right rail. Full design: `docs/superpowers/specs/2026-10-07-discover-design.md`.
+
+- Two kinds of content. **Daily picks** are 20 S&P 500 constituents sampled per
+  game per session, seeded by `gameId:sessionDate` so each game gets its own
+  draw (`services/discover/picks.ts`). **Market movers** are four lists of 5
+  (top gainers, top losers, most active, trending) from the provider's optional
+  `getMarketMovers`; they describe the whole market, so they are stored once per
+  session and shared by every game. Alpaca has no implementation, so its games
+  show daily picks only.
+- A list is keyed on the **last completed** NYSE session
+  (`lastCompletedTradingSession`), so it rolls over after the 16:00 ET close and
+  holds through the next trading day, weekends and holidays included.
+- Only the Discover worker (`workers/discover.ts`, every
+  `DISCOVER_REFRESH_INTERVAL_MS`, first tick at boot) produces lists.
+  `GET /games/:id/discover` reads stored rows and never calls the provider; it
+  answers `preparing` until the worker has run for a new game, and `ended` once
+  the game is over (404 for non-members, like every game route).
+- Movers are fetched only while no regular session is open: Yahoo's screeners
+  describe the day in progress, which would otherwise be stored as the previous
+  close. Each list is fetched on its own, and a failed or empty one leaves no
+  row, so a later tick retries it rather than locking in a gap for the day.
+- Prices are a snapshot taken at generation, not live — the page says when.
+  Discover symbols never join the price poller or the game socket, so the
+  feature adds nothing to the poller's per-tick symbol set.
+- Rows older than 14 sessions' worth of days are pruned by the same worker.
 
 ---
 
@@ -284,3 +317,12 @@ username in memory, so:
 Neither matters at the current single-process deployment. Moving to more than one
 server instance means moving this state to the database or a shared cache — the
 per-IP limiter (`@fastify/rate-limit`, also in-process) has the same constraint.
+
+### Discover's S&P 500 list is maintained by hand
+
+The daily-picks universe is a checked-in snapshot of the index constituents
+(`services/discover/sp500.ts`, header gives the as-of date). No stock provider
+exposes index membership, so after a rebalance the list drifts until someone
+regenerates it. A delisted or renamed symbol does not break anything — its quote
+is missing, so the pick shows "—" for price and change — but it keeps being
+drawn until the file is refreshed.

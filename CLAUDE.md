@@ -223,7 +223,7 @@ Additional vars rarely need touching (defined in `env.ts`, most also documented
 in `.env.example`): the `MARKET_*` family (hours mode, status provider, extended
 hours), the `STOCK_*_MS` resilience tunables (cache TTLs, rate-limit backoff,
 stale-trade policy), the `LOGIN_*` family (per-account login throttle),
-`PENDING_ORDERS_TICK_MS`, `PORTFOLIO_SNAPSHOT_INTERVAL_MS`,
+`PENDING_ORDERS_TICK_MS`, `PORTFOLIO_SNAPSHOT_INTERVAL_MS`, `DISCOVER_REFRESH_INTERVAL_MS`,
 `WS_HEARTBEAT_INTERVAL_MS`, `WS_REVALIDATE_INTERVAL_MS`, `PRICE_POLLER_MAX_SYMBOLS`,
 the `WATCHLIST_MAX_*` pair, and the `OTEL_*` family. `env.ts` is the source of truth
 for the full set.

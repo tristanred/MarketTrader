@@ -7,7 +7,7 @@ import { useLiveStore } from '@/stores/liveStore';
 import { usePortfolio } from '@/api/trades';
 import { ChartCanvas, RANGES } from '@/components/StockChart';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
-import { cn, formatCompactNumber, formatPct, formatUSD } from '@/lib/utils';
+import { cn, formatCompactNumber, formatPct, formatUSD, tradingViewUrl } from '@/lib/utils';
 import type { StockHistoryRange } from '@markettrader/shared';
 
 export interface QuoteInfoProps {
@@ -199,16 +199,25 @@ export function QuoteInfo({
         <p className="text-xs text-loss">Could not load quote details.</p>
       )}
 
-      {showTradeButton && onTradeClick && (
-        <div className="flex justify-end border-t border-hairline-strong pt-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-hairline-strong pt-4">
+        <a
+          href={tradingViewUrl(symbol)}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="rounded-chip text-xs text-muted hover:text-accent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+        >
+          View {symbol} on TradingView <span aria-hidden>↗</span>
+          <span className="sr-only"> (opens in a new tab)</span>
+        </a>
+        {showTradeButton && onTradeClick && (
           <Button
             onClick={() => onTradeClick(symbol)}
             className="px-6 uppercase tracking-wider"
           >
             Trade {symbol} →
           </Button>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }

@@ -255,7 +255,20 @@ those, which is why capture is server-side.
 
 ## Phase 7 — Deployment repo (`../MarketTrader-deployment`) — after Phases 1–6
 
-Repo-side edits are done and uncommitted. 7.2 reads `POSTHOG_KEY` from `/etc/markettrader/env`,
+**Done and live on 2026-10-09.** App `5917ebf` (merged `posthog` into main) and deployment
+`ca0129d`/`22057c5` are pushed and shipped. The nginx site was patched, with a backup at
+`/etc/nginx/sites-available/markettrader.bak.2026-10-09-021942`, and passed `nginx -t`. The env
+file gained `POSTHOG_KEY`/`POSTHOG_HOST`, with a `.bak` alongside. Checks:
+- `https://markettrader.app/relay/static/array.js` returns 200.
+- A production `$pageview` arrived with `environment=production`.
+- Session replay and exception autocapture are enabled in the project.
+
+Still open:
+- No server warning logs, so none exported yet; server events will arrive with real games.
+- `tristan` has temporary passwordless sudo; see deployment `docs/deployment-selfhost.md` →
+  "Agent access" to revoke it.
+
+Repo-side edits (originally uncommitted). 7.2 reads `POSTHOG_KEY` from `/etc/markettrader/env`,
 and the source-map secrets from a separate `/etc/markettrader/build.env`. 7.3 is documented in
 `docs/deployment-selfhost.md` → "PostHog". What remains is the host work in 7.5 and the PostHog
 settings in 7.6, both for the user.
@@ -274,7 +287,7 @@ so the host copy must be edited by hand, then checked with `nginx -t` and `deplo
       to the env file the systemd unit reads. Document this in the deployment README or docs.
 - [x] **7.4 Collector unchanged.** Server logs go to PostHog straight from the app (Phase 2), not
       via otelcol. Note this in the deployment docs.
-- [ ] **7.5 Manual host steps checklist** in the summary: edit the nginx site, `nginx -t`, reload,
+- [x] **7.5 Manual host steps checklist** in the summary: edit the nginx site, `nginx -t`, reload,
       set env vars, `pnpm ship`, then smoke-check that `/relay/flags/?v=2` answers.
-- [ ] **7.6 PostHog project settings.** Enable exception autocapture and session replay, set the
+- [x] **7.6 PostHog project settings.** Enable exception autocapture and session replay, set the
       authorized domain `https://markettrader.app`, and check that the first events arrive.

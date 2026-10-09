@@ -8,6 +8,7 @@ describe('achievement-harness smoke', () => {
     expect(await h.isUnlocked()).toBe(false);
     await h.dispatch({
       type: 'trade.executed',
+      origin: 'player',
       gameId: h.gameId,
       gamePlayerId: h.gamePlayerId,
       symbol: 'AAPL',

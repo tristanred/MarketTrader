@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { AuthAtmospherePanel } from '@/components/auth/AuthAtmospherePanel';
 import { ApiError } from '@/lib/api';
+import { capture } from '@/lib/posthog';
 
 const schema = z.object({
   username: z.string().min(3, '3-30 characters').max(30, '3-30 characters'),
@@ -27,6 +28,7 @@ export function RegisterPage() {
   const onSubmit = form.handleSubmit(async (values) => {
     try {
       await register.mutateAsync(values);
+      capture('account_registered');
       navigate('/');
     } catch {
       // surfaced below

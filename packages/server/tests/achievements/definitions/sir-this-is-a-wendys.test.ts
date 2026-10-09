@@ -21,6 +21,7 @@ async function fireTrade(
   });
   await h.dispatch({
     type: 'trade.executed',
+    origin: 'player',
     gameId: h.gameId,
     gamePlayerId: h.gamePlayerId,
     symbol: 'AAPL',

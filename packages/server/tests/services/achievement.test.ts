@@ -71,6 +71,7 @@ const secretOnTrade = defineAchievement({
 function tradeEvent(gameId: string, gamePlayerId: string, id: string) {
   return {
     type: 'trade.executed' as const,
+    origin: 'player' as const,
     gameId,
     gamePlayerId,
     symbol: 'AAPL',

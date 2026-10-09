@@ -19,6 +19,7 @@ function gameIdOf(event: DomainEvent): string | null {
   switch (event.type) {
     case 'engine.tick':
       return null;
+    case 'game.created':
     case 'game.ended':
     case 'game.started':
     case 'player.joined':

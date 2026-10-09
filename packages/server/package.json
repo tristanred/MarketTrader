@@ -44,6 +44,7 @@
     "nyse-holidays": "^1.2.0",
     "pino-opentelemetry-transport": "^4.0.2",
     "postgres": "^3.4.9",
+    "posthog-node": "^5.55.0",
     "yahoo-finance2": "^4.0.2",
     "zod": "^3.25.76"
   },

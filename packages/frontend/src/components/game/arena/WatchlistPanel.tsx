@@ -10,6 +10,7 @@ import {
 import { SymbolNotePopover } from './SymbolNotePopover';
 import { useLiveStore } from '@/stores/liveStore';
 import { cn } from '@/lib/utils';
+import { capture } from '@/lib/posthog';
 import type { Watchlist } from '@markettrader/shared';
 
 export interface WatchlistRow {
@@ -113,6 +114,7 @@ export function WatchlistPanel({
     setError(null);
     try {
       const created = await createMutation.mutateAsync({ name });
+      capture('watchlist_created', { creation_mode: 'named' });
       onSelectList?.(created.id);
       setMode('idle');
       setNewName('');
@@ -130,6 +132,7 @@ export function WatchlistPanel({
     setError(null);
     try {
       await renameMutation.mutateAsync({ id, body: { name } });
+      capture('watchlist_renamed');
       setRenamingId(null);
       setRenameDraft('');
     } catch (err) {
@@ -141,6 +144,7 @@ export function WatchlistPanel({
     setError(null);
     try {
       await deleteMutation.mutateAsync(id);
+      capture('watchlist_deleted');
       setConfirmDeleteId(null);
       // If the deleted list was the active one, fall back to the first
       // remaining list (if any). The query invalidation will repopulate
@@ -352,12 +356,14 @@ export function WatchlistPanel({
                       name: 'Default',
                     });
                     targetId = created.id;
+                    capture('watchlist_created', { creation_mode: 'automatic_default' });
                     onSelectList?.(created.id);
                   }
                   await addMutation.mutateAsync({
                     id: targetId,
                     body: { symbol: sym },
                   });
+                  capture('watchlist_symbol_added', { symbol: sym });
                   setMode('idle');
                 } catch (err) {
                   setError(err instanceof Error ? err.message : 'Failed to add symbol');

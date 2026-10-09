@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { AuthUser } from '@markettrader/shared';
+import { identifyUser } from '@/lib/posthog';
 
 /**
  * Session state for the authenticated user. Token is held in memory only —
@@ -20,7 +21,12 @@ export const useAuthStore = create<AuthState>((set) => ({
   token: null,
   user: null,
   ready: false,
-  setSession: (token, user) => set({ token, user }),
+  setSession: (token, user) => {
+    identifyUser(user);
+    set({ token, user });
+  },
+  // No analytics reset here: `clear` also runs when a refresh fails, which is
+  // not a logout. `identifyUser` handles a different user signing in next.
   clear: () => set({ token: null, user: null }),
   setReady: (ready) => set({ ready }),
 }));

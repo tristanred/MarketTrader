@@ -435,6 +435,7 @@ export function tradingRoutes(
             price: Number(trade.price),
             tradeId: trade.id,
             executedAt: trade.executedAt!,
+            origin: 'player',
           });
           void emitTradeEvents({
             bus,

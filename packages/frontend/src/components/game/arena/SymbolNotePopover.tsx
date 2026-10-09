@@ -18,6 +18,7 @@ import {
   type NoteSize,
 } from '@/lib/noteSize';
 import { cn } from '@/lib/utils';
+import { capture } from '@/lib/posthog';
 
 /** Mirrors `noteSchema` in `server/src/routes/watchlists.ts`; the server answers 400 past it. */
 const NOTE_MAX_LENGTH = 1000;
@@ -126,6 +127,7 @@ export function SymbolNotePopover({ symbol, note, watchlistId }: SymbolNotePopov
       setStatus('saving');
       try {
         await setNoteRef.current.mutateAsync({ id: watchlistId, symbol, body: { note: text } });
+        capture('watchlist_note_saved', { symbol });
         savedRef.current = text;
         setStatus('saved');
       } catch {

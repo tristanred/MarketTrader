@@ -2,6 +2,7 @@ import { useMutation } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
 import { useAuthStore } from '@/stores/authStore';
 import { queryClient } from '@/lib/queryClient';
+import { resetUser } from '@/lib/posthog';
 import type { AuthResponse, LoginRequest, RegisterRequest } from '@markettrader/shared';
 
 export function useRegister() {
@@ -41,6 +42,7 @@ export function useLogout() {
       /* clear locally even if the server call failed */
     }
     clear();
+    resetUser();
     queryClient.clear();
   };
 }

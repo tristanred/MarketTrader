@@ -53,6 +53,7 @@ describe('first-trade definition', () => {
     const bus = makeEngine(db as unknown as Db);
     await bus.emit({
       type: 'trade.executed',
+      origin: 'player',
       gameId,
       gamePlayerId,
       symbol: 'AAPL',
@@ -80,6 +81,7 @@ describe('ten-buys definition', () => {
     for (let i = 0; i < 3; i++) {
       await bus.emit({
         type: 'trade.executed',
+        origin: 'player',
         gameId,
         gamePlayerId,
         symbol: 'AAPL',
@@ -94,6 +96,7 @@ describe('ten-buys definition', () => {
     for (let i = 0; i < 10; i++) {
       await bus.emit({
         type: 'trade.executed',
+        origin: 'player',
         gameId,
         gamePlayerId,
         symbol: 'AAPL',

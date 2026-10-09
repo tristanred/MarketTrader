@@ -42,6 +42,8 @@ import { attachErrorCapture } from './observability/error-capture.js';
 import { registerOtel } from './plugins/otel.js';
 import { EventBus } from './events/bus.js';
 import { AchievementEngine } from './achievements/engine.js';
+import { registerAnalytics } from './observability/analytics.js';
+import { getPostHog, type AnalyticsClient } from './observability/posthog.js';
 import { achievements as achievementDefinitions } from './achievements/definitions/index.js';
 import { achievementsRoutes } from './routes/achievements.js';
 import { FailedLoginTracker, type FailedLoginOptions } from './services/failed-login.js';
@@ -59,6 +61,8 @@ export async function buildApp(
     loginThrottle?: FailedLoginOptions;
     /** Override leaderboard broadcast throttle in ms. Defaults to 1000. Pass 0 in tests. */
     leaderboardThrottleMs?: number;
+    /** PostHog client for analytics and error tracking. Defaults to {@link getPostHog}. */
+    analytics?: AnalyticsClient | null;
   } = {},
 ): Promise<FastifyInstance> {
   const {
@@ -69,6 +73,7 @@ export async function buildApp(
     disableRateLimit = false,
     loginThrottle,
     leaderboardThrottleMs,
+    analytics = getPostHog(),
     ...fastifyOpts
   } = opts;
   const provider = injectedProvider ?? new CachedProvider(db, createProvider());
@@ -117,6 +122,11 @@ export async function buildApp(
   achievementEngine.start();
   app.addHook('onClose', async () => {
     achievementEngine.stop();
+  });
+
+  const stopAnalytics = registerAnalytics(bus, db, analytics);
+  app.addHook('onClose', async () => {
+    stopAnalytics();
   });
 
   const indicesBroadcaster = new IndicesBroadcaster(provider, systemSettings, globalRegistry);
@@ -207,7 +217,7 @@ export async function buildApp(
     });
   }
 
-  attachErrorCapture(app);
+  attachErrorCapture(app, analytics);
 
   return app;
 }

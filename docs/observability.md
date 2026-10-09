@@ -145,9 +145,10 @@ preference.
 
 ## Browser telemetry
 
-`packages/frontend/src/observability/otel.ts` collects document-load and fetch traces, Core Web
-Vitals as metrics, and uncaught errors plus unhandled rejections as log records. Browser error
-reporting is new capability — Sentry was server-side only, so these were never reported anywhere.
+`packages/frontend/src/observability/otel.ts` collects document-load and fetch traces and Core
+Web Vitals as metrics. Uncaught errors and unhandled rejections go to PostHog error tracking when
+PostHog is configured; only when it is not does this module forward them as OTLP log records
+instead (ADR-016).
 
 It is loaded with a dynamic `import()` *after* first render, so it lands in its own chunk
 (~160 kB raw, ~46 kB gzipped) rather than the entry bundle, and a failure to load can never stop
@@ -178,3 +179,58 @@ path can flood the metrics and log stores with junk series.
 
 The failure mode when the route is missing is silent: browser telemetry 404s and the SPA keeps
 working, so nothing surfaces the gap. Check for it explicitly rather than assuming.
+
+---
+
+## PostHog
+
+Product analytics, error tracking, session replay, and a second log destination (ADR-016).
+Everything is off unless its key and host are set; a missing key never throws.
+
+### Configuration
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `POSTHOG_KEY` | *(empty)* | Server. Project token (`phc_…`). With `POSTHOG_HOST`, turns on server analytics, 5xx error tracking, and log export. |
+| `POSTHOG_HOST` | *(empty)* | Server. Ingestion host, e.g. `https://us.i.posthog.com`. |
+| `POSTHOG_LOG_LEVEL_MIN` | `warn` | Minimum pino level exported to PostHog Logs. Independent of `OTEL_LOG_LEVEL_MIN`. |
+| `VITE_POSTHOG_KEY` | *(empty)* | Build-time. Project token for the SPA. |
+| `VITE_POSTHOG_HOST` | *(empty)* | Build-time. Normally `/relay` (see below). |
+| `VITE_POSTHOG_UI_HOST` | `https://us.posthog.com` | Build-time. Toolbar link target only. |
+| `POSTHOG_PERSONAL_API_KEY`, `POSTHOG_PROJECT_ID` | *(empty)* | Build-time, optional. Upload source maps for browser error tracking. A personal key is a secret, unlike the project token. |
+
+PostHog is always off under `NODE_ENV=test` (server) and Vitest's `test` mode (browser), and the
+Playwright config pins `VITE_POSTHOG_KEY` empty, so no suite posts to the real project. Dev and
+production share a project; every event carries an `environment` property to tell them apart.
+
+### What goes where
+
+- **Browser** (`lib/posthog.ts`): pageviews, exceptions (autocaptured, plus those caught by
+  `RouteErrorBoundary`), replay, `posthog.logger` records, and the UX events only the browser
+  knows — `trade_order_submitted`, watchlist actions, `user_logged_in`, `account_registered`.
+  `identifyUser` runs on every session set; a failed refresh does not reset the person, an
+  explicit logout does.
+- **Server, events** (`observability/analytics.ts`): one `EventBus` subscriber, keyed by
+  `users.id` — `game_created`, `game_joined` (`join_source`), `trade_executed` (`origin`; admin
+  force-executes skipped), `achievement_unlocked`, `game_finished` (one per ranked player).
+- **Server, errors** (`observability/error-capture.ts`): every 5xx, attributed to the signed-in user.
+- **Server, logs** (`observability/log-transports.ts`): a second `pino-opentelemetry-transport`
+  target posting to `${POSTHOG_HOST}/i/v1/logs`, independent of the collector target.
+
+### The `/relay` ingress
+
+The SPA's `api_host` is `/relay`, proxied to PostHog: `/relay/static/*` and `/relay/array/*` to
+`us-assets.i.posthog.com`, everything else to `us.i.posthog.com`. Dev: the `/relay` rules in
+`vite.config.ts`. Container: `nginx.conf`. Deployed: the reverse proxy, outside this repo.
+
+Like `/otel` it is unauthenticated and rate-capped, but sized for replay batches. The proxy drops
+cookies and forwards the client address in `X-Forwarded-For` so GeoIP resolves to the player.
+Browser OTel tracing ignores `/relay`, or every replay post would become a span.
+
+### Source maps
+
+`vite.config.ts` adds `@posthog/rollup-plugin` only when both `POSTHOG_PERSONAL_API_KEY` and
+`POSTHOG_PROJECT_ID` are set at build time; it uploads and then deletes the maps so they are
+never served. The CLI binary it shells out to is downloaded on first upload, not at install
+(`allowBuilds` in `pnpm-workspace.yaml`).
+

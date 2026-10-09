@@ -117,9 +117,11 @@ Browser (React SPA)
     │                                   │       ├── Alpaca Markets
     │                                   │       └── Polygon.io
     │                                   │
-    └── OTLP /otel ─────────→ OpenTelemetry Collector ←── OTLP (traces/metrics/logs)
-                                        │
-                                        └── Prometheus / Tempo / Loki → Grafana
+    ├── OTLP /otel ─────────→ OpenTelemetry Collector ←── OTLP (traces/metrics/logs)
+    │                                   │
+    │                                   └── Prometheus / Tempo / Loki → Grafana
+    │
+    └── /relay ─────────────→ PostHog ←── posthog-node (events, 5xx) + OTLP logs
 ```
 
 Both the SPA and the server emit OpenTelemetry over OTLP. The browser's path goes through a
@@ -127,6 +129,12 @@ relative `/otel` proxied by nginx (Vite in dev), and trace context propagates fr
 into the server because API calls are same-origin — a single trace covers a click through to the
 upstream price fetch. All of it is inert unless a collector endpoint is configured. See
 `docs/observability.md` and ADR-015.
+
+PostHog sits beside it (ADR-016): the SPA reaches it through the same-origin `/relay` proxy, and
+the server sends business events from a single subscriber on the domain `EventBus`
+(`observability/analytics.ts`) — including `game.created`, the one domain event that exists
+only for analytics. `trade.executed` carries an `origin` (`player` / `settler` / `admin`) and
+`player.joined` a `joinSource` (`creator` / `invite_code` / `public`).
 
 ---
 

@@ -50,6 +50,7 @@ These were chosen deliberately (see `docs/technical-decisions.md` for full ratio
 | WebSocket (client) | Native WebSocket API (no Socket.io) |
 | Auth | JWT (`@fastify/jwt`) + argon2 passwords |
 | Versioning | `@changesets/cli` — run locally, never in CI (ADR-014) |
+| Observability | OpenTelemetry (ADR-015) + PostHog for analytics, error tracking, replay, logs (ADR-016) |
 
 If a library version is outdated or a better alternative emerges, open an ADR entry in `docs/technical-decisions.md` rather than silently swapping.
 
@@ -211,6 +212,10 @@ PORT=3000
 CORS_ORIGIN=           # frontend URL (e.g. http://localhost:5173)
 NODE_ENV=development   # development | production | test
 TRUST_PROXY=loopback   # which hops may set X-Forwarded-For; `true` is refused in prod
+POSTHOG_KEY=           # PostHog project token; with POSTHOG_HOST turns on server analytics/errors/logs
+POSTHOG_HOST=          # e.g. https://us.i.posthog.com
+VITE_POSTHOG_KEY=      # build-time; SPA PostHog token
+VITE_POSTHOG_HOST=     # build-time; normally /relay (same-origin proxy)
 ```
 
 `TRUST_PROXY` decides `request.ip`, which is the key every per-route rate limit is
@@ -326,8 +331,8 @@ When adding a consumer, import `buildInfo` from `src/build-info.ts` rather than 
 `__APP_VERSION__` globals directly — the server module wraps them in a `typeof` guard because
 `tsx watch` has no define step and a bare reference throws there. Current consumers:
 `routes/version.ts`, `plugins/swagger.ts`, `observability/otel.ts`,
-`observability/telemetry.ts`, and the frontend's `main.tsx` and
-`observability/otel.ts`.
+`observability/telemetry.ts`, and the frontend's `main.tsx`,
+`observability/otel.ts`, and `lib/posthog.ts`.
 
 ---
 
@@ -363,6 +368,22 @@ Keep symbols off metric attributes (unbounded cardinality) — they belong on sp
 The browser sends telemetry to a relative `/otel` path. In dev that is the `/otel` rule in
 `packages/frontend/vite.config.ts`; in a deployed environment the reverse proxy needs an
 equivalent route to the collector.
+
+### PostHog (ADR-016)
+
+- **Unset means off, never a throw** — on both sides, like `OTEL_EXPORTER_OTLP_ENDPOINT`. It is
+  also always off under `NODE_ENV=test` and Vitest, so suites never post to the real project.
+- **Business events are captured server-side**, in the one `EventBus` subscriber in
+  `observability/analytics.ts`, with `distinctId = users.id`. A new product event that
+  corresponds to a domain event goes there, not in a component. Client-side `capture` is for what
+  only the browser knows (UX actions, order *placement*).
+- **Frontend code imports `@/lib/posthog`, never `posthog-js`.** The facade lazy-loads the SDK
+  (~100 kB gzip) after first render and buffers calls until then. Read the enabled flag from
+  `lib/posthogConfig.ts`, which does not import the SDK.
+- **The browser reaches PostHog via the same-origin `/relay` proxy** (Vite in dev, nginx
+  deployed), so the CSP stays `'self'`. Don't add PostHog origins to the CSP.
+- **Server logs go to PostHog through their own pino target** (`observability/log-transports.ts`)
+  with `POSTHOG_LOG_LEVEL_MIN` (default `warn` — PostHog bills by volume).
 
 ---
 

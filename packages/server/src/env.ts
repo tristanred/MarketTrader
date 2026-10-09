@@ -330,10 +330,29 @@ export const env = {
    * (and therefore journald) — this only trims what crosses the network.
    */
   OTEL_LOG_LEVEL_MIN: optional('OTEL_LOG_LEVEL_MIN', 'info'),
+
+  /**
+   * PostHog project token (`phc_…`). With {@link env.POSTHOG_HOST} it turns on
+   * server-side product analytics, error tracking, and log export; either one
+   * empty leaves all three off. A project token is write-only by design, so it
+   * is not treated as a secret by PostHog — but it still lives in env, not code.
+   */
+  POSTHOG_KEY: optional('POSTHOG_KEY', ''),
+  /** PostHog ingestion host, e.g. `https://us.i.posthog.com`. Not the app URL. */
+  POSTHOG_HOST: optional('POSTHOG_HOST', ''),
+  /**
+   * Minimum pino level exported to PostHog Logs. Separate from
+   * {@link env.OTEL_LOG_LEVEL_MIN} and stricter by default: PostHog bills logs
+   * by volume, and Fastify writes two info lines per request.
+   */
+  POSTHOG_LOG_LEVEL_MIN: optional('POSTHOG_LOG_LEVEL_MIN', 'warn'),
 } as const;
 
 /** True when an OTLP endpoint is configured. Everything telemetry keys off this. */
 export const telemetryEnabled = env.OTEL_EXPORTER_OTLP_ENDPOINT !== '';
+
+/** True when both PostHog vars are set. Unset is silently off, like {@link telemetryEnabled}. */
+export const posthogEnabled = env.POSTHOG_KEY !== '' && env.POSTHOG_HOST !== '';
 
 export interface ProductionEnvCheck {
   JWT_SECRET: string;

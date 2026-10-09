@@ -53,6 +53,10 @@ export default defineConfig({
         // configured — emitting browser telemetry into their collector, or
         // retrying POSTs against a dead one. Pin it off so e2e is hermetic.
         VITE_OTEL_EXPORTER_URL: '',
+        // Same for PostHog, with a worse failure mode: e2e activity would land
+        // in the real project as product analytics. The server side needs no
+        // pin — PostHog is always off under NODE_ENV=test.
+        VITE_POSTHOG_KEY: '',
       },
     },
   ],

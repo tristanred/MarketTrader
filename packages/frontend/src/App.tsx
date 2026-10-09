@@ -1,4 +1,4 @@
-import { Component, lazy, Suspense, type ReactNode } from 'react';
+import { Component, lazy, Suspense, type ErrorInfo, type ReactNode } from 'react';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { queryClient } from '@/lib/queryClient';
@@ -10,14 +10,21 @@ import { Toaster } from '@/components/ui/toast';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { useAuthStore } from '@/stores/authStore';
+import { captureException } from '@/lib/posthog';
 
 // Catches errors from lazy-loaded route chunks (e.g. failed network during
 // a deploy) so the user sees a recoverable reload prompt instead of a blank
 // page. Suspense alone handles loading, not errors.
-class RouteErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean }> {
+export class RouteErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean }> {
   override state = { hasError: false };
   static getDerivedStateFromError() {
     return { hasError: true };
+  }
+  // A caught render error never reaches the global error handlers, so PostHog's
+  // exception autocapture would not see it — and a stale chunk after a deploy is
+  // exactly the error worth knowing about.
+  override componentDidCatch(error: Error, info: ErrorInfo) {
+    captureException(error, { boundary: 'route', component_stack: info.componentStack ?? '' });
   }
   override render() {
     if (this.state.hasError) {

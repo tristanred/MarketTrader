@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { AuthAtmospherePanel } from '@/components/auth/AuthAtmospherePanel';
 import { ApiError } from '@/lib/api';
+import { capture } from '@/lib/posthog';
 
 const schema = z.object({
   username: z.string().min(1, 'Required'),
@@ -27,6 +28,7 @@ export function LoginPage() {
   const onSubmit = form.handleSubmit(async (values) => {
     try {
       await login.mutateAsync(values);
+      capture('user_logged_in');
       navigate('/');
     } catch {
       // surfaced below

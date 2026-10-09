@@ -72,6 +72,7 @@ async function fireTrade(
 ): Promise<void> {
   await bus.emit({
     type: 'trade.executed',
+    origin: 'player',
     gameId,
     gamePlayerId,
     symbol: 'AAPL',

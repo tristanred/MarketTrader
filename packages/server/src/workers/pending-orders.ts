@@ -122,6 +122,7 @@ export async function runPendingOrdersTick(deps: {
         price: o.trade.price,
         tradeId: o.trade.id,
         executedAt: o.trade.executedAt,
+        origin: 'settler',
       });
       const [updated] = await db
         .select({ cashBalance: gamePlayers.cashBalance })
@@ -190,6 +191,7 @@ export async function runPendingOrdersTick(deps: {
           price: o.trade.price,
           tradeId: o.trade.id,
           executedAt: o.trade.executedAt,
+          origin: 'settler',
         });
         const [updated] = await db
           .select({ cashBalance: gamePlayers.cashBalance })

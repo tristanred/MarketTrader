@@ -7,6 +7,7 @@
 export type DomainEvent =
   | TradeExecutedEvent
   | SnapshotRecordedEvent
+  | GameCreatedEvent
   | GameStartedEvent
   | GameEndedEvent
   | PlayerJoinedEvent
@@ -16,6 +17,14 @@ export type DomainEvent =
   | AchievementUnlockedEvent;
 
 export type DomainEventType = DomainEvent['type'];
+
+/**
+ * What filled a trade: the player's own market order (`player`), the
+ * pending-orders worker settling a resting order (`settler`), or an admin
+ * force-execute (`admin`). Achievements treat all three alike; analytics does
+ * not count an admin's action as the player's activity.
+ */
+export type TradeOrigin = 'player' | 'settler' | 'admin';
 
 export interface TradeExecutedEvent {
   type: 'trade.executed';
@@ -27,6 +36,7 @@ export interface TradeExecutedEvent {
   price: number;
   tradeId: string;
   executedAt: string;
+  origin: TradeOrigin;
 }
 
 export interface SnapshotRecordedEvent {
@@ -39,6 +49,17 @@ export interface SnapshotRecordedEvent {
   /** Total players in the game at the time of the snapshot (used for last-place detection). */
   totalPlayers: number;
   capturedAt: string;
+}
+
+/** Fired once when `POST /games` commits, before the creator's `player.joined`. */
+export interface GameCreatedEvent {
+  type: 'game.created';
+  gameId: string;
+  createdByUserId: string;
+  visibility: 'public' | 'private';
+  allowShortSelling: boolean;
+  allowGTC: boolean;
+  createdAt: string;
 }
 
 export interface GameStartedEvent {
@@ -54,12 +75,19 @@ export interface GameEndedEvent {
   finalRanking: Array<{ gamePlayerId: string; rank: number; totalValue: number }>;
 }
 
+/**
+ * How a player got into a game: as its creator, by invite code, or by joining
+ * a public game without one.
+ */
+export type JoinSource = 'creator' | 'invite_code' | 'public';
+
 export interface PlayerJoinedEvent {
   type: 'player.joined';
   gameId: string;
   gamePlayerId: string;
   userId: string;
   joinedAt: string;
+  joinSource: JoinSource;
 }
 
 /**

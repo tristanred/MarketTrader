@@ -10,6 +10,7 @@ import { extractApiMessage } from '@/lib/extractApiMessage';
 import { cn, formatPct, formatUSD, SYMBOL_RE } from '@/lib/utils';
 import { projectAllocation, projectPositionAfter, type PositionSnapshot } from '@/lib/positionMath';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
+import { capture } from '@/lib/posthog';
 import type { OrderType, PlaceTradeRequest, TradeDirection } from '@markettrader/shared';
 
 type Term = 'DAY' | 'GTC';
@@ -283,6 +284,12 @@ export function TradeOrderDialog({
         }),
       };
       const result = await place.mutateAsync(payload);
+      capture('trade_order_submitted', {
+        direction: tradeDirection,
+        order_type: payload.orderType,
+        time_in_force: payload.timeInForce,
+        result_kind: result.kind,
+      });
       if (result.kind === 'pending') {
         const verb = tradeDirection === 'buy' ? 'Buy' : 'Sell';
         toast({

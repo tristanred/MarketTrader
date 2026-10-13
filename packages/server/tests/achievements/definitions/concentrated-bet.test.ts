@@ -21,6 +21,7 @@ async function fireBuy(
 ): Promise<void> {
   await h.dispatch({
     type: 'trade.executed',
+    origin: 'player',
     gameId: h.gameId,
     gamePlayerId: h.gamePlayerId,
     symbol: 'AAPL',
@@ -62,6 +63,7 @@ describe('achievement: concentrated-bet', () => {
     await setCashAfter(h, 1000);
     await h.dispatch({
       type: 'trade.executed',
+      origin: 'player',
       gameId: h.gameId,
       gamePlayerId: h.gamePlayerId,
       symbol: 'AAPL',

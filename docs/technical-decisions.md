@@ -293,3 +293,41 @@ The cost is nil: `instrumentation-http` would only have added a lower-level span
 - `vite.config.ts` now sets `envDir` to the workspace root so the single root `.env` feeds both packages. Only `VITE_`-prefixed variables reach the bundle, so server secrets in that file are not exposed.
 
 **See also:** `docs/observability.md` for the metric catalogue and what is instrumented.
+
+---
+
+## ADR-016: PostHog for Product Analytics, Error Tracking, Replay, and Log Export
+
+**Date:** 2026-10-08
+**Status:** Accepted
+**Amends:** ADR-015 (browser exceptions move to PostHog; server logs gain a second destination)
+
+**Decision:** Add PostHog alongside OpenTelemetry. PostHog takes the questions OTel cannot answer: who did what (product analytics), what a player saw when something broke (error tracking linked to session replay and the person), and a hosted log search. OTel keeps traces, metrics, and the collector pipeline. Like OTel, all of it is off unless configured — `POSTHOG_KEY`/`POSTHOG_HOST` on the server, `VITE_POSTHOG_KEY`/`VITE_POSTHOG_HOST` in the build — and a missing key never throws.
+
+**Who owns which signal:**
+
+| Signal | Owner | Why |
+|---|---|---|
+| Traces, metrics, Web Vitals | OTel | Already instrumented patch-free (ADR-015); PostHog adds nothing |
+| Browser exceptions | PostHog | Linked to replay and person; OTel's error log capture stays only as the fallback when PostHog is off |
+| Server 5xx | Both | The span status is what makes failed traces filterable; PostHog error tracking attributes the fault to a user |
+| Server logs | Both, independently | Two pino transport targets with separate level floors (`OTEL_LOG_LEVEL_MIN`, `POSTHOG_LOG_LEVEL_MIN` default `warn` — PostHog bills logs by volume) |
+| Product events | PostHog | — |
+
+**Business events are captured server-side**, by one subscriber on the domain `EventBus` (`observability/analytics.ts`), keyed by `users.id` — the id the browser `identify`s. The server is the only place that sees all of them: a resting order filled by the settler or a game ended by the clock has no client request behind it. Client-side capture is kept for what only the browser knows — order placement, watchlist actions, login. `trade.executed` carries an `origin` so an admin force-execute is not counted as the player's activity.
+
+**The browser reaches PostHog through a same-origin `/relay` proxy**, not PostHog's domain. That keeps the CSP at `'self'`, and ad blockers — which match PostHog's hostnames and paths like `/posthog` or `/analytics` — see first-party traffic. The path is deliberately bland. Like `/otel` it is an unauthenticated write path, rate-capped at the proxy, but sized for session replay: its batches are far larger and more frequent than OTLP payloads, and `/otel`'s caps would make replay fail with silent 413s and 429s.
+
+**posthog-js loads after first render, in its own chunk** (~100 kB gzip), like the OTel browser SDK. `lib/posthog.ts` is a facade that buffers calls until it arrives, so call sites never import the SDK. `lib/posthogConfig.ts` holds the enabled flag apart from the facade so reading it never pulls the SDK into a chunk.
+
+**Alternatives considered:**
+- **Logs via the collector** (a PostHog exporter in the otelcol `logs` pipeline) — rejected as the *only* path: it ties PostHog logs to the collector being deployed and running. A direct transport target works in dev and with no collector at all.
+- **posthog-node's own tracing** — rejected; traces stay on OTel (ADR-015).
+- **PostHog Group analytics** (each game as a group) — deferred. It is a paid add-on; `game_id` is on every event as a property meanwhile.
+
+**Consequences:**
+- Dev and production share one PostHog project; every event carries `environment` so dev traffic can be filtered out.
+- Source maps upload only from a build that has a personal API key (`POSTHOG_PERSONAL_API_KEY`, `POSTHOG_PROJECT_ID`); without it production stack traces stay minified. The plugin is imported on demand so a missing CLI binary cannot break `pnpm dev`.
+- The reverse proxy needs the `/relay` locations; that is deployment configuration outside this repo. When the route is missing the SPA keeps working and analytics silently 404s.
+
+**See also:** `docs/observability.md` → PostHog.

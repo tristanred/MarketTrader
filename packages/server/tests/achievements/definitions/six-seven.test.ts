@@ -5,6 +5,7 @@ import sixSeven from '../../../src/achievements/definitions/six-seven.js';
 async function fireTrade(h: Awaited<ReturnType<typeof makeAchievementHarness>>): Promise<void> {
   await h.dispatch({
     type: 'trade.executed',
+    origin: 'player',
     gameId: h.gameId,
     gamePlayerId: h.gamePlayerId,
     symbol: 'AAPL',

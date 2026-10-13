@@ -24,3 +24,9 @@ allowBuilds:
   # matters for the protobuf-encoded OTLP exporters; the `-http` exporters this
   # project uses encode as JSON, so the script is dead weight.
   protobufjs: false
+  # Pulled in by posthog-js. Its postinstall only prints a funding banner.
+  core-js: false
+  # Its postinstall downloads the native CLI binary from GitHub releases. Not
+  # needed at install time: the `posthog-cli` shim fetches it on first run,
+  # which only happens on a build that uploads source maps.
+  '@posthog/cli': false

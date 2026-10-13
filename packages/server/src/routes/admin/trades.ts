@@ -162,6 +162,7 @@ export function adminTradesRoutes(
                 price: Number(executed.price),
                 tradeId: id,
                 executedAt: executed.executedAt!,
+                origin: 'admin',
               });
               // Forced fills always come from a resting `working`/`pending`
               // trade — the cost basis for the sell side is already gone, so

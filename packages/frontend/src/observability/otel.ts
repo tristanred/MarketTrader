@@ -13,17 +13,28 @@ import { DocumentLoadInstrumentation } from '@opentelemetry/instrumentation-docu
 import { ATTR_SERVICE_NAME, ATTR_SERVICE_VERSION } from '@opentelemetry/semantic-conventions';
 import { onCLS, onFCP, onINP, onLCP, onTTFB, type Metric } from 'web-vitals';
 import { buildInfo } from '../build-info';
+import { posthogConfig, posthogEnabled } from '../lib/posthogConfig';
 
 const SCOPE = 'markettrader-frontend';
 
 /** Base path the browser posts OTLP to. Empty disables browser telemetry entirely. */
 const exporterUrl = import.meta.env.VITE_OTEL_EXPORTER_URL ?? '';
 
+const relayBase =
+  posthogEnabled && posthogConfig.apiHost.startsWith('/')
+    ? posthogConfig.apiHost.replace(/\/+$/, '')
+    : '';
+
 let started = false;
+
+/** Matches a same-origin path prefix whether the URL arrives relative or absolute. */
+function pathPrefix(path: string): RegExp {
+  return new RegExp(`^(?:https?://[^/]+)?${path}/`);
+}
 
 /**
  * Starts browser telemetry: document-load and fetch traces, Web Vitals as
- * metrics, and uncaught errors as log records. All of it is gated on
+ * metrics, and — only when PostHog is off — uncaught errors as log records. All of it is gated on
  * `VITE_OTEL_EXPORTER_URL` being set at build time, so a build without it ships
  * an inert module.
  *
@@ -82,14 +93,19 @@ export function initBrowserTelemetry(): void {
       new FetchInstrumentation({
         // Same-origin only. Without this the exporter's own POSTs to /otel would
         // be traced, and each export would generate the spans for the next one.
-        ignoreUrls: [new RegExp(`^${base}/`)],
+        // PostHog's same-origin proxy is excluded too: replay alone posts every
+        // few seconds, and none of it is the app's own work.
+        ignoreUrls: [pathPrefix(base), ...(relayBase ? [pathPrefix(relayBase)] : [])],
         propagateTraceHeaderCorsUrls: [/^\//],
       }),
     ],
   });
 
   registerWebVitals(meterProvider);
-  registerErrorCapture();
+  // PostHog owns browser exceptions when it is on (error tracking, linked to
+  // the replay and the person). This stays the fallback so errors still go
+  // somewhere when it is not.
+  if (!posthogEnabled) registerErrorCapture();
   flushOnHide(tracerProvider, loggerProvider, meterProvider);
 }
 

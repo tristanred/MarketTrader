@@ -12,3 +12,6 @@ coverage/
 .superpowers/
 playwright-report/
 test-results/
+
+# Reference docs dropped by the PostHog setup wizard; local only.
+.claude/skills/integration-javascript_web/

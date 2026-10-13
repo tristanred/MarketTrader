@@ -1,8 +1,9 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import Fastify, { type FastifyRequest } from 'fastify';
 import { context, trace, SpanStatusCode, type Span } from '@opentelemetry/api';
 import { node, tracing } from '@opentelemetry/sdk-node';
 import { attachErrorCapture } from '../../src/observability/error-capture.js';
+import type { AnalyticsClient } from '../../src/observability/posthog.js';
 
 /**
  * Covers what replaced Sentry (ADR-015): a 5xx must mark its span failed, and a
@@ -37,7 +38,11 @@ describe('attachErrorCapture', () => {
    */
   const spans = new WeakMap<FastifyRequest, Span>();
 
-  async function requestWithSpan(handler: () => never, expectedStatus: number) {
+  async function requestWithSpan(
+    handler: () => never,
+    expectedStatus: number,
+    posthog: Pick<AnalyticsClient, 'captureException'> | null = null,
+  ) {
     exporter.reset();
     const app = Fastify({ logger: false });
 
@@ -49,7 +54,7 @@ describe('attachErrorCapture', () => {
     app.addHook('onResponse', async (request) => {
       spans.get(request)?.end();
     });
-    attachErrorCapture(app);
+    attachErrorCapture(app, posthog);
 
     app.get('/boom', async () => handler());
 
@@ -79,5 +84,25 @@ describe('attachErrorCapture', () => {
 
     const span = finished.find((s) => s.name === 'request');
     expect(span?.status.code).toBe(SpanStatusCode.UNSET);
+  });
+
+  it('sends a 5xx to PostHog error tracking with the route, and a 4xx not at all', async () => {
+    const posthog = { captureException: vi.fn<AnalyticsClient['captureException']>() };
+
+    await requestWithSpan(() => {
+      throw new Error('kaboom');
+    }, 500, posthog);
+    await requestWithSpan(() => {
+      const err = new Error('bad request') as Error & { statusCode: number };
+      err.statusCode = 400;
+      throw err;
+    }, 400, posthog);
+
+    expect(posthog.captureException).toHaveBeenCalledTimes(1);
+    expect(posthog.captureException).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'kaboom' }),
+      undefined,
+      expect.objectContaining({ http_method: 'GET', http_route: '/boom', http_status: 500 }),
+    );
   });
 });

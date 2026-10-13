@@ -11,6 +11,7 @@ import '@fontsource/geist-mono/700.css';
 import './index.css';
 import App from './App';
 import { buildInfo } from './build-info';
+import { loadPostHog, log } from './lib/posthog';
 
 // No room for a version in the UI, so the build stamp lives in the console —
 // enough to tell whether a browser is holding a stale bundle.
@@ -24,6 +25,11 @@ createRoot(rootEl).render(
     <App />
   </StrictMode>,
 );
+
+// Same reasoning as the OTel import below: its own chunk, after render, and
+// never a reason for the app not to start.
+void loadPostHog();
+log('info', 'frontend started', { 'log.event': 'frontend_started' });
 
 // Loaded dynamically, and after render, so the OTel browser SDK lands in its own
 // chunk instead of the entry bundle — it is a substantial download and nothing

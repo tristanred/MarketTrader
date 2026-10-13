@@ -66,6 +66,7 @@ describe('AchievementEngine', () => {
 
     await bus.emit({
       type: 'trade.executed',
+      origin: 'player',
       gameId,
       gamePlayerId,
       symbol: 'AAPL',
@@ -124,6 +125,7 @@ describe('AchievementEngine', () => {
     for (let i = 0; i < 5; i++) {
       await bus.emit({
         type: 'trade.executed',
+        origin: 'player',
         gameId,
         gamePlayerId,
         symbol: 'AAPL',
@@ -230,6 +232,7 @@ describe('AchievementEngine', () => {
 
     await bus.emit({
       type: 'trade.executed',
+      origin: 'player',
       gameId,
       gamePlayerId,
       symbol: 'AAPL',
@@ -266,6 +269,7 @@ describe('AchievementEngine', () => {
 
     await bus.emit({
       type: 'trade.executed',
+      origin: 'player',
       gameId,
       gamePlayerId,
       symbol: 'AAPL',
@@ -302,6 +306,7 @@ describe('AchievementEngine', () => {
 
     await bus.emit({
       type: 'trade.executed',
+      origin: 'player',
       gameId,
       gamePlayerId,
       symbol: 'AAPL',
@@ -378,6 +383,7 @@ describe('AchievementEngine', () => {
     engine.invalidateCache();
     await bus.emit({
       type: 'trade.executed',
+      origin: 'player',
       gameId,
       gamePlayerId,
       symbol: 'AAPL',
@@ -394,6 +400,7 @@ describe('AchievementEngine', () => {
     engine.invalidateCache();
     await bus.emit({
       type: 'trade.executed',
+      origin: 'player',
       gameId,
       gamePlayerId,
       symbol: 'AAPL',

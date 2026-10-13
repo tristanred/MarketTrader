@@ -164,11 +164,21 @@ export function gameRoutes(db: Db, bus?: EventBus) {
 
       if (bus && creatorPlayer) {
         void bus.emit({
+          type: 'game.created',
+          gameId: game.id,
+          createdByUserId: userId,
+          visibility: game.visibility,
+          allowShortSelling: game.allowShortSelling,
+          allowGTC: game.allowGTC,
+          createdAt: game.createdAt,
+        });
+        void bus.emit({
           type: 'player.joined',
           gameId: game.id,
           gamePlayerId: creatorPlayer.id,
           userId,
           joinedAt: creatorPlayer.joinedAt,
+          joinSource: 'creator',
         });
       }
 
@@ -339,6 +349,7 @@ export function gameRoutes(db: Db, bus?: EventBus) {
           gamePlayerId: player.id,
           userId,
           joinedAt: player.joinedAt,
+          joinSource: suppliedCode === game.inviteCode ? 'invite_code' : 'public',
         });
       }
 

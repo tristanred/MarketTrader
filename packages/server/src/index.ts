@@ -1,10 +1,12 @@
 import { buildApp } from './app.js';
-import { env, telemetryEnabled, validateProductionEnv } from './env.js';
+import { env, posthogEnabled, telemetryEnabled, validateProductionEnv } from './env.js';
 import { runMigrations } from './db/migrate.js';
 import { closeDb, db } from './db/index.js';
 import { bootstrapAdmin } from './db/seed-admin.js';
 import { initTelemetry, resourceAttributes, shutdownTelemetry } from './observability/otel.js';
 import { traceContextMixin } from './observability/log-correlation.js';
+import { logExportTargets } from './observability/log-transports.js';
+import { shutdownPostHog } from './observability/posthog.js';
 import { buildInfo } from './build-info.js';
 
 const baseLogger =
@@ -18,28 +20,24 @@ const baseLogger =
       : { level: 'info' };
 
 /**
- * Adds an OTLP target beside whatever pino already writes to, so journald keeps
- * receiving the exact same stream and telemetry is purely additive. Without an
- * explicit second target the transport would *replace* stdout, and a collector
- * outage would take the logs with it.
+ * Adds log-export targets (the OTLP collector, PostHog, or both) beside whatever
+ * pino already writes to, so journald keeps receiving the exact same stream and
+ * export is purely additive. Without an explicit stdout target the transport
+ * would *replace* stdout, and an exporter outage would take the logs with it.
  */
-function withOtlpTransport(logger: Exclude<typeof baseLogger, false>) {
-  if (!telemetryEnabled) return logger;
+function withLogExport(logger: Exclude<typeof baseLogger, false>) {
+  const exportTargets = logExportTargets({
+    collector: telemetryEnabled ? { level: env.OTEL_LOG_LEVEL_MIN } : null,
+    posthog: posthogEnabled
+      ? { host: env.POSTHOG_HOST, key: env.POSTHOG_KEY, level: env.POSTHOG_LOG_LEVEL_MIN }
+      : null,
+    loggerName: env.OTEL_SERVICE_NAME,
+    serviceVersion: buildInfo.version,
+    resourceAttributes: { ...resourceAttributes },
+  });
+  if (exportTargets.length === 0) return logger;
 
   const existing = 'transport' in logger ? logger.transport : undefined;
-  const otlpTarget = {
-    target: 'pino-opentelemetry-transport',
-    level: env.OTEL_LOG_LEVEL_MIN,
-    options: {
-      loggerName: env.OTEL_SERVICE_NAME,
-      serviceVersion: buildInfo.version,
-      // Worker threads get a fresh SDK, so the resource has to be repeated here
-      // rather than inherited. Without it every log record lands in Loki tagged
-      // `service_name="unknown_service"` and cannot be joined to its trace.
-      resourceAttributes: { ...resourceAttributes },
-    },
-  };
-
   return {
     ...logger,
     transport: {
@@ -47,7 +45,7 @@ function withOtlpTransport(logger: Exclude<typeof baseLogger, false>) {
         // `pino/file` with fd 1 is how you keep plain stdout once any transport
         // is configured — pino routes everything through the worker thread.
         existing ?? { target: 'pino/file', options: { destination: 1 } },
-        otlpTarget,
+        ...exportTargets,
       ],
     },
   };
@@ -58,7 +56,7 @@ const loggerOptions =
   baseLogger === false
     ? false
     : {
-        ...withOtlpTransport(baseLogger),
+        ...withLogExport(baseLogger),
         mixin: traceContextMixin,
         redact: {
           paths: [
@@ -103,9 +101,10 @@ try {
 
     app
       .close()
-      // After close() so in-flight requests get their spans recorded, before
-      // exit so the final batch is actually flushed rather than dropped.
-      .then(shutdownTelemetry)
+      // After close() so in-flight requests get their spans recorded and their
+      // analytics events queued, before exit so the final batch is actually
+      // flushed rather than dropped. Independent sinks, so in parallel.
+      .then(() => Promise.all([shutdownTelemetry(), shutdownPostHog()]))
       .then(closeDb)
       .then(() => {
         app.log.info('shutdown complete');

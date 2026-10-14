@@ -11,7 +11,7 @@ import { GameClientRegistry } from '../../src/ws/registry.js';
 import { createTestDb } from '../helpers/app.js';
 import { MockStockProvider } from '../helpers/mock-provider.js';
 import { schema } from '../../src/db/index.js';
-import { env } from '../../src/env.js';
+import { RuntimeConfig } from '../../src/config/runtime-config.js';
 import type { StockProvider } from '../../src/providers/index.js';
 
 /** Minimal WebSocket double — mirrors the one in tests/ws/price-poller.test.ts. */
@@ -123,6 +123,8 @@ async function seedGame(
   return { socket, gameId: game!.id };
 }
 
+const config = RuntimeConfig.fromEnvironment();
+
 describe('F19 — price poller fan-out is bounded', () => {
   it('caps symbols per tick, keeps held symbols, and reports the truncation', async () => {
     const db = await createTestDb();
@@ -130,7 +132,7 @@ describe('F19 — price poller fan-out is bounded', () => {
     const registry = new GameClientRegistry();
 
     const overflow = 25;
-    await seedGame(db, registry, 'f19-cap-user', env.PRICE_POLLER_MAX_SYMBOLS + overflow);
+    await seedGame(db, registry, 'f19-cap-user', config.get('PRICE_POLLER_MAX_SYMBOLS') + overflow);
 
     const fetched: string[] = [];
     const original = provider.getQuote.bind(provider);
@@ -147,19 +149,19 @@ describe('F19 — price poller fan-out is bounded', () => {
       error: () => {},
     };
 
-    await pollPrices(db, provider, registry, logger);
+    await pollPrices(db, provider, registry, config, logger);
 
-    expect(fetched.length).toBe(env.PRICE_POLLER_MAX_SYMBOLS);
+    expect(fetched.length).toBe(config.get('PRICE_POLLER_MAX_SYMBOLS'));
     // Holdings must never be the symbols that get dropped — they drive
     // portfolio value and trade pricing, unlike watchlist rows.
     expect(fetched).toContain('AAPL');
     expect(warnings.length).toBe(1);
     // One held symbol on top of the watchlist rows.
-    const seeded = env.PRICE_POLLER_MAX_SYMBOLS + overflow + 1;
+    const seeded = config.get('PRICE_POLLER_MAX_SYMBOLS') + overflow + 1;
     expect(warnings[0]!.details).toEqual({
       requested: seeded,
-      fetched: env.PRICE_POLLER_MAX_SYMBOLS,
-      dropped: seeded - env.PRICE_POLLER_MAX_SYMBOLS,
+      fetched: config.get('PRICE_POLLER_MAX_SYMBOLS'),
+      dropped: seeded - config.get('PRICE_POLLER_MAX_SYMBOLS'),
     });
   });
 
@@ -172,7 +174,7 @@ describe('F19 — price poller fan-out is bounded', () => {
       db,
       registry,
       'f19-requiet-user',
-      env.PRICE_POLLER_MAX_SYMBOLS + 5,
+      config.get('PRICE_POLLER_MAX_SYMBOLS') + 5,
     );
 
     const truncationWarnings: Record<string, number>[] = [];
@@ -184,19 +186,19 @@ describe('F19 — price poller fan-out is bounded', () => {
     };
     const state = createPricePollerState();
 
-    await pollPrices(db, provider, registry, logger, state);
+    await pollPrices(db, provider, registry, config, logger, state);
     expect(truncationWarnings.length).toBe(1);
 
     // Every night is a quiet period: nobody connected, so the tick returns
     // before it can observe an overflow. If that left the transition flag set,
     // the next busy day would truncate in silence.
     registry.remove(gameId, socket);
-    await pollPrices(db, provider, registry, logger, state);
+    await pollPrices(db, provider, registry, config, logger, state);
     expect(truncationWarnings.length).toBe(1);
 
     // Busy again: a second overflowing game with a connected client.
-    await seedGame(db, registry, 'f19-requiet-user-2', env.PRICE_POLLER_MAX_SYMBOLS + 5);
-    await pollPrices(db, provider, registry, logger, state);
+    await seedGame(db, registry, 'f19-requiet-user-2', config.get('PRICE_POLLER_MAX_SYMBOLS') + 5);
+    await pollPrices(db, provider, registry, config, logger, state);
 
     expect(truncationWarnings.length).toBe(2);
   });
@@ -223,7 +225,7 @@ describe('F19 — price poller fan-out is bounded', () => {
       return original(symbol);
     };
 
-    await pollPrices(db, provider, registry, logger);
+    await pollPrices(db, provider, registry, config, logger);
 
     expect(fetched.length).toBe(6);
     expect(truncationWarnings).toEqual([]);
@@ -236,11 +238,36 @@ describe('F19 — price poller fan-out is bounded', () => {
 
     await seedGame(db, registry, 'f19-batch-user', 40);
 
-    await pollPrices(db, provider, registry);
+    await pollPrices(db, provider, registry, config);
 
     expect(provider.quoteCalls).toBe(0);
     expect(provider.batchCalls).toBe(1);
     expect(provider.batchedSymbols.length).toBe(41);
     expect(provider.batchedSymbols).toContain('AAPL');
+  });
+
+  it('applies a lowered cap on the next tick without a restart', async () => {
+    const db = await createTestDb();
+    const provider = new MockStockProvider();
+    const registry = new GameClientRegistry();
+    const liveConfig = RuntimeConfig.fromEnvironment();
+    await seedGame(db, registry, 'f19-live-cap', 10);
+
+    const fetched: string[] = [];
+    const original = provider.getQuote.bind(provider);
+    provider.getQuote = async (symbol: string) => {
+      fetched.push(symbol);
+      return original(symbol);
+    };
+    const logger = { warn: () => {}, error: () => {} };
+
+    await pollPrices(db, provider, registry, liveConfig, logger);
+    expect(fetched.length).toBe(11);
+
+    liveConfig.set('PRICE_POLLER_MAX_SYMBOLS', 3);
+    fetched.length = 0;
+    await pollPrices(db, provider, registry, liveConfig, logger);
+    expect(fetched.length).toBe(3);
+    expect(fetched).toContain('AAPL');
   });
 });

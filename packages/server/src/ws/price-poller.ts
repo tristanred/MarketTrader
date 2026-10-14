@@ -5,7 +5,7 @@ import { schema } from '../db/index.js';
 import type { StockProvider } from '../providers/index.js';
 import type { GameClientRegistry } from './registry.js';
 import { startIntervalWorker, type IntervalWorker } from '../workers/interval-worker.js';
-import { env } from '../env.js';
+import type { ConfigReader } from '../config/runtime-config.js';
 
 const POLL_INTERVAL_MS = 5_000;
 
@@ -89,13 +89,15 @@ async function fetchQuotes(
  * price_update events (per-client subscription filtering happens in registry).
  * Exported for unit-testing in isolation.
  *
- * At most `PRICE_POLLER_MAX_SYMBOLS` symbols are fetched per tick; `logger`
+ * At most `PRICE_POLLER_MAX_SYMBOLS` symbols are fetched per tick (the cap is
+ * read from `config` each tick); `logger`
  * receives a line whenever that ceiling starts or stops truncating the set.
  */
 export async function pollPrices(
   db: Db,
   provider: StockProvider,
   registry: GameClientRegistry,
+  config: ConfigReader,
   logger?: PricePollerLogger,
   state: PricePollerState = sharedState,
 ): Promise<void> {
@@ -173,7 +175,7 @@ export async function pollPrices(
   ];
   if (ranked.length === 0) return endTickWithoutFetch();
 
-  const allSymbols = ranked.slice(0, env.PRICE_POLLER_MAX_SYMBOLS);
+  const allSymbols = ranked.slice(0, config.get('PRICE_POLLER_MAX_SYMBOLS'));
   const overflowed = ranked.length > allSymbols.length;
   if (overflowed && !state.truncating) {
     logger?.warn(
@@ -201,18 +203,19 @@ export async function pollPrices(
  * Starts the 5-second polling loop. Returns an {@link IntervalWorker} whose
  * `stop()` awaits any in-flight poll (which writes the quote cache) so it can't
  * race `closeDb()` on shutdown. Per-tick errors are swallowed — a single failed
- * poll must not crash the server.
+ * poll must not crash the server. The symbol cap is read from `config` each tick.
  */
 export function startPricePoller(
   db: Db,
   provider: StockProvider,
   registry: GameClientRegistry,
+  config: ConfigReader,
   logger?: PricePollerLogger,
 ): IntervalWorker {
   const state = createPricePollerState();
   return startIntervalWorker(
     'price-poller',
-    () => pollPrices(db, provider, registry, logger, state),
+    () => pollPrices(db, provider, registry, config, logger, state),
     POLL_INTERVAL_MS,
   );
 }

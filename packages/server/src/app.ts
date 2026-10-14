@@ -186,7 +186,7 @@ export async function buildApp(
       heartbeat.stop();
     });
 
-    const poller = startPricePoller(db, provider, registry, app.log);
+    const poller = startPricePoller(db, provider, registry, runtimeConfig, app.log);
     app.addHook('onClose', async () => {
       await poller.stop();
     });

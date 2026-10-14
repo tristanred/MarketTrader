@@ -208,9 +208,8 @@ export const CONFIG_REGISTRY = {
 
   // ── limits ──────────────────────────────────────────────────────────────
   PRICE_POLLER_MAX_SYMBOLS: {
-    category: 'limits', kind: 'integer', mutability: 'restart',
+    category: 'limits', kind: 'integer', mutability: 'live', min: 1, max: 5_000,
     description: 'Most symbols one price-poller tick may fetch. Watchlist symbols are dropped first.',
-    restartReason: 'Not yet routed through runtime config.',
   },
   WATCHLIST_MAX_ITEMS: {
     category: 'limits', kind: 'integer', mutability: 'live', min: 1, max: 500,

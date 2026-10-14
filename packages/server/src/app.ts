@@ -21,6 +21,7 @@ import { discoverRoutes } from './routes/discover.js';
 import { adminRoutes } from './routes/admin/index.js';
 import { registerAdminGuard } from './plugins/admin-guard.js';
 import { SystemSettingsService } from './services/system-settings.js';
+import { ConfigOverridesService } from './services/config-overrides.js';
 import { systemSettingsRoutes } from './routes/system-settings.js';
 import type { StockProvider } from './providers/index.js';
 import { CachedProvider, createProvider } from './providers/index.js';
@@ -113,6 +114,17 @@ export async function buildApp(
   const systemSettings = new SystemSettingsService(db);
   await systemSettings.ensureSeeded();
 
+  // Before any worker arms a timer, so their first reads already see the
+  // persisted overrides.
+  const configOverrides = new ConfigOverridesService(db, runtimeConfig);
+  const activeOverrides = await configOverrides.load(app.log);
+  if (activeOverrides.length > 0) {
+    app.log.warn(
+      { keys: activeOverrides },
+      'runtime config overrides active; they take precedence over the environment until reset in /admin/config',
+    );
+  }
+
   // In-process event bus + achievement engine. Construct before route
   // registration so route factories can capture the bus reference.
   const bus = new EventBus();
@@ -167,7 +179,7 @@ export async function buildApp(
   await app.register(systemSettingsRoutes(systemSettings));
   await app.register(achievementsRoutes(db, achievementEngine));
   await registerAdminGuard(app, db);
-  await app.register(adminRoutes(db, provider, systemSettings, bus, registry));
+  await app.register(adminRoutes(db, provider, systemSettings, configOverrides, bus, registry));
   await app.register(adminAchievementsRoutes(db, achievementEngine, systemSettings));
   await app.register(liveRoute(db, registry, achievementEngine));
   await app.register(globalLiveRoute(db, globalRegistry));

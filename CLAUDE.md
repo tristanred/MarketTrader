@@ -240,6 +240,23 @@ stale-trade policy), the `LOGIN_*` family (per-account login throttle),
 the `WATCHLIST_MAX_*` pair, `SQLITE_BUSY_TIMEOUT_MS`, and the `OTEL_*` family. `env.ts` is the source of truth
 for the full set.
 
+**Live-editable options (`/admin/config`).** `env.ts` exports two objects: `env` (read once at
+startup) and `liveBootConfig` (boot values of options an admin may override at runtime). Live
+options are not on `env`, so `env.KEY` for one is a type error — read it through the
+`ConfigReader` that `buildApp` passes in (`config.get('KEY')`), never by importing
+`liveBootConfig` (a lint rule allows that only in `config/runtime-config.ts`). Each app owns one
+`RuntimeConfig`; `ConfigOverridesService` loads persisted overrides (`system_settings` rows keyed
+`config.override.<KEY>`) into it at boot, before any worker starts, and they win over the
+environment until reset. Every option has a descriptor in `config/registry.ts`; its `satisfies`
+clause fails typecheck if one is missing or has the wrong mutability.
+
+To make an option live: move it from `env` to `liveBootConfig`, switch its descriptor to `live`
+with a `min`/`max`, and give each consumer the compiler then flags a `ConfigReader` parameter.
+Read it per use, never once at construction. Secrets are never live. Override bounds are
+deliberately tighter than env parsing. In tests, simulate the host's environment with
+`createTestApp(provider, status, { runtimeConfig: RuntimeConfig.fromEnvironment({ KEY: v }) })`
+and an admin override with `config.set` — never by mutating `env`.
+
 ---
 
 ## Running Locally

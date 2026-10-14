@@ -121,6 +121,48 @@ describe('startIntervalWorker with a dynamic interval', () => {
     await worker.stop();
   });
 
+  it('applies a lowered interval to a wait already in progress, within the recheck window', async () => {
+    vi.useFakeTimers();
+    let interval = 60_000;
+    const tick = vi.fn(async () => {});
+    const worker = startIntervalWorker('test-lowered', tick, () => interval);
+
+    await vi.advanceTimersByTimeAsync(5_000);
+    interval = 1_000;
+    await vi.advanceTimersByTimeAsync(5_000); // t=10s: the first recheck wake sees the new interval
+    expect(tick).toHaveBeenCalledTimes(1);
+    await worker.stop();
+  });
+
+  it('does not fire on recheck wakes while the interval is unchanged', async () => {
+    vi.useFakeTimers();
+    const tick = vi.fn(async () => {});
+    const worker = startIntervalWorker('test-recheck-idle', tick, () => 60_000);
+
+    await vi.advanceTimersByTimeAsync(59_000);
+    expect(tick).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(tick).toHaveBeenCalledTimes(1);
+    await worker.stop();
+  });
+
+  it('does not spin while a tick overruns the interval', async () => {
+    vi.useFakeTimers();
+    const tick = vi.fn(() => new Promise<void>((r) => setTimeout(r, 250)));
+    const worker = startIntervalWorker('test-overrun', tick, () => 100);
+
+    await vi.advanceTimersByTimeAsync(150); // tick 1 in flight until t=350
+    expect(vi.getTimerCount()).toBe(2); // the worker's timer and the tick's own
+    // Wakes at 200/300 are skipped by the re-entrancy guard. If a skipped wake
+    // left lastFire behind, the timer would re-arm at 0ms and never let fake
+    // time advance.
+    await vi.advanceTimersByTimeAsync(850);
+    expect(tick.mock.calls.length).toBeLessThanOrEqual(10);
+    expect(tick.mock.calls.length).toBeGreaterThanOrEqual(3);
+    await vi.advanceTimersByTimeAsync(250);
+    await worker.stop();
+  });
+
   it('keeps a fixed cadence regardless of tick duration, like setInterval', async () => {
     vi.useFakeTimers();
     const tick = vi.fn(() => new Promise<void>((r) => setTimeout(r, 30)));

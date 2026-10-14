@@ -23,6 +23,9 @@ async function instrumentedTick(name: string, tick: () => Promise<void>): Promis
   });
 }
 
+/** Longest single wait, so a lowered interval is noticed without a restart. */
+export const RECHECK_MS = 10_000;
+
 /** A background loop with a graceful, awaitable stop. */
 export interface IntervalWorker {
   /**
@@ -38,7 +41,8 @@ export interface IntervalWorker {
  * when the interval fires, that fire is skipped (re-entrancy guard). A rejected
  * tick is routed to `onError` and does not stop the loop.
  *
- * `intervalMs` may be a getter; it is re-read each time the timer re-arms.
+ * `intervalMs` may be a getter; it is re-read at least every {@link RECHECK_MS},
+ * so a lowered interval takes effect within that window, not after the old wait.
  *
  * `name` identifies the loop in telemetry — every tick gets a `worker.tick`
  * span and a duration/outcome metric, which is why background work is
@@ -80,13 +84,21 @@ export function startIntervalWorker(
       });
   };
   // A self-re-arming timeout instead of setInterval, so a changed interval
-  // applies at the next fire without restarting the worker. Re-armed right
-  // after fire(), not after the tick settles, to keep setInterval's cadence.
+  // applies without restarting the worker. Each wait is capped at RECHECK_MS
+  // and the interval re-read on every wake, so lowering a long interval takes
+  // effect within RECHECK_MS instead of after the old wait runs out. lastFire
+  // advances on every due wake, even one fire() skips because a tick is still
+  // running — otherwise an overrunning tick would re-arm at 0ms and spin.
+  let lastFire = Date.now();
   const schedule = () => {
+    const wait = Math.max(0, Math.min(lastFire + nextDelay() - Date.now(), RECHECK_MS));
     handle = setTimeout(() => {
-      fire();
+      if (Date.now() - lastFire >= nextDelay()) {
+        lastFire = Date.now();
+        fire();
+      }
       if (!stopped) schedule();
-    }, nextDelay());
+    }, wait);
   };
   schedule();
   if (options.immediate) fire();

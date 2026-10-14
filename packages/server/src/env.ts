@@ -2,17 +2,33 @@ import path from 'node:path';
 import { isIP } from 'node:net';
 
 // TODO(polygon-provider): add 'polygon' once PolygonProvider is implemented
-const VALID_PROVIDERS = ['yahoo', 'alpaca', 'mock'] as const;
+export const VALID_PROVIDERS = ['yahoo', 'alpaca', 'mock'] as const;
 type StockProvider = (typeof VALID_PROVIDERS)[number];
 
+// Names present in the process environment at boot, even if empty. Lets the
+// admin panel tell "set by the host" from "built-in default" without any other
+// module reading process.env.
+const explicitlySet = new Set<string>();
+
+function read(name: string): string | undefined {
+  const value = process.env[name];
+  if (value !== undefined) explicitlySet.add(name);
+  return value;
+}
+
 function optional(name: string, fallback: string): string {
-  return process.env[name] ?? fallback;
+  return read(name) ?? fallback;
 }
 
 function required(name: string): string {
-  const value = process.env[name];
+  const value = read(name);
   if (!value) throw new Error(`Missing required environment variable: ${name}`);
   return value;
+}
+
+/** True when `name` was present in the process environment at boot, even if empty. */
+export function wasSetInEnvironment(name: string): boolean {
+  return explicitlySet.has(name);
 }
 
 function parsePort(raw: string): number {
@@ -93,13 +109,13 @@ function validatedProvider(): StockProvider {
   return value as StockProvider;
 }
 
-const VALID_MARKET_STATUS_PROVIDERS = ['yahoo', 'alpaca', 'static'] as const;
+export const VALID_MARKET_STATUS_PROVIDERS = ['yahoo', 'alpaca', 'static'] as const;
 type MarketStatusProviderName = (typeof VALID_MARKET_STATUS_PROVIDERS)[number];
 
-const VALID_MARKET_HOURS_MODES = ['disabled', 'pending', 'instant'] as const;
+export const VALID_MARKET_HOURS_MODES = ['disabled', 'pending', 'instant'] as const;
 type MarketHoursMode = (typeof VALID_MARKET_HOURS_MODES)[number];
 
-const VALID_NODE_ENVS = ['development', 'production', 'test'] as const;
+export const VALID_NODE_ENVS = ['development', 'production', 'test'] as const;
 type NodeEnv = (typeof VALID_NODE_ENVS)[number];
 
 /**
@@ -133,7 +149,7 @@ function validatedMarketHoursMode(): MarketHoursMode {
  * `'static'` for an offline, key-less fallback at any time.
  */
 function validatedMarketStatusProvider(stockProvider: StockProvider): MarketStatusProviderName {
-  const raw = process.env.MARKET_STATUS_PROVIDER;
+  const raw = read('MARKET_STATUS_PROVIDER');
   if (!raw) return stockProvider === 'mock' ? 'static' : stockProvider;
   if (!(VALID_MARKET_STATUS_PROVIDERS as readonly string[]).includes(raw)) {
     throw new Error(
@@ -249,16 +265,6 @@ export const env = {
     'PRICE_POLLER_MAX_SYMBOLS',
     optional('PRICE_POLLER_MAX_SYMBOLS', '500'),
   ),
-  /** Symbols one watchlist may hold. Adds past it are refused with 409. */
-  WATCHLIST_MAX_ITEMS: parsePositiveInt(
-    'WATCHLIST_MAX_ITEMS',
-    optional('WATCHLIST_MAX_ITEMS', '50'),
-  ),
-  /** Watchlists one user may own. Creates past it are refused with 409. */
-  WATCHLIST_MAX_PER_USER: parsePositiveInt(
-    'WATCHLIST_MAX_PER_USER',
-    optional('WATCHLIST_MAX_PER_USER', '20'),
-  ),
 
   /**
    * How often the server sends WebSocket ping frames to connected clients, in
@@ -356,6 +362,25 @@ export const env = {
    * by volume, and Fastify writes two info lines per request.
    */
   POSTHOG_LOG_LEVEL_MIN: optional('POSTHOG_LOG_LEVEL_MIN', 'warn'),
+} as const;
+
+/**
+ * Boot values of the options an admin may override from `/admin/config`. Read
+ * them through an injected `ConfigReader` so an override reaches the consumer;
+ * only `config/runtime-config.ts` may import this (enforced by eslint). Moving a
+ * property here from {@link env} makes the compiler list every consumer to update.
+ */
+export const liveBootConfig = {
+  /** Symbols one watchlist may hold. Adds past it are refused with 409. */
+  WATCHLIST_MAX_ITEMS: parsePositiveInt(
+    'WATCHLIST_MAX_ITEMS',
+    optional('WATCHLIST_MAX_ITEMS', '50'),
+  ),
+  /** Watchlists one user may own. Creates past it are refused with 409. */
+  WATCHLIST_MAX_PER_USER: parsePositiveInt(
+    'WATCHLIST_MAX_PER_USER',
+    optional('WATCHLIST_MAX_PER_USER', '20'),
+  ),
 } as const;
 
 /** True when an OTLP endpoint is configured. Everything telemetry keys off this. */

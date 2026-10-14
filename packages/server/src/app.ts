@@ -50,6 +50,7 @@ import { achievements as achievementDefinitions } from './achievements/definitio
 import { achievementsRoutes } from './routes/achievements.js';
 import { FailedLoginTracker, type FailedLoginOptions } from './services/failed-login.js';
 import { adminAchievementsRoutes } from './routes/admin/achievements.js';
+import { RuntimeConfig } from './config/runtime-config.js';
 
 export async function buildApp(
   opts: FastifyServerOptions & {
@@ -65,6 +66,8 @@ export async function buildApp(
     leaderboardThrottleMs?: number;
     /** PostHog client for analytics and error tracking. Defaults to {@link getPostHog}. */
     analytics?: AnalyticsClient | null;
+    /** Live options for this app instance. Defaults to the process environment. */
+    runtimeConfig?: RuntimeConfig;
   } = {},
 ): Promise<FastifyInstance> {
   const {
@@ -76,6 +79,7 @@ export async function buildApp(
     loginThrottle,
     leaderboardThrottleMs,
     analytics = getPostHog(),
+    runtimeConfig = RuntimeConfig.fromEnvironment(),
     ...fastifyOpts
   } = opts;
   const provider = injectedProvider ?? new CachedProvider(db, createProvider());
@@ -158,7 +162,7 @@ export async function buildApp(
     tradingRoutes(db, provider, marketStatusProvider, registry, leaderboardThrottleMs, bus),
   );
   await app.register(marketStatusRoutes(marketStatusProvider));
-  await app.register(watchlistRoutes(db));
+  await app.register(watchlistRoutes(db, runtimeConfig));
   await app.register(discoverRoutes(db));
   await app.register(systemSettingsRoutes(systemSettings));
   await app.register(achievementsRoutes(db, achievementEngine));

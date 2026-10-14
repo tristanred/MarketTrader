@@ -26,6 +26,19 @@ export default [
       ...tseslint.configs['recommended'].rules,
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
       '@typescript-eslint/no-explicit-any': 'error',
+      '@typescript-eslint/no-restricted-imports': ['error', {
+        patterns: [{
+          group: ['**/env.js', '**/env'],
+          importNames: ['liveBootConfig'],
+          allowTypeImports: true,
+          message:
+            'Live options are read through an injected ConfigReader (config.get). Only config/runtime-config.ts may import liveBootConfig.',
+        }],
+      }],
     },
+  },
+  {
+    files: ['packages/server/src/config/runtime-config.ts'],
+    rules: { '@typescript-eslint/no-restricted-imports': 'off' },
   },
 ];

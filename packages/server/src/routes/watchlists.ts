@@ -5,7 +5,7 @@ import { and, asc, count, eq } from 'drizzle-orm';
 import type { Db } from '../db/index.js';
 import { schema } from '../db/index.js';
 import type { Watchlist } from '@markettrader/shared';
-import { env } from '../env.js';
+import type { ConfigReader } from '../config/runtime-config.js';
 
 const nameSchema = z
   .string()
@@ -99,8 +99,9 @@ async function loadWatchlistForUser(
  * Growth is capped by `WATCHLIST_MAX_PER_USER` and `WATCHLIST_MAX_ITEMS`; a
  * write past either answers 409. The rows are an input to the price poller's
  * per-tick symbol set, so an unbounded list is upstream load everyone shares.
+ * `config` supplies the live watchlist caps.
  */
-export function watchlistRoutes(db: Db) {
+export function watchlistRoutes(db: Db, config: ConfigReader) {
   return async function (rawApp: FastifyInstance): Promise<void> {
     const app = rawApp.withTypeProvider<ZodTypeProvider>();
     const { watchlists, watchlistItems } = schema;
@@ -183,9 +184,10 @@ export function watchlistRoutes(db: Db) {
         .select({ total: count() })
         .from(watchlists)
         .where(eq(watchlists.userId, userId));
-      if ((owned?.total ?? 0) >= env.WATCHLIST_MAX_PER_USER) {
+      const maxPerUser = config.get('WATCHLIST_MAX_PER_USER');
+      if ((owned?.total ?? 0) >= maxPerUser) {
         return reply.status(409).send({
-          error: `Watchlist limit reached (${env.WATCHLIST_MAX_PER_USER} per user). Delete one first.`,
+          error: `Watchlist limit reached (${maxPerUser} per user). Delete one first.`,
         });
       }
 
@@ -279,9 +281,10 @@ export function watchlistRoutes(db: Db) {
         if (!existing) return reply.status(404).send({ error: 'Watchlist not found' });
 
         if (!existing.symbols.includes(symbol)) {
-          if (existing.symbols.length >= env.WATCHLIST_MAX_ITEMS) {
+          const maxItems = config.get('WATCHLIST_MAX_ITEMS');
+          if (existing.symbols.length >= maxItems) {
             return reply.status(409).send({
-              error: `Watchlist is full (${env.WATCHLIST_MAX_ITEMS} symbols). Remove one first.`,
+              error: `Watchlist is full (${maxItems} symbols). Remove one first.`,
             });
           }
           try {

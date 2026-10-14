@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import type { Watchlist } from '@markettrader/shared';
-import { createTestApp } from '../helpers/app.js';
-import { env } from '../../src/env.js';
+import { createTestAppWithDb } from '../helpers/app.js';
+import type { RuntimeConfig } from '../../src/config/runtime-config.js';
 
 async function registerUser(app: FastifyInstance, username: string): Promise<string> {
   const res = await app.inject({
@@ -24,10 +24,11 @@ function addItem(app: FastifyInstance, token: string, listId: string, symbol: st
 
 describe('F18 — watchlist growth is bounded', () => {
   let app: FastifyInstance;
+  let config: RuntimeConfig;
   let token: string;
 
   beforeAll(async () => {
-    app = await createTestApp();
+    ({ app, config } = await createTestAppWithDb());
     token = await registerUser(app, 'f18-capped');
   });
   afterAll(() => app.close());
@@ -41,26 +42,26 @@ describe('F18 — watchlist growth is bounded', () => {
     });
     const list = created.json<Watchlist>();
 
-    for (let i = 0; i < env.WATCHLIST_MAX_ITEMS; i += 1) {
+    for (let i = 0; i < config.get('WATCHLIST_MAX_ITEMS'); i += 1) {
       const res = await addItem(app, token, list.id, `SYM${i}`);
       expect(res.statusCode).toBe(200);
     }
 
     const overflow = await addItem(app, token, list.id, 'ONEMORE');
     expect(overflow.statusCode).toBe(409);
-    expect(overflow.json<{ error: string }>().error).toContain(String(env.WATCHLIST_MAX_ITEMS));
+    expect(overflow.json<{ error: string }>().error).toContain(String(config.get('WATCHLIST_MAX_ITEMS')));
 
     // A full list must stay usable: re-adding an existing symbol is still the
     // documented idempotent no-op, not a rejection.
     const repeat = await addItem(app, token, list.id, 'SYM0');
     expect(repeat.statusCode).toBe(200);
-    expect(repeat.json<Watchlist>().symbols.length).toBe(env.WATCHLIST_MAX_ITEMS);
+    expect(repeat.json<Watchlist>().symbols.length).toBe(config.get('WATCHLIST_MAX_ITEMS'));
   });
 
   it('rejects a watchlist past WATCHLIST_MAX_PER_USER but still serves existing names', async () => {
     const listToken = await registerUser(app, 'f18-list-capped');
 
-    for (let i = 0; i < env.WATCHLIST_MAX_PER_USER; i += 1) {
+    for (let i = 0; i < config.get('WATCHLIST_MAX_PER_USER'); i += 1) {
       const res = await app.inject({
         method: 'POST',
         url: '/watchlists',
@@ -78,7 +79,7 @@ describe('F18 — watchlist growth is bounded', () => {
     });
     expect(overflow.statusCode).toBe(409);
     expect(overflow.json<{ error: string }>().error).toContain(
-      String(env.WATCHLIST_MAX_PER_USER),
+      String(config.get('WATCHLIST_MAX_PER_USER')),
     );
 
     // The idempotent-by-name lookup must keep working at the cap.

@@ -26,7 +26,7 @@ export default [
       ...tseslint.configs['recommended'].rules,
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
       '@typescript-eslint/no-explicit-any': 'error',
-      '@typescript-eslint/no-restricted-imports': ['error', {
+      'no-restricted-imports': ['error', {
         patterns: [{
           group: ['**/env.js', '**/env'],
           importNames: ['liveBootConfig'],
@@ -39,6 +39,6 @@ export default [
   },
   {
     files: ['packages/server/src/config/runtime-config.ts'],
-    rules: { '@typescript-eslint/no-restricted-imports': 'off' },
+    rules: { 'no-restricted-imports': 'off' },
   },
 ];

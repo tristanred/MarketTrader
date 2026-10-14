@@ -521,3 +521,51 @@ export const positionHighWater = sqliteTable(
   },
   (t) => [primaryKey({ columns: [t.gamePlayerId, t.symbol] })],
 );
+
+/**
+ * Market-wide Discover lists (top gainers, losers, most active, trending), one
+ * row per list per NYSE session. Shared by every game, written by the Discover
+ * worker after the close. `items` is a JSON-encoded `DiscoverItem[]`. A list
+ * the provider failed to serve has no row, so the worker retries it.
+ */
+export const discoverMarketMovers = sqliteTable(
+  'discover_market_movers',
+  {
+    id: text('id')
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    /** NYSE session date, `YYYY-MM-DD` in America/New_York. */
+    sessionDate: text('session_date').notNull(),
+    /** A `MarketMoverKind`. */
+    kind: text('kind', { enum: ['gainers', 'losers', 'active', 'trending'] }).notNull(),
+    items: text('items').notNull(),
+    fetchedAt: text('fetched_at')
+      .default(sql`(datetime('now'))`)
+      .notNull(),
+  },
+  (t) => [unique().on(t.sessionDate, t.kind)],
+);
+
+/**
+ * A game's Discover daily picks for one NYSE session: S&P 500 constituents
+ * sampled by the Discover worker, with price and change snapshotted at
+ * generation. `items` is a JSON-encoded `DiscoverItem[]`.
+ */
+export const gameDiscoverPicks = sqliteTable(
+  'game_discover_picks',
+  {
+    id: text('id')
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    gameId: text('game_id')
+      .notNull()
+      .references(() => games.id, { onDelete: 'cascade' }),
+    /** NYSE session date, `YYYY-MM-DD` in America/New_York. */
+    sessionDate: text('session_date').notNull(),
+    items: text('items').notNull(),
+    generatedAt: text('generated_at')
+      .default(sql`(datetime('now'))`)
+      .notNull(),
+  },
+  (t) => [unique().on(t.gameId, t.sessionDate)],
+);

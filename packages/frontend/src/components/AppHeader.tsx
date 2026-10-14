@@ -1,5 +1,5 @@
 import { NavLink, useNavigate, useParams } from 'react-router-dom';
-import { Moon, Sun } from 'lucide-react';
+import { Compass, Moon, Sun, Trophy } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { BrandMark } from '@/components/BrandMark';
 import { useAuthStore, useIsAdmin } from '@/stores/authStore';
@@ -30,9 +30,9 @@ export function AppHeader() {
   return (
     <header className="flex h-11 items-center justify-between border-b border-hairline-strong bg-bg px-4">
       {/* On a phone the brand wordmark is the cheapest thing to drop: the mark
-          alone still anchors the topbar, and on game pages the extra
-          "Achievements" link would otherwise push this row past a 375px
-          viewport and scroll the whole document sideways. */}
+          alone still anchors the topbar. The game links (Achievements,
+          Discover) also collapse to icons below `sm` — as words they push this
+          row past a 375px viewport and scroll the whole document sideways. */}
       <div className="flex min-w-0 items-center gap-3 sm:gap-6">
         <NavLink
           to="/"
@@ -47,12 +47,22 @@ export function AppHeader() {
             Games
           </NavLink>
           {onGamePage && (
-            <NavLink
-              to={`/games/${params.gameId}/achievements`}
-              className={({ isActive }) => linkClass(isActive)}
-            >
-              Achievements
-            </NavLink>
+            <>
+              <NavLink
+                to={`/games/${params.gameId}/achievements`}
+                className={({ isActive }) => linkClass(isActive)}
+              >
+                <Trophy aria-hidden className="h-3.5 w-3.5 sm:hidden" />
+                <span className="sr-only sm:not-sr-only">Achievements</span>
+              </NavLink>
+              <NavLink
+                to={`/games/${params.gameId}/discover`}
+                className={({ isActive }) => linkClass(isActive)}
+              >
+                <Compass aria-hidden className="h-3.5 w-3.5 sm:hidden" />
+                <span className="sr-only sm:not-sr-only">Discover</span>
+              </NavLink>
+            </>
           )}
           {isAdmin ? (
             <NavLink to="/admin" className={({ isActive }) => linkClass(isActive)}>

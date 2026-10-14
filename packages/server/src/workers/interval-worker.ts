@@ -42,6 +42,10 @@ export interface IntervalWorker {
  * span and a duration/outcome metric, which is why background work is
  * observable without each worker instrumenting itself.
  *
+ * With `options.immediate`, the first tick fires at start instead of after one
+ * interval — for workers whose output users would otherwise wait a full
+ * interval for after a restart.
+ *
  * {@link IntervalWorker.stop} awaits the in-flight tick — this is the property
  * the synchronous `clearInterval` pattern lacked, and why a tick could race
  * `closeDb()` during shutdown.
@@ -51,6 +55,7 @@ export function startIntervalWorker(
   tick: () => Promise<void>,
   intervalMs: number,
   onError?: (err: unknown) => void,
+  options: { immediate?: boolean } = {},
 ): IntervalWorker {
   let running = false;
   let stopped = false;
@@ -58,7 +63,7 @@ export function startIntervalWorker(
   // throws), or null when idle. stop() awaits this to drain a live tick.
   let inflight: Promise<void> | null = null;
 
-  const handle = setInterval(() => {
+  const fire = () => {
     if (running || stopped) return;
     running = true;
     inflight = instrumentedTick(name, tick)
@@ -69,7 +74,9 @@ export function startIntervalWorker(
         running = false;
         inflight = null;
       });
-  }, intervalMs);
+  };
+  const handle = setInterval(fire, intervalMs);
+  if (options.immediate) fire();
 
   return {
     stop: async () => {

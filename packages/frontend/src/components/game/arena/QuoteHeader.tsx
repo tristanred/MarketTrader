@@ -1,3 +1,4 @@
+import { Info } from 'lucide-react';
 import { Panel, PanelHeader, PanelBody } from '@/components/panel';
 import { cn } from '@/lib/utils';
 import { useCommandKStore } from '@/stores/commandKStore';
@@ -9,6 +10,8 @@ export interface QuoteHeaderProps {
   changeAbs?: number;
   changePct?: number;
   onTrade?: (direction: TradeDirection) => void;
+  /** Opens the quote-information window. Without it the ticker is plain text. */
+  onOpenQuote?: () => void;
   className?: string;
 }
 
@@ -16,9 +19,19 @@ export interface QuoteHeaderProps {
  * Center-column quote strip: big symbol + price + delta + BUY/SELL.
  * When no symbol is selected, renders an empty-state hint instead of
  * faking numbers. `onTrade` is optional — buttons disable if absent so
- * the panel still renders cleanly during loading.
+ * the panel still renders cleanly during loading. The ticker doubles as the
+ * arena's way into the quote window, marked by a quiet ⓘ so it's findable
+ * without adding a third button beside BUY/SELL.
  */
-export function QuoteHeader({ symbol, last, changeAbs, changePct, onTrade, className }: QuoteHeaderProps) {
+export function QuoteHeader({
+  symbol,
+  last,
+  changeAbs,
+  changePct,
+  onTrade,
+  onOpenQuote,
+  className,
+}: QuoteHeaderProps) {
   if (!symbol) {
     return (
       <Panel className={className}>
@@ -51,7 +64,24 @@ export function QuoteHeader({ symbol, last, changeAbs, changePct, onTrade, class
       <PanelHeader>Quote · {symbol}</PanelHeader>
       <PanelBody>
         <div className="grid grid-cols-[auto_auto_1fr_auto_auto] items-baseline gap-4">
-          <span className="font-mono text-lg font-bold tracking-tight text-text-strong">{symbol}</span>
+          {onOpenQuote ? (
+            <button
+              type="button"
+              onClick={onOpenQuote}
+              aria-label={`${symbol} details`}
+              title="Quote details"
+              className="group inline-flex items-center gap-1.5 rounded-chip font-mono text-lg font-bold tracking-tight text-text-strong focus:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+            >
+              <span className="decoration-accent underline-offset-4 group-hover:underline">
+                {symbol}
+              </span>
+              <Info aria-hidden className="h-3.5 w-3.5 text-muted group-hover:text-accent" />
+            </button>
+          ) : (
+            <span className="font-mono text-lg font-bold tracking-tight text-text-strong">
+              {symbol}
+            </span>
+          )}
           {last !== undefined ? (
             <span className="font-mono text-xl font-semibold tracking-tight text-text-strong">
               {new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(last)}

@@ -16,10 +16,13 @@ MarketTrader is a virtual stock trading tournament platform. Groups of friends c
 packages/
   server/     ← Fastify REST API + WebSocket server (Node.js + TypeScript)
               src/: routes services providers db ws events
-              workers (pending-orders settler, portfolio-snapshot)
+              workers (pending-orders settler, portfolio-snapshot, discover)
               achievements observability (OpenTelemetry)
   frontend/   ← React 19 + Vite SPA
   shared/     ← TypeScript types only — API contracts shared between server and frontend
+tools/
+  seed-game-history/  ← fake game history generator (`pnpm seed:history`)
+  logo-assets/
 docs/
   technical-decisions.md  ← ADR log — read before suggesting alternative tech
   design.md               ← Evolving feature/entity design — update when adding features
@@ -91,6 +94,10 @@ Every exported function, class, and interface must have a JSDoc comment unless t
 - **Schema lives in `packages/server/src/db/schema.sqlite.ts` and `schema.pg.ts`** — one file per dialect, kept in sync by hand
 - **Never write raw SQL** — use Drizzle query builder
 - **Migrations**: `pnpm --filter server db:generate` (create), `db:migrate` (apply), `db:studio` (inspect). Never hand-edit migration files.
+  `drizzle.config.ts` picks dialect from `DATABASE_URL`, so a schema change needs **two** generates —
+  once with a SQLite URL (→ `drizzle/sqlite/`) and once with `DATABASE_URL=postgres://...` (→ `drizzle/pg/`).
+- `db` is typed as `LibSQLDatabase` everywhere, but on Postgres numeric columns come back as **strings**
+  at runtime — wrap monetary reads (`cashBalance`, `price`, `avgCostBasis`) in `Number(...)`.
 - Driver selection at startup:
   ```typescript
   DATABASE_URL starts with "postgres" → postgres-js driver
@@ -228,9 +235,9 @@ Additional vars rarely need touching (defined in `env.ts`, most also documented
 in `.env.example`): the `MARKET_*` family (hours mode, status provider, extended
 hours), the `STOCK_*_MS` resilience tunables (cache TTLs, rate-limit backoff,
 stale-trade policy), the `LOGIN_*` family (per-account login throttle),
-`PENDING_ORDERS_TICK_MS`, `PORTFOLIO_SNAPSHOT_INTERVAL_MS`,
+`PENDING_ORDERS_TICK_MS`, `PORTFOLIO_SNAPSHOT_INTERVAL_MS`, `DISCOVER_REFRESH_INTERVAL_MS`,
 `WS_HEARTBEAT_INTERVAL_MS`, `WS_REVALIDATE_INTERVAL_MS`, `PRICE_POLLER_MAX_SYMBOLS`,
-the `WATCHLIST_MAX_*` pair, and the `OTEL_*` family. `env.ts` is the source of truth
+the `WATCHLIST_MAX_*` pair, `SQLITE_BUSY_TIMEOUT_MS`, and the `OTEL_*` family. `env.ts` is the source of truth
 for the full set.
 
 ---
@@ -238,6 +245,7 @@ for the full set.
 ## Running Locally
 
 ```bash
+# Requires Node ≥ 26 (engines) and pnpm 11
 # Start PostgreSQL (optional — use SQLite if you don't want Docker)
 docker-compose up -d db
 
@@ -274,7 +282,9 @@ pnpm --filter server db:studio     # open Drizzle Studio
 
 ## Business Rules (do not violate)
 
-1. Trades execute immediately at the last fetched price (no order book)
+1. Market orders fill immediately at the last fetched price (no order book). Limit/stop/bracket
+   orders rest as `working` rows filled by the trigger worker; orders placed while the market is
+   closed are `pending` and settle at next open (`services/working-order.ts`, `pending-trade.ts`)
 2. No short selling — players can only sell shares they own
 3. No fractional shares — quantity must be a positive integer ≥ 1
 4. Buy requires `quantity × price ≤ cashBalance`

@@ -1,6 +1,8 @@
 import { eq, inArray } from 'drizzle-orm';
 import { SpanStatusCode } from '@opentelemetry/api';
 import type {
+  DiscoverItem,
+  MarketMoverKind,
   MarketState,
   StockDetails,
   StockHistoryBar,
@@ -93,10 +95,23 @@ export class CachedProvider implements StockProvider {
    */
   private readonly detailsBySymbol = new Map<string, { details: StockDetails; cachedAt: number }>();
 
+  /**
+   * Pass-through to the wrapped provider's market-mover lists, present only
+   * when the wrapped provider has one so callers can still feature-detect.
+   * Uncached: the Discover worker persists what it fetches.
+   */
+  readonly getMarketMovers?: (kind: MarketMoverKind, count: number) => Promise<DiscoverItem[]>;
+
   constructor(
     private readonly db: Db,
     private readonly inner: StockProvider,
-  ) {}
+  ) {
+    const movers = inner.getMarketMovers?.bind(inner);
+    if (movers) {
+      this.getMarketMovers = (kind, count) =>
+        this.upstream('getMarketMovers', undefined, () => movers(kind, count));
+    }
+  }
 
   /**
    * Wraps a call to the wrapped provider in a span and records its latency and

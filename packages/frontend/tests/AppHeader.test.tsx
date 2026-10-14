@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import { describe, it, expect, beforeEach } from 'vitest';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AppHeader } from '@/components/AppHeader';
 import { useAuthStore } from '@/stores/authStore';
@@ -52,5 +52,30 @@ describe('AppHeader', () => {
   it('renders a theme toggle button', () => {
     render(wrap(<AppHeader />));
     expect(screen.getByRole('button', { name: /theme/i })).toBeInTheDocument();
+  });
+
+  it("links to the game's Achievements and Discover pages on a game page", () => {
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <MemoryRouter initialEntries={['/games/g1']}>
+          <Routes>
+            <Route path="/games/:gameId" element={<AppHeader />} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    expect(screen.getByRole('link', { name: 'Discover' })).toHaveAttribute(
+      'href',
+      '/games/g1/discover',
+    );
+    expect(screen.getByRole('link', { name: 'Achievements' })).toHaveAttribute(
+      'href',
+      '/games/g1/achievements',
+    );
+  });
+
+  it('shows no game links off a game page', () => {
+    render(wrap(<AppHeader />));
+    expect(screen.queryByRole('link', { name: 'Discover' })).toBeNull();
   });
 });

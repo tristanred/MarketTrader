@@ -397,3 +397,28 @@ describe('CachedProvider', () => {
     });
   });
 });
+
+describe('CachedProvider.getMarketMovers', () => {
+  it('is absent when the wrapped provider has no market movers', async () => {
+    const db = await createTestDb();
+    const inner = new FakeInner();
+    expect(new CachedProvider(db, inner).getMarketMovers).toBeUndefined();
+  });
+
+  it('passes through to the wrapped provider when it has one, uncached', async () => {
+    const db = await createTestDb();
+    const inner = new FakeInner() as FakeInner & Pick<StockProvider, 'getMarketMovers'>;
+    let calls = 0;
+    inner.getMarketMovers = async (kind, count) => {
+      calls += 1;
+      return [{ symbol: 'AAA', name: kind, price: 1, changePct: count }];
+    };
+    const cached = new CachedProvider(db, inner);
+
+    expect(await cached.getMarketMovers?.('losers', 5)).toEqual([
+      { symbol: 'AAA', name: 'losers', price: 1, changePct: 5 },
+    ]);
+    await cached.getMarketMovers?.('losers', 5);
+    expect(calls).toBe(2);
+  });
+});

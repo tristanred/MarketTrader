@@ -43,3 +43,12 @@ export function formatCompactNumber(value: number): string {
  * 1–10 chars, uppercase letters/digits with optional `.` or `-` (e.g. `BRK.B`).
  */
 export const SYMBOL_RE = /^[A-Z][A-Z0-9.\-]{0,9}$/;
+
+/**
+ * TradingView symbol page for a ticker. Our tickers use Yahoo's dash form for
+ * share classes (`BRK-B`); TradingView writes them with a dot (`BRK.B`).
+ */
+export function tradingViewUrl(symbol: string): string {
+  const tvSymbol = symbol.toUpperCase().replace(/-/g, '.');
+  return `https://www.tradingview.com/symbols/${encodeURIComponent(tvSymbol)}/`;
+}

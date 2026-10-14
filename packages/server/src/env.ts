@@ -226,6 +226,16 @@ export const env = {
     'PORTFOLIO_SNAPSHOT_INTERVAL_MS',
     optional('PORTFOLIO_SNAPSHOT_INTERVAL_MS', '300000'),
   ),
+  /**
+   * How often the Discover worker checks for missing lists: market movers for
+   * the session that just closed, and daily picks for games without one.
+   * Default 5 minutes — bounds how long a new game shows "preparing", and how
+   * soon after the 16:00 ET close the movers are captured.
+   */
+  DISCOVER_REFRESH_INTERVAL_MS: parsePositiveInt(
+    'DISCOVER_REFRESH_INTERVAL_MS',
+    optional('DISCOVER_REFRESH_INTERVAL_MS', '300000'),
+  ),
 
   /**
    * Hard cap on how many distinct symbols one price-poller tick may fetch.

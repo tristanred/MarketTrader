@@ -37,4 +37,18 @@ describe('QuoteHeader', () => {
     render(<QuoteHeader symbol="AAPL" last={189.4} changeAbs={0} changePct={0} />);
     expect(screen.getByText('189.40')).toBeInTheDocument();
   });
+
+  it('opens the quote details from the ticker', async () => {
+    const user = userEvent.setup();
+    const onOpenQuote = vi.fn();
+    render(<QuoteHeader symbol="AAPL" last={189} changeAbs={0} changePct={0} onOpenQuote={onOpenQuote} />);
+    await user.click(screen.getByRole('button', { name: 'AAPL details' }));
+    expect(onOpenQuote).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders the ticker as plain text when there is nothing to open', () => {
+    render(<QuoteHeader symbol="AAPL" last={189} changeAbs={0} changePct={0} />);
+    expect(screen.queryByRole('button', { name: 'AAPL details' })).toBeNull();
+    expect(screen.getByText('AAPL')).toBeInTheDocument();
+  });
 });

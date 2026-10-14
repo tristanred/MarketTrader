@@ -1,6 +1,14 @@
 import { test, expect } from '../fixtures/base';
 
 test.describe('Admin config', () => {
+  // The e2e DB is shared by the whole run, so a failed step must not leave the
+  // override behind. DELETE is idempotent: 200 even with no override row.
+  test.afterEach(async ({ apiClient, adminUser }) => {
+    await apiClient.delete('/admin/config/WATCHLIST_MAX_ITEMS', {
+      headers: { Authorization: `Bearer ${adminUser.accessToken}` },
+    });
+  });
+
   test('API: list, override, and reset a live option', async ({ apiClient, adminUser }) => {
     const headers = { Authorization: `Bearer ${adminUser.accessToken}` };
 

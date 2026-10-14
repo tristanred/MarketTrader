@@ -4,7 +4,7 @@ import { eq } from 'drizzle-orm';
 import type { AdminConfigEntry, AdminConfigResponse } from '@markettrader/shared';
 import { createTestAppWithDb, registerAdmin, type createTestDb } from '../helpers/app.js';
 import { env } from '../../src/env.js';
-import { CONFIG_REGISTRY, descriptorFor, isLiveKey, type EnvKey } from '../../src/config/registry.js';
+import { CONFIG_REGISTRY, descriptorFor, type EnvKey } from '../../src/config/registry.js';
 import { CONFIG_OVERRIDE_PREFIX } from '../../src/services/config-overrides.js';
 import * as schema from '../../src/db/schema.sqlite.js';
 import type { RuntimeConfig } from '../../src/config/runtime-config.js';
@@ -54,12 +54,15 @@ describe('/admin/config', () => {
     expect(res.statusCode).toBe(200);
     expect(res.json<AdminConfigResponse>().entries.map((e) => e.key)).toEqual(Object.keys(CONFIG_REGISTRY));
     const entries = res.json<AdminConfigResponse>().entries;
-    const secretKeys = (Object.keys(CONFIG_REGISTRY) as EnvKey[]).filter((k) => descriptorFor(k).secret);
+    // Secrets are restart-only, so every one is a key of `env`.
+    const secretKeys = (Object.keys(env) as (keyof typeof env)[]).filter((k) => descriptorFor(k).secret);
+    const registrySecrets = (Object.keys(CONFIG_REGISTRY) as EnvKey[]).filter((k) => descriptorFor(k).secret);
+    expect([...secretKeys].sort()).toEqual([...registrySecrets].sort());
     expect(secretKeys).toEqual(expect.arrayContaining(['JWT_SECRET', 'ALPACA_API_KEY_ID', 'ALPACA_API_SECRET_KEY', 'POSTHOG_KEY']));
     for (const key of secretKeys) {
       expect(entries.find((e) => e.key === key)).toMatchObject({ secret: true, bootValue: null, effectiveValue: null });
-      // Secrets are restart-only, so they live on `env`; an unset one is '' and has nothing to leak.
-      const raw = isLiveKey(key) ? '' : String(env[key]);
+      // An unset secret is '' and has nothing to leak.
+      const raw = String(env[key]);
       if (raw !== '') expect(res.body).not.toContain(raw);
     }
     expect(res.body).not.toContain(env.JWT_SECRET);

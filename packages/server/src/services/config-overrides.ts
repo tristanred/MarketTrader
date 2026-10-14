@@ -55,11 +55,14 @@ function parseRow(row: Pick<OverrideRow, 'key' | 'value'>): Parsed {
  * app's {@link RuntimeConfig} in step with them. Audits in the same transaction
  * as the write and touches the config only after commit. Rows that no longer
  * validate (renamed key, tightened bounds) are ignored, never fatal.
+ * `restartValues` supplies restart-only options and defaults to {@link env}.
  */
 export class ConfigOverridesService {
   constructor(
     private readonly db: Db,
     private readonly config: RuntimeConfig,
+    // Injectable so tests can pin redaction against real-looking credentials.
+    private readonly restartValues: Readonly<typeof env> = env,
   ) {}
 
   /** Makes the config's overrides exactly the valid persisted rows. Returns the keys applied. */
@@ -161,7 +164,7 @@ export class ConfigOverridesService {
     const parsed = row ? parseRow(row) : null;
     const override =
       row && parsed?.ok ? { value: parsed.value, updatedAt: row.updatedAt, updatedBy: row.username } : null;
-    const boot: ConfigValue = isLiveKey(key) ? this.config.bootValue(key) : env[key];
+    const boot: ConfigValue = isLiveKey(key) ? this.config.bootValue(key) : this.restartValues[key];
     const effective: ConfigValue = isLiveKey(key) ? this.config.get(key) : boot;
     const show = (v: ConfigValue): ConfigValue | null =>
       d.secret ? null : d.redactUrl && typeof v === 'string' ? redactConfigUrl(v) : v;
@@ -180,7 +183,8 @@ export class ConfigOverridesService {
       restartReason: d.mutability === 'restart' ? d.restartReason : null,
       secret: d.secret ?? false,
       // TRUST_PROXY=false is how an operator says "no proxy", so it reads as unset.
-      isSet: boot !== '' && boot !== false,
+      // Other booleans are always set: false is a real choice, not an absence.
+      isSet: key === 'TRUST_PROXY' ? boot !== false : boot !== '',
       source: override ? 'override' : isExplicitlySet(key) ? 'env' : 'default',
       bootValue: show(boot),
       effectiveValue: show(effective),

@@ -87,6 +87,9 @@ const AdminTradesPage = lazy(() =>
 const AdminSystemPage = lazy(() =>
   import('@/pages/admin/AdminSystemPage').then((m) => ({ default: m.AdminSystemPage })),
 );
+const AdminConfigPage = lazy(() =>
+  import('@/pages/admin/AdminConfigPage').then((m) => ({ default: m.AdminConfigPage })),
+);
 const AdminAuditPage = lazy(() =>
   import('@/pages/admin/AdminAuditPage').then((m) => ({ default: m.AdminAuditPage })),
 );
@@ -175,6 +178,7 @@ function App() {
                 <Route path="portfolios" element={<AdminPortfoliosPage />} />
                 <Route path="trades" element={<AdminTradesPage />} />
                 <Route path="system" element={<AdminSystemPage />} />
+                <Route path="config" element={<AdminConfigPage />} />
                 <Route path="audit" element={<AdminAuditPage />} />
               </Route>
             </Route>

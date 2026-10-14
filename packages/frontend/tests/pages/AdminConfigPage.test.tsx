@@ -14,7 +14,7 @@ function entry(over: Partial<AdminConfigEntry>): AdminConfigEntry {
 
 const entries: AdminConfigEntry[] = [
   entry({ key: 'PORT', category: 'core', bootValue: 3000, effectiveValue: 3000 }),
-  entry({ key: 'JWT_SECRET', category: 'security', kind: 'string', secret: true, bootValue: null, effectiveValue: null }),
+  entry({ key: 'JWT_SECRET', category: 'security', kind: 'string', secret: true, bootValue: null, effectiveValue: 'leak-me-sentinel' }),
   entry({
     key: 'WATCHLIST_MAX_ITEMS', category: 'limits', mutability: 'live', restartReason: null, min: 1, max: 500,
     source: 'override', bootValue: 50, effectiveValue: 10,
@@ -31,12 +31,16 @@ vi.mock('@/api/admin/config', () => ({
 import { AdminConfigPage } from '@/pages/admin/AdminConfigPage';
 
 describe('AdminConfigPage', () => {
+  // The secret's mock value is non-null on purpose: the server nulls it, and
+  // this pins that the page would not render one that slipped through.
   it('groups options by category and never shows a secret value', () => {
-    render(<AdminConfigPage />);
+    const { container } = render(<AdminConfigPage />);
     expect(screen.getByRole('heading', { name: 'Configuration' })).toBeInTheDocument();
     expect(screen.getByText('Core')).toBeInTheDocument();
     expect(screen.getByText('Security & auth')).toBeInTheDocument();
     expect(screen.getByText('Set (hidden)')).toBeInTheDocument();
+    expect(screen.queryByText(/leak-me-sentinel/)).toBeNull();
+    expect(container.innerHTML).not.toContain('leak-me-sentinel');
   });
 
   it('counts active overrides in a banner', () => {

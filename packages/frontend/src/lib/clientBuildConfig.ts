@@ -6,7 +6,7 @@ export interface ClientBuildEntry {
 }
 
 /**
- * The `VITE_*` values this bundle was built with. Read-only by nature: Vite
+ * The build-time values this bundle was built with. Read-only by nature: Vite
  * inlines them at build time, so changing one means rebuilding the frontend.
  * All of them ship to every browser, so none is secret.
  */

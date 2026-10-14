@@ -90,8 +90,8 @@ async function fetchQuotes(
  * Exported for unit-testing in isolation.
  *
  * At most `PRICE_POLLER_MAX_SYMBOLS` symbols are fetched per tick (the cap is
- * read from `config` each tick); `logger`
- * receives a line whenever that ceiling starts or stops truncating the set.
+ * read from `config` each tick); `logger` receives a line whenever that ceiling
+ * starts or stops truncating the set.
  */
 export async function pollPrices(
   db: Db,

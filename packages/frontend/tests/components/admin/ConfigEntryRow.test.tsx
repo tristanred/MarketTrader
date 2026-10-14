@@ -57,6 +57,10 @@ describe('ConfigEntryRow', () => {
   });
 
   it('offers reset only when overridden, and shows the environment value', async () => {
+    const plain = renderRow(live);
+    expect(screen.queryByRole('button', { name: 'Reset to environment' })).toBeNull();
+    plain.unmount();
+
     renderRow({
       ...live, source: 'override', effectiveValue: 10,
       override: { value: 10, updatedAt: '2026-10-13T12:00:00.000Z', updatedBy: 'root' },

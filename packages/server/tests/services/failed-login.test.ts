@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { FailedLoginTracker } from '../../src/services/failed-login.js';
-
 import { RuntimeConfig } from '../../src/config/runtime-config.js';
 
 const OPTS = { maxAttempts: 3, windowMs: 60_000, lockoutMs: 300_000 };

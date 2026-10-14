@@ -11,16 +11,11 @@ import { emitTradeEvents } from '../services/trade-emit.js';
 import type { GameClientRegistry } from '../ws/registry.js';
 import type { EventBus } from '../events/bus.js';
 import { env } from '../env.js';
+import type { ConfigReader } from '../config/runtime-config.js';
+import { isTradingOpen } from '../services/trading-hours.js';
 import { startIntervalWorker, type IntervalWorker } from './interval-worker.js';
 import { meters } from '../observability/telemetry.js';
 import type { MarketState, TradeDirection } from '@markettrader/shared';
-
-/** Whether the configured policy treats a given market state as "open" for settlement. */
-function isTradingOpen(state: MarketState): boolean {
-  if (state === 'REGULAR') return true;
-  if (!env.MARKET_HOURS_INCLUDE_EXTENDED) return false;
-  return state === 'PRE' || state === 'POST';
-}
 
 /**
  * One tick of the pending-orders worker. Does, in order:
@@ -32,6 +27,7 @@ function isTradingOpen(state: MarketState): boolean {
  *     open — we don't fire stops on stale data when the market is closed).
  *  4. Broadcast `trade_executed`, `order_cancelled`, `order_triggered` events
  *     and a per-game `leaderboard_update`.
+ * `config` is read every tick, so the live extended-hours policy applies at once.
  */
 export async function runPendingOrdersTick(deps: {
   db: Db;
@@ -39,6 +35,7 @@ export async function runPendingOrdersTick(deps: {
   marketStatusProvider: MarketStatusProvider;
   registry?: GameClientRegistry;
   bus?: EventBus;
+  config: ConfigReader;
   logger?: FastifyBaseLogger;
 }): Promise<void> {
   const { db, provider, marketStatusProvider, registry, bus, logger } = deps;
@@ -72,7 +69,8 @@ export async function runPendingOrdersTick(deps: {
     // If we can't determine market state, fall through to "closed" semantics
     // for steps 2 and 3 — better than firing stops on stale data.
   }
-  const marketOpen = state != null && isTradingOpen(state);
+  const marketOpen =
+    state != null && isTradingOpen(state, deps.config.get('MARKET_HOURS_INCLUDE_EXTENDED'));
 
   const settleOutcomes = marketOpen ? await settlePendingTrades(db, provider) : [];
   const triggerOutcomes = marketOpen ? await evaluateTriggers(db, provider) : [];
@@ -280,6 +278,7 @@ export function startPendingOrdersWorker(deps: {
   marketStatusProvider: MarketStatusProvider;
   registry?: GameClientRegistry;
   bus?: EventBus;
+  config: ConfigReader;
   logger?: FastifyBaseLogger;
   intervalMs?: number;
 }): IntervalWorker {

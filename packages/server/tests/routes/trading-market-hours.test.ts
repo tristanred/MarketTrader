@@ -1,8 +1,9 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
 import type { FastifyInstance } from 'fastify';
-import { createTestApp } from '../helpers/app.js';
+import { createTestApp, createTestAppWithDb } from '../helpers/app.js';
 import { MockStockProvider } from '../helpers/mock-provider.js';
 import { MockMarketStatusProvider } from '../helpers/mock-market-status.js';
+import { RuntimeConfig } from '../../src/config/runtime-config.js';
 
 async function registerUser(app: FastifyInstance, username: string) {
   const res = await app.inject({
@@ -29,46 +30,26 @@ async function createActiveGame(app: FastifyInstance, token: string) {
   return res.json<{ id: string }>();
 }
 
-// Mutate the cached env object so the route picks up the test mode without
-// reloading the module.
-async function setEnv(patch: Record<string, unknown>): Promise<() => Promise<void>> {
-  const envModule = await import('../../src/env.js');
-  const previous: Record<string, unknown> = {};
-  for (const key of Object.keys(patch)) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    previous[key] = (envModule.env as any)[key];
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (envModule.env as any)[key] = patch[key];
-  }
-  return async () => {
-    for (const key of Object.keys(previous)) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (envModule.env as any)[key] = previous[key];
-    }
-  };
-}
-
 describe('POST /games/:id/trades — MARKET_HOURS_MODE=disabled', () => {
   let app: FastifyInstance;
   let token: string;
   let gameId: string;
-  let restore: () => Promise<void>;
   let marketStatus: MockMarketStatusProvider;
 
   beforeAll(async () => {
-    restore = await setEnv({ MARKET_HOURS_MODE: 'disabled' });
     const provider = new MockStockProvider();
     provider.setQuote('AAPL', { price: 100 });
     marketStatus = new MockMarketStatusProvider();
     marketStatus.setResult({ state: 'CLOSED' });
-    app = await createTestApp(provider, marketStatus);
+    app = await createTestApp(provider, marketStatus, {
+      runtimeConfig: RuntimeConfig.fromEnvironment({ MARKET_HOURS_MODE: 'disabled' }),
+    });
     ({ token } = await registerUser(app, 'trader-mhd'));
     ({ id: gameId } = await createActiveGame(app, token));
   });
 
   afterAll(async () => {
     await app.close();
-    await restore();
   });
 
   it('returns 409 MARKET_CLOSED when market is closed', async () => {
@@ -98,23 +79,22 @@ describe('POST /games/:id/trades — MARKET_HOURS_MODE=pending', () => {
   let app: FastifyInstance;
   let token: string;
   let gameId: string;
-  let restore: () => Promise<void>;
   let marketStatus: MockMarketStatusProvider;
 
   beforeAll(async () => {
-    restore = await setEnv({ MARKET_HOURS_MODE: 'pending' });
     const provider = new MockStockProvider();
     provider.setQuote('AAPL', { price: 100 });
     marketStatus = new MockMarketStatusProvider();
     marketStatus.setResult({ state: 'CLOSED' });
-    app = await createTestApp(provider, marketStatus);
+    app = await createTestApp(provider, marketStatus, {
+      runtimeConfig: RuntimeConfig.fromEnvironment({ MARKET_HOURS_MODE: 'pending' }),
+    });
     ({ token } = await registerUser(app, 'trader-mhp'));
     ({ id: gameId } = await createActiveGame(app, token));
   });
 
   afterAll(async () => {
     await app.close();
-    await restore();
   });
 
   it('returns 202 with pending body and reserves cash', async () => {
@@ -208,24 +188,28 @@ describe('POST /games/:id/trades — MARKET_HOURS_MODE=pending', () => {
 
 describe('MARKET_HOURS_INCLUDE_EXTENDED gates PRE/POST', () => {
   let app: FastifyInstance;
+  let config: RuntimeConfig;
   let token: string;
   let gameId: string;
-  let restore: () => Promise<void>;
   let marketStatus: MockMarketStatusProvider;
 
   beforeEach(async () => {
-    restore = await setEnv({ MARKET_HOURS_MODE: 'disabled', MARKET_HOURS_INCLUDE_EXTENDED: true });
     const provider = new MockStockProvider();
     provider.setQuote('AAPL', { price: 100 });
     marketStatus = new MockMarketStatusProvider();
     marketStatus.setResult({ state: 'PRE' });
-    app = await createTestApp(provider, marketStatus);
+    ({ app, config } = await createTestAppWithDb(provider, marketStatus, {
+      runtimeConfig: RuntimeConfig.fromEnvironment({
+        MARKET_HOURS_MODE: 'disabled',
+        MARKET_HOURS_INCLUDE_EXTENDED: true,
+      }),
+    }));
     ({ token } = await registerUser(app, `tr-ext-${Math.random().toString(36).slice(2, 8)}`));
     ({ id: gameId } = await createActiveGame(app, token));
   });
 
-  afterAll(async () => {
-    await restore?.();
+  afterEach(async () => {
+    await app.close();
   });
 
   it('allows trade during PRE when extended hours are enabled', async () => {
@@ -236,13 +220,10 @@ describe('MARKET_HOURS_INCLUDE_EXTENDED gates PRE/POST', () => {
       payload: { symbol: 'AAPL', direction: 'buy', quantity: 1 },
     });
     expect(res.statusCode).toBe(201);
-    await app.close();
-    await restore();
   });
 
   it('blocks trade during PRE when extended hours are disabled', async () => {
-    await restore();
-    restore = await setEnv({ MARKET_HOURS_MODE: 'disabled', MARKET_HOURS_INCLUDE_EXTENDED: false });
+    config.set('MARKET_HOURS_INCLUDE_EXTENDED', false);
     const res = await app.inject({
       method: 'POST',
       url: `/games/${gameId}/trades`,
@@ -250,7 +231,5 @@ describe('MARKET_HOURS_INCLUDE_EXTENDED gates PRE/POST', () => {
       payload: { symbol: 'AAPL', direction: 'buy', quantity: 1 },
     });
     expect(res.statusCode).toBe(409);
-    await app.close();
-    await restore();
   });
 });

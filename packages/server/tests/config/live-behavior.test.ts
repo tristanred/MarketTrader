@@ -2,7 +2,8 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { createTestAppWithDb } from '../helpers/app.js';
 import { MockStockProvider } from '../helpers/mock-provider.js';
-import type { RuntimeConfig } from '../../src/config/runtime-config.js';
+import { MockMarketStatusProvider } from '../helpers/mock-market-status.js';
+import { RuntimeConfig } from '../../src/config/runtime-config.js';
 
 describe('live options reach their consumers', () => {
   let app: FastifyInstance;
@@ -91,5 +92,61 @@ describe('STOCK_ALLOW_STALE_TRADES override', () => {
     expect((await buy()).json<{ code: string }>().code).toBe('STALE_PRICE_BLOCKED');
     config.set('STOCK_ALLOW_STALE_TRADES', true);
     expect((await buy()).statusCode).toBe(201);
+  });
+});
+
+describe('MARKET_HOURS_MODE override', () => {
+  let app: FastifyInstance;
+  let config: RuntimeConfig;
+  let token: string;
+  let gameId: string;
+
+  beforeAll(async () => {
+    const provider = new MockStockProvider();
+    provider.setQuote('AAPL', { price: 100 });
+    const marketStatus = new MockMarketStatusProvider();
+    marketStatus.setResult({ state: 'CLOSED' });
+    ({ app, config } = await createTestAppWithDb(provider, marketStatus, {
+      runtimeConfig: RuntimeConfig.fromEnvironment({ MARKET_HOURS_MODE: 'instant' }),
+    }));
+    const reg = await app.inject({
+      method: 'POST',
+      url: '/auth/register',
+      payload: { username: 'live-mode', password: 'password123' },
+    });
+    token = reg.json<{ token: string }>().token;
+    gameId = (
+      await app.inject({
+        method: 'POST',
+        url: '/games',
+        headers: { authorization: `Bearer ${token}` },
+        payload: {
+          name: 'g',
+          startDate: '2020-01-01T00:00:00.000Z',
+          endDate: '2099-01-01T00:00:00.000Z',
+          startingBalance: 10000,
+        },
+      })
+    ).json<{ id: string }>().id;
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  const buy = () =>
+    app.inject({
+      method: 'POST',
+      url: `/games/${gameId}/trades`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { symbol: 'AAPL', direction: 'buy', quantity: 1 },
+    });
+
+  it('switches closed-market behavior without a restart', async () => {
+    expect((await buy()).statusCode).toBe(201);
+    config.set('MARKET_HOURS_MODE', 'disabled');
+    const rejected = await buy();
+    expect(rejected.statusCode).toBe(409);
+    expect(rejected.json<{ code: string }>().code).toBe('MARKET_CLOSED');
   });
 });

@@ -179,14 +179,14 @@ export const CONFIG_REGISTRY = {
     restartReason: 'Captured when the market-status cache is constructed.',
   },
   MARKET_HOURS_MODE: {
-    category: 'market-hours', kind: 'enum', options: VALID_MARKET_HOURS_MODES, mutability: 'restart',
-    description: 'Closed-market trades: instant fills at last price, disabled rejects, pending queues for next open.',
-    restartReason: 'The pending-orders worker is only started when the server boots in pending mode.',
+    category: 'market-hours', kind: 'enum', options: VALID_MARKET_HOURS_MODES, mutability: 'live',
+    description:
+      'Closed-market trades: instant fills at last price, disabled rejects, pending queues for next open. ' +
+      'Changing it mid-game changes the rules for every player.',
   },
   MARKET_HOURS_INCLUDE_EXTENDED: {
-    category: 'market-hours', kind: 'boolean', mutability: 'restart',
+    category: 'market-hours', kind: 'boolean', mutability: 'live',
     description: 'Count pre- and post-market sessions as open for trading.',
-    restartReason: 'Not yet routed through runtime config.',
   },
 
   // ── workers ─────────────────────────────────────────────────────────────

@@ -196,15 +196,6 @@ export const env = {
   ),
   NODE_ENV: validatedNodeEnv(),
 
-  /**
-   * Controls how the trade endpoint behaves when the market is closed.
-   * - `instant`  — fill immediately at the last known price (legacy behavior, default).
-   * - `disabled` — reject with 409 MARKET_CLOSED.
-   * - `pending`  — accept the order, reserve cash/shares, settle at next market open.
-   */
-  MARKET_HOURS_MODE: validatedMarketHoursMode(),
-  /** When true, PRE and POST sessions count as "open" for trading. */
-  MARKET_HOURS_INCLUDE_EXTENDED: parseBool(optional('MARKET_HOURS_INCLUDE_EXTENDED', 'false')),
   /** How often the pending-orders worker checks for orders to settle, in ms. */
   PENDING_ORDERS_TICK_MS: parsePositiveInt(
     'PENDING_ORDERS_TICK_MS',
@@ -335,6 +326,16 @@ export const env = {
  * property here from {@link env} makes the compiler list every consumer to update.
  */
 export const liveBootConfig = {
+  /**
+   * Controls how the trade endpoint behaves when the market is closed.
+   * - `instant`  — fill immediately at the last known price (legacy behavior, default).
+   * - `disabled` — reject with 409 MARKET_CLOSED.
+   * - `pending`  — accept the order, reserve cash/shares, settle at next market open.
+   */
+  MARKET_HOURS_MODE: validatedMarketHoursMode(),
+  /** When true, PRE and POST sessions count as "open" for trading. */
+  MARKET_HOURS_INCLUDE_EXTENDED: parseBool(optional('MARKET_HOURS_INCLUDE_EXTENDED', 'false')),
+
   // Stock-data resilience tunables. All durations are in milliseconds.
   /** TTL for the `stock_price_cache` table. Cache hits skip the upstream fetch. */
   STOCK_CACHE_TTL_MS: parsePositiveInt('STOCK_CACHE_TTL_MS', optional('STOCK_CACHE_TTL_MS', '60000')),

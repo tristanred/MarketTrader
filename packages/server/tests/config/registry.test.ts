@@ -103,4 +103,10 @@ describe('liveValueSchema', () => {
     expect(schema.safeParse(1.5).success).toBe(false);
     expect(schema.safeParse('50').success).toBe(false);
   });
+
+  it('restricts enums to their options', () => {
+    const schema = liveValueSchema('MARKET_HOURS_MODE');
+    expect(schema.safeParse('pending').success).toBe(true);
+    expect(schema.safeParse('sometimes').success).toBe(false);
+  });
 });

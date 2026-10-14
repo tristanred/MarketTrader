@@ -191,19 +191,21 @@ export async function buildApp(
       await poller.stop();
     });
 
-    if (env.MARKET_HOURS_MODE === 'pending') {
-      const pendingWorker = startPendingOrdersWorker({
-        db,
-        provider,
-        marketStatusProvider,
-        registry,
-        bus,
-        logger: app.log,
-      });
-      app.addHook('onClose', async () => {
-        await pendingWorker.stop();
-      });
-    }
+    // Runs in every mode, not only `pending`: the same tick fills resting
+    // limit/stop/bracket orders and expires day orders, and MARKET_HOURS_MODE
+    // can change at runtime, so pending rows may exist under any mode.
+    const pendingWorker = startPendingOrdersWorker({
+      db,
+      provider,
+      marketStatusProvider,
+      registry,
+      bus,
+      config: runtimeConfig,
+      logger: app.log,
+    });
+    app.addHook('onClose', async () => {
+      await pendingWorker.stop();
+    });
 
     const snapshotWorker = startPortfolioSnapshotWorker({
       db,

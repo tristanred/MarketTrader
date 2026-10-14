@@ -10,6 +10,7 @@ import type { MarketStatusProvider } from '../providers/market-status/index.js';
 import type { MarketState } from '@markettrader/shared';
 import { recomputeGameStatus } from '../services/game-status.js';
 import { nextSessionClose } from '../services/market-calendar.js';
+import { isTradingOpen } from '../services/trading-hours.js';
 import { executeTrade } from '../services/trade.js';
 import { emitTradeEvents } from '../services/trade-emit.js';
 import { loadPlayerPortfolio } from '../services/portfolio.js';
@@ -30,17 +31,9 @@ import { recordSnapshot } from '../services/portfolio-snapshot.js';
 import type { TradeDirection } from '@markettrader/shared';
 import type { GameClientRegistry } from '../ws/registry.js';
 import type { EventBus } from '../events/bus.js';
-import { env } from '../env.js';
 import type { ConfigReader } from '../config/runtime-config.js';
 import { setRetryAfter } from './retry-after.js';
 import { meters } from '../observability/telemetry.js';
-
-/** Returns whether the configured policy treats this market state as "open" for trading. */
-function isTradingOpen(state: MarketState): boolean {
-  if (state === 'REGULAR') return true;
-  if (!env.MARKET_HOURS_INCLUDE_EXTENDED) return false;
-  return state === 'PRE' || state === 'POST';
-}
 
 const LEADERBOARD_THROTTLE_MS = 1_000;
 
@@ -270,7 +263,7 @@ export function tradingRoutes(
           const expiresAt =
             timeInForce === 'day'
               ? nextSessionClose(new Date(), {
-                  includeExtended: env.MARKET_HOURS_INCLUDE_EXTENDED,
+                  includeExtended: config.get('MARKET_HOURS_INCLUDE_EXTENDED'),
                 }).toISOString()
               : undefined;
 
@@ -310,7 +303,8 @@ export function tradingRoutes(
         // Default mode `instant` falls through to the existing logic for
         // backwards compatibility. `disabled` rejects out-of-hours; `pending`
         // queues the order for settlement at next market open.
-        if (env.MARKET_HOURS_MODE !== 'instant') {
+        const marketHoursMode = config.get('MARKET_HOURS_MODE');
+        if (marketHoursMode !== 'instant') {
           let marketState: MarketState | null = null;
           try {
             const ms = await marketStatusProvider.getStatus();
@@ -322,8 +316,11 @@ export function tradingRoutes(
             // static provider for a guaranteed answer.
           }
 
-          if (marketState !== null && !isTradingOpen(marketState)) {
-            if (env.MARKET_HOURS_MODE === 'disabled') {
+          if (
+            marketState !== null &&
+            !isTradingOpen(marketState, config.get('MARKET_HOURS_INCLUDE_EXTENDED'))
+          ) {
+            if (marketHoursMode === 'disabled') {
               return reply.status(409).send({
                 code: 'MARKET_CLOSED',
                 message: 'Market is closed and pending orders are disabled on this server.',

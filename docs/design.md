@@ -248,20 +248,12 @@ in-flight requests — bounded and harmless now that it only backstops a load
 limit. And it is per *game-player*, so a player who creates N games gets N × 50;
 the load that permits is cacheable, since the poller de-duplicates symbols.
 
-### Day-order expiry only runs in `pending` market-hours mode
+### Day orders are the default time-in-force
 
-`expireDayOrders` has one caller, the pending-orders worker, and that worker is
-registered only when `MARKET_HOURS_MODE === 'pending'`. The env default is
-`instant`. So on a default-configured server the `expiresAt` stamped on day
-orders is written and never read, and resting orders stay immortal — the very
-property that made F20 permanent rather than transient. `provision.sh` writes
-`pending`, so deployed hosts get the expiry; a developer running defaults does
-not. (The same gate means `evaluateTriggers` never runs in `instant` mode
-either, so limit/stop/bracket orders never fill there. Pre-existing.)
-
-Second-order consequence on `pending`-mode servers: `timeInForce` defaults to
-`day`, so a client that omits it now gets an order that dies at the next session
-close where before it never expired.
+`timeInForce` defaults to `day`, so a client that omits it gets an order that dies at the next
+session close. (Until 2026-10 the pending-orders worker — which runs `expireDayOrders` and
+`evaluateTriggers` — started only in `pending` market-hours mode, so on a default `instant`
+server resting orders never filled or expired. It now runs in every mode.)
 
 ### Order symbol validation fails open when the provider is unavailable
 

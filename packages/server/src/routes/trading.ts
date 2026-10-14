@@ -31,6 +31,8 @@ import type { TradeDirection } from '@markettrader/shared';
 import type { GameClientRegistry } from '../ws/registry.js';
 import type { EventBus } from '../events/bus.js';
 import { env } from '../env.js';
+import type { ConfigReader } from '../config/runtime-config.js';
+import { setRetryAfter } from './retry-after.js';
 import { meters } from '../observability/telemetry.js';
 
 /** Returns whether the configured policy treats this market state as "open" for trading. */
@@ -104,11 +106,13 @@ const tradesQuerySchema = z.object({
  * When a registry is provided, `trade_executed` and `leaderboard_update` WebSocket
  * events are broadcast to all connected clients in the game. The leaderboard broadcast
  * is throttled to at most once per second per game (map lives in this closure).
+ * `config` supplies the live stale-trade and rate-limit-backoff settings.
  */
 export function tradingRoutes(
   db: Db,
   provider: StockProvider,
   marketStatusProvider: MarketStatusProvider,
+  config: ConfigReader,
   registry?: GameClientRegistry,
   leaderboardThrottleMs = LEADERBOARD_THROTTLE_MS,
   bus?: EventBus,
@@ -363,7 +367,7 @@ export function tradingRoutes(
           if (err instanceof StockProviderError) {
             if (err.code === 'SYMBOL_NOT_FOUND') return reply.status(404).send({ error: err.message });
             if (err.code === 'RATE_LIMITED') {
-              reply.header('Retry-After', Math.ceil(env.STOCK_RATE_LIMIT_BACKOFF_MS / 1000));
+              setRetryAfter(reply, config);
               return reply.status(429).send({
                 code: 'RATE_LIMITED',
                 message: 'Live quote unavailable; market data is rate-limited. Try again in a minute.',
@@ -379,14 +383,14 @@ export function tradingRoutes(
         let priceAgeMs = 0;
         if (quote.stale === true) {
           priceAgeMs = Date.now() - new Date(quote.fetchedAt).getTime();
-          if (!env.STOCK_ALLOW_STALE_TRADES) {
+          if (!config.get('STOCK_ALLOW_STALE_TRADES')) {
             return reply.status(409).send({
               code: 'STALE_PRICE_BLOCKED',
               message:
                 'Live quote unavailable and stale-price trades are disabled on this server. Try again in a minute.',
             });
           }
-          if (priceAgeMs > env.STOCK_STALE_TRADE_MAX_AGE_MS) {
+          if (priceAgeMs > config.get('STOCK_STALE_TRADE_MAX_AGE_MS')) {
             return reply.status(409).send({
               code: 'STALE_PRICE_TOO_OLD',
               message: `Last known price is ${Math.round(priceAgeMs / 1000)}s old; refusing to trade.`,

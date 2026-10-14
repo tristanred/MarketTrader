@@ -83,6 +83,18 @@ describe('isConfigKey / isLiveKey', () => {
 });
 
 describe('liveValueSchema', () => {
+  it('accepts only real booleans', () => {
+    const schema = liveValueSchema('STOCK_ALLOW_STALE_TRADES');
+    expect(schema.safeParse(true).success).toBe(true);
+    expect(schema.safeParse('true').success).toBe(false);
+  });
+
+  it('bounds cache TTL overrides', () => {
+    const schema = liveValueSchema('STOCK_CACHE_TTL_MS');
+    expect(schema.safeParse(60_000).success).toBe(true);
+    expect(schema.safeParse(1).success).toBe(false);
+  });
+
   it('enforces integer bounds and JSON type', () => {
     const schema = liveValueSchema('WATCHLIST_MAX_ITEMS');
     expect(schema.safeParse(50).success).toBe(true);

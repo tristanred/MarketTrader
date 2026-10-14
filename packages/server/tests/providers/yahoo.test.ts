@@ -1,12 +1,13 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { YahooProvider } from '../../src/providers/yahoo.js';
 import { StockProviderError } from '../../src/providers/index.js';
+import { RuntimeConfig } from '../../src/config/runtime-config.js';
 
 describe('YahooProvider rate-limit handling', () => {
   let provider: YahooProvider;
 
   beforeEach(() => {
-    provider = new YahooProvider();
+    provider = new YahooProvider(RuntimeConfig.fromEnvironment());
   });
 
   /**
@@ -226,7 +227,7 @@ describe('YahooProvider rate-limit handling', () => {
 
 describe('YahooProvider.getHistory', () => {
   it('maps OHLCV and omits fields the upstream returned as null', async () => {
-    const provider = new YahooProvider();
+    const provider = new YahooProvider(RuntimeConfig.fromEnvironment());
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (provider as any).client = {
       chart: vi.fn().mockResolvedValue({
@@ -260,7 +261,7 @@ describe('YahooProvider.getMarketMovers', () => {
   });
 
   it('maps a screener to items, keeping only tradable equities and capping at count', async () => {
-    const provider = new YahooProvider();
+    const provider = new YahooProvider(RuntimeConfig.fromEnvironment());
     const screener = vi.fn().mockResolvedValue({
       quotes: [
         equity('AAA', 10, 12.5),
@@ -282,7 +283,7 @@ describe('YahooProvider.getMarketMovers', () => {
   });
 
   it('uses the most_actives screener for "active" and day_losers for "losers"', async () => {
-    const provider = new YahooProvider();
+    const provider = new YahooProvider(RuntimeConfig.fromEnvironment());
     const screener = vi.fn().mockResolvedValue({ quotes: [] });
     stubClient(provider, { screener });
 
@@ -293,7 +294,7 @@ describe('YahooProvider.getMarketMovers', () => {
   });
 
   it('enriches trending tickers with a quote, dropping non-equities and odd tickers', async () => {
-    const provider = new YahooProvider();
+    const provider = new YahooProvider(RuntimeConfig.fromEnvironment());
     stubClient(provider, {
       trendingSymbols: vi.fn().mockResolvedValue({
         quotes: [{ symbol: 'ZZZ' }, { symbol: 'BTC-USD' }, { symbol: 'ES=F' }, { symbol: 'AAA' }],
@@ -313,7 +314,7 @@ describe('YahooProvider.getMarketMovers', () => {
   });
 
   it('recovers a screener result from benign schema drift', async () => {
-    const provider = new YahooProvider();
+    const provider = new YahooProvider(RuntimeConfig.fromEnvironment());
     const validationErr = Object.assign(new Error('Failed Yahoo Schema validation'), {
       name: 'FailedYahooValidationError',
       result: { quotes: [equity('AAA', 10, 4)] },
@@ -325,13 +326,13 @@ describe('YahooProvider.getMarketMovers', () => {
   });
 
   it('maps a 429 to RATE_LIMITED and other failures to PROVIDER_ERROR', async () => {
-    const limited = new YahooProvider();
+    const limited = new YahooProvider(RuntimeConfig.fromEnvironment());
     stubClient(limited, { screener: vi.fn().mockRejectedValue(new Error('Too Many Requests')) });
     await expect(limited.getMarketMovers('gainers', 5)).rejects.toMatchObject({
       code: 'RATE_LIMITED',
     });
 
-    const broken = new YahooProvider();
+    const broken = new YahooProvider(RuntimeConfig.fromEnvironment());
     stubClient(broken, { trendingSymbols: vi.fn().mockRejectedValue(new Error('boom')) });
     await expect(broken.getMarketMovers('trending', 5)).rejects.toMatchObject({
       code: 'PROVIDER_ERROR',

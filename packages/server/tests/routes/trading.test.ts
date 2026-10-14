@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { createTestApp } from '../helpers/app.js';
 import { MockStockProvider } from '../helpers/mock-provider.js';
+import { RuntimeConfig } from '../../src/config/runtime-config.js';
 
 async function registerUser(app: FastifyInstance, username: string) {
   const res = await app.inject({
@@ -307,27 +308,19 @@ describe('POST /games/:id/trades — stale trades allowed', () => {
   let token: string;
   let gameId: string;
   let provider: MockStockProvider;
-  const previousFlag = process.env['STOCK_ALLOW_STALE_TRADES'];
 
   beforeAll(async () => {
-    process.env['STOCK_ALLOW_STALE_TRADES'] = 'true';
-    const envModule = await import('../../src/env.js');
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (envModule.env as any).STOCK_ALLOW_STALE_TRADES = true;
     provider = new MockStockProvider();
     provider.setStale('AAPL', 30_000, { price: 100 });
-    app = await createTestApp(provider);
+    app = await createTestApp(provider, undefined, {
+      runtimeConfig: RuntimeConfig.fromEnvironment({ STOCK_ALLOW_STALE_TRADES: true }),
+    });
     ({ token } = await registerUser(app, 'trader-stale'));
     ({ id: gameId } = await createActiveGame(app, token));
   });
 
   afterAll(async () => {
     await app.close();
-    const envModule = await import('../../src/env.js');
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (envModule.env as any).STOCK_ALLOW_STALE_TRADES = false;
-    if (previousFlag === undefined) delete process.env['STOCK_ALLOW_STALE_TRADES'];
-    else process.env['STOCK_ALLOW_STALE_TRADES'] = previousFlag;
   });
 
   it('fills the trade and returns priceWasStale + priceAgeMs', async () => {

@@ -52,6 +52,11 @@ const PROVIDER_BOOT = 'The provider client is constructed once at startup.';
 const OTEL_BOOT = 'The OpenTelemetry SDK and log transport start before the app is built.';
 const POSTHOG_BOOT = 'The PostHog client and log transport start before the app is built.';
 
+const SECOND = 1_000;
+const MINUTE = 60 * SECOND;
+const HOUR = 60 * MINUTE;
+const DAY = 24 * HOUR;
+
 /**
  * Describes every option for the admin configuration panel. The `satisfies`
  * clause requires exactly one descriptor per key of `env` (restart) and of
@@ -134,39 +139,32 @@ export const CONFIG_REGISTRY = {
     restartReason: PROVIDER_BOOT,
   },
   STOCK_CACHE_TTL_MS: {
-    category: 'stock-data', kind: 'integer', unit: 'ms', mutability: 'restart',
+    category: 'stock-data', kind: 'integer', unit: 'ms', mutability: 'live', min: SECOND, max: HOUR,
     description: 'How long a cached quote is served before re-fetching upstream.',
-    restartReason: 'Not yet routed through runtime config.',
   },
   STOCK_SEARCH_CACHE_TTL_MS: {
-    category: 'stock-data', kind: 'integer', unit: 'ms', mutability: 'restart',
+    category: 'stock-data', kind: 'integer', unit: 'ms', mutability: 'live', min: SECOND, max: DAY,
     description: 'How long symbol-search results are cached.',
-    restartReason: 'Not yet routed through runtime config.',
   },
   STOCK_HISTORY_CACHE_TTL_MS: {
-    category: 'stock-data', kind: 'integer', unit: 'ms', mutability: 'restart',
+    category: 'stock-data', kind: 'integer', unit: 'ms', mutability: 'live', min: SECOND, max: HOUR,
     description: 'How long price-history results are cached.',
-    restartReason: 'Not yet routed through runtime config.',
   },
   STOCK_STALE_PRICE_MAX_AGE_MS: {
-    category: 'stock-data', kind: 'integer', unit: 'ms', mutability: 'restart',
+    category: 'stock-data', kind: 'integer', unit: 'ms', mutability: 'live', min: SECOND, max: DAY,
     description: 'While rate-limited, cached quotes up to this old are served instead of an error.',
-    restartReason: 'Not yet routed through runtime config.',
   },
   STOCK_RATE_LIMIT_BACKOFF_MS: {
-    category: 'stock-data', kind: 'integer', unit: 'ms', mutability: 'restart',
+    category: 'stock-data', kind: 'integer', unit: 'ms', mutability: 'live', min: SECOND, max: HOUR,
     description: 'After an upstream 429, refuse upstream calls for this long.',
-    restartReason: 'Not yet routed through runtime config.',
   },
   STOCK_ALLOW_STALE_TRADES: {
-    category: 'stock-data', kind: 'boolean', mutability: 'restart',
+    category: 'stock-data', kind: 'boolean', mutability: 'live',
     description: 'When rate-limited, fill trades at the cached price instead of rejecting. Favors availability over fairness.',
-    restartReason: 'Not yet routed through runtime config.',
   },
   STOCK_STALE_TRADE_MAX_AGE_MS: {
-    category: 'stock-data', kind: 'integer', unit: 'ms', mutability: 'restart',
+    category: 'stock-data', kind: 'integer', unit: 'ms', mutability: 'live', min: SECOND, max: DAY,
     description: 'Stale trades using a cached price older than this are rejected anyway.',
-    restartReason: 'Not yet routed through runtime config.',
   },
 
   // ── market hours ────────────────────────────────────────────────────────

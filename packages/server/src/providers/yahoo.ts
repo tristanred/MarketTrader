@@ -25,7 +25,7 @@ function asMarketState(raw: unknown): MarketState | undefined {
 }
 import type { StockProvider } from './interface.js';
 import { StockProviderError } from './interface.js';
-import { env } from '../env.js';
+import type { ConfigReader } from '../config/runtime-config.js';
 import { mostRecentTradingSession } from '../services/market-calendar.js';
 import { isTradableSymbol } from '../services/symbol.js';
 
@@ -103,7 +103,7 @@ export class YahooProvider implements StockProvider {
   private readonly client: InstanceType<typeof YahooFinance>;
   private rateLimitedUntil = 0;
 
-  constructor() {
+  constructor(private readonly config: ConfigReader) {
     this.client = new YahooFinance({
       validation: { logErrors: false },
       suppressNotices: ['yahooSurvey'],
@@ -120,7 +120,7 @@ export class YahooProvider implements StockProvider {
   }
 
   private trip429(): never {
-    this.rateLimitedUntil = Date.now() + env.STOCK_RATE_LIMIT_BACKOFF_MS;
+    this.rateLimitedUntil = Date.now() + this.config.get('STOCK_RATE_LIMIT_BACKOFF_MS');
     throw new StockProviderError(
       'RATE_LIMITED',
       'Upstream provider returned HTTP 429 Too Many Requests.',

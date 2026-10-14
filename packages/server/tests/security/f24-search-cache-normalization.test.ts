@@ -10,6 +10,7 @@ import { CachedProvider, SEARCH_CACHE_MAX_ENTRIES } from '../../src/providers/ca
 import type { StockProvider } from '../../src/providers/index.js';
 import { createTestDb } from '../helpers/app.js';
 import type { Db } from '../../src/db/index.js';
+import { RuntimeConfig } from '../../src/config/runtime-config.js';
 
 /** Inner double that records the exact query string it was handed. */
 class RecordingInner implements StockProvider {
@@ -49,7 +50,7 @@ describe('F24 — search cache key and upstream query use the same normalization
   beforeEach(async () => {
     db = await createTestDb();
     inner = new RecordingInner();
-    provider = new CachedProvider(db, inner);
+    provider = new CachedProvider(db, inner, RuntimeConfig.fromEnvironment());
   });
 
   it.each([

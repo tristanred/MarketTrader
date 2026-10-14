@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { createTestAppWithDb } from '../helpers/app.js';
+import { MockStockProvider } from '../helpers/mock-provider.js';
 import type { RuntimeConfig } from '../../src/config/runtime-config.js';
 
 describe('live options reach their consumers', () => {
@@ -40,5 +41,55 @@ describe('live options reach their consumers', () => {
 
     config.clear('WATCHLIST_MAX_PER_USER');
     expect((await create('second')).statusCode).toBe(201);
+  });
+});
+
+describe('STOCK_ALLOW_STALE_TRADES override', () => {
+  let app: FastifyInstance;
+  let config: RuntimeConfig;
+  let token: string;
+  let gameId: string;
+
+  beforeAll(async () => {
+    const provider = new MockStockProvider();
+    provider.setStale('AAPL', 30_000, { price: 100 });
+    ({ app, config } = await createTestAppWithDb(provider));
+    const reg = await app.inject({
+      method: 'POST',
+      url: '/auth/register',
+      payload: { username: 'live-stale', password: 'password123' },
+    });
+    token = reg.json<{ token: string }>().token;
+    gameId = (
+      await app.inject({
+        method: 'POST',
+        url: '/games',
+        headers: { authorization: `Bearer ${token}` },
+        payload: {
+          name: 'g',
+          startDate: '2020-01-01T00:00:00.000Z',
+          endDate: '2099-01-01T00:00:00.000Z',
+          startingBalance: 10000,
+        },
+      })
+    ).json<{ id: string }>().id;
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  const buy = () =>
+    app.inject({
+      method: 'POST',
+      url: `/games/${gameId}/trades`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { symbol: 'AAPL', direction: 'buy', quantity: 1 },
+    });
+
+  it('switches between blocking and filling stale-priced trades without a restart', async () => {
+    expect((await buy()).json<{ code: string }>().code).toBe('STALE_PRICE_BLOCKED');
+    config.set('STOCK_ALLOW_STALE_TRADES', true);
+    expect((await buy()).statusCode).toBe(201);
   });
 });

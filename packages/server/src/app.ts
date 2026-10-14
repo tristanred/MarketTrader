@@ -82,7 +82,7 @@ export async function buildApp(
     runtimeConfig = RuntimeConfig.fromEnvironment(),
     ...fastifyOpts
   } = opts;
-  const provider = injectedProvider ?? new CachedProvider(db, createProvider());
+  const provider = injectedProvider ?? new CachedProvider(db, createProvider(runtimeConfig), runtimeConfig);
   const marketStatusProvider =
     injectedMarketStatus ??
     new CachedMarketStatus(
@@ -157,11 +157,11 @@ export async function buildApp(
   await app.register(authRoutes(db, new FailedLoginTracker(loginThrottle)));
   await app.register(gameRoutes(db, bus));
   await app.register(publicGamesRoutes(db));
-  await app.register(stockRoutes(db, provider));
+  await app.register(stockRoutes(db, provider, runtimeConfig));
   await app.register(
-    tradingRoutes(db, provider, marketStatusProvider, registry, leaderboardThrottleMs, bus),
+    tradingRoutes(db, provider, marketStatusProvider, runtimeConfig, registry, leaderboardThrottleMs, bus),
   );
-  await app.register(marketStatusRoutes(marketStatusProvider));
+  await app.register(marketStatusRoutes(marketStatusProvider, runtimeConfig));
   await app.register(watchlistRoutes(db, runtimeConfig));
   await app.register(discoverRoutes(db));
   await app.register(systemSettingsRoutes(systemSettings));

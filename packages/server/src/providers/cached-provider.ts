@@ -15,6 +15,7 @@ import { schema } from '../db/index.js';
 import type { StockProvider } from './interface.js';
 import { StockProviderError } from './interface.js';
 import { env } from '../env.js';
+import type { ConfigReader } from '../config/runtime-config.js';
 import { meters, tracer } from '../observability/telemetry.js';
 
 /**
@@ -75,6 +76,9 @@ function chunk<T>(items: T[], size: number): T[][] {
  * than `STOCK_STALE_PRICE_MAX_AGE_MS`, the cached quote is returned with
  * `stale: true` so callers can warn or refuse. Other error codes propagate
  * unchanged.
+ *
+ * TTLs and the stale-price window are read from `config` on every call, so
+ * admin overrides apply immediately.
  */
 export class CachedProvider implements StockProvider {
   private readonly searchCache = new Map<string, { results: StockSearchResult[]; fetchedAt: number }>();
@@ -105,6 +109,7 @@ export class CachedProvider implements StockProvider {
   constructor(
     private readonly db: Db,
     private readonly inner: StockProvider,
+    private readonly config: ConfigReader,
   ) {
     const movers = inner.getMarketMovers?.bind(inner);
     if (movers) {
@@ -165,7 +170,7 @@ export class CachedProvider implements StockProvider {
     const cachedAt = cached ? new Date(cached.fetchedAt).getTime() : 0;
     const ageMs = Date.now() - cachedAt;
 
-    if (cached && ageMs < env.STOCK_CACHE_TTL_MS) {
+    if (cached && ageMs < this.config.get('STOCK_CACHE_TTL_MS')) {
       meters.quoteCacheLookups.add(1, { result: 'hit' });
       return this.quoteFromCacheRow(symbol, cached);
     }
@@ -183,7 +188,7 @@ export class CachedProvider implements StockProvider {
         err instanceof StockProviderError &&
         err.code === 'RATE_LIMITED' &&
         cached &&
-        ageMs <= env.STOCK_STALE_PRICE_MAX_AGE_MS
+        ageMs <= this.config.get('STOCK_STALE_PRICE_MAX_AGE_MS')
       ) {
         // Serving a stale price is the app degrading, not failing. It needs its
         // own bucket — folding it into `hit` would hide a rate-limit outage.
@@ -267,7 +272,7 @@ export class CachedProvider implements StockProvider {
     const misses: string[] = [];
     for (const symbol of unique) {
       const row = rows.get(symbol);
-      if (row && now - new Date(row.fetchedAt).getTime() < env.STOCK_CACHE_TTL_MS) {
+      if (row && now - new Date(row.fetchedAt).getTime() < this.config.get('STOCK_CACHE_TTL_MS')) {
         meters.quoteCacheLookups.add(1, { result: 'hit' });
         out.set(symbol, this.quoteFromCacheRow(symbol, row));
       } else {
@@ -295,7 +300,7 @@ export class CachedProvider implements StockProvider {
         if (!(err instanceof StockProviderError) || err.code !== 'RATE_LIMITED') continue;
         for (const symbol of batch) {
           const row = rows.get(symbol);
-          if (!row || now - new Date(row.fetchedAt).getTime() > env.STOCK_STALE_PRICE_MAX_AGE_MS) {
+          if (!row || now - new Date(row.fetchedAt).getTime() > this.config.get('STOCK_STALE_PRICE_MAX_AGE_MS')) {
             continue;
           }
           meters.quoteCacheLookups.add(1, { result: 'stale' });
@@ -364,7 +369,7 @@ export class CachedProvider implements StockProvider {
   async getHistory(symbol: string, range: StockHistoryRange): Promise<StockHistoryBar[]> {
     const key = `${symbol}|${range}`;
     const hit = this.historyCache.get(key);
-    if (hit && Date.now() - hit.fetchedAt < env.STOCK_HISTORY_CACHE_TTL_MS) {
+    if (hit && Date.now() - hit.fetchedAt < this.config.get('STOCK_HISTORY_CACHE_TTL_MS')) {
       return hit.bars;
     }
     const bars = await this.upstream('getHistory', symbol, () =>
@@ -377,7 +382,7 @@ export class CachedProvider implements StockProvider {
   async getDetails(symbol: string): Promise<StockDetails> {
     const hit = this.detailsBySymbol.get(symbol);
     const ageMs = hit ? Date.now() - hit.cachedAt : Infinity;
-    if (hit && ageMs < env.STOCK_CACHE_TTL_MS) {
+    if (hit && ageMs < this.config.get('STOCK_CACHE_TTL_MS')) {
       return hit.details;
     }
 
@@ -389,7 +394,7 @@ export class CachedProvider implements StockProvider {
         err instanceof StockProviderError &&
         err.code === 'RATE_LIMITED' &&
         hit &&
-        ageMs <= env.STOCK_STALE_PRICE_MAX_AGE_MS
+        ageMs <= this.config.get('STOCK_STALE_PRICE_MAX_AGE_MS')
       ) {
         return { ...hit.details, stale: true };
       }
@@ -409,7 +414,7 @@ export class CachedProvider implements StockProvider {
     // shorter-lived quote cache below — not stored here.
     let base: StockSearchResult[];
     const hit = this.searchCache.get(key);
-    if (hit && Date.now() - hit.fetchedAt < env.STOCK_SEARCH_CACHE_TTL_MS) {
+    if (hit && Date.now() - hit.fetchedAt < this.config.get('STOCK_SEARCH_CACHE_TTL_MS')) {
       base = hit.results;
     } else {
       // The key is what upstream gets. Any two inputs that collapse to the same
@@ -463,7 +468,7 @@ export class CachedProvider implements StockProvider {
     const now = Date.now();
     const fresh = new Map<string, number>();
     for (const row of cached) {
-      if (now - new Date(row.fetchedAt).getTime() < env.STOCK_CACHE_TTL_MS) {
+      if (now - new Date(row.fetchedAt).getTime() < this.config.get('STOCK_CACHE_TTL_MS')) {
         fresh.set(row.symbol, Number(row.changePercent));
       }
     }

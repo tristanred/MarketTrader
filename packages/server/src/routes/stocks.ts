@@ -1,10 +1,11 @@
-import type { FastifyInstance, FastifyReply } from 'fastify';
+import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import type { Db } from '../db/index.js';
 import type { StockProvider } from '../providers/index.js';
 import { RANGE_BAR_SECONDS, StockProviderError } from '../providers/index.js';
-import { env } from '../env.js';
+import type { ConfigReader } from '../config/runtime-config.js';
+import { setRetryAfter } from './retry-after.js';
 
 const symbolParamsSchema = z.object({
   symbol: z.string().min(1).max(10).transform((s) => s.toUpperCase()),
@@ -14,11 +15,6 @@ const HISTORY_RANGES = ['1d', '5d', '1mo', '3mo', '6mo', '1y'] as const;
 const historyQuerySchema = z.object({
   range: z.enum(HISTORY_RANGES).default('1d'),
 });
-
-/** Sets a Retry-After header (seconds) based on the configured 429 backoff. */
-function setRetryAfter(reply: FastifyReply): void {
-  reply.header('Retry-After', Math.ceil(env.STOCK_RATE_LIMIT_BACKOFF_MS / 1000));
-}
 
 /**
  * Registers public stock-lookup routes (no authentication required):
@@ -33,7 +29,7 @@ function setRetryAfter(reply: FastifyReply): void {
  * - `RATE_LIMITED`     → 429 (with `Retry-After` header)
  * - `PROVIDER_ERROR`   → 502
  */
-export function stockRoutes(_db: Db, provider: StockProvider) {
+export function stockRoutes(_db: Db, provider: StockProvider, config: ConfigReader) {
   return async function (rawApp: FastifyInstance): Promise<void> {
     const app = rawApp.withTypeProvider<ZodTypeProvider>();
 
@@ -60,7 +56,7 @@ export function stockRoutes(_db: Db, provider: StockProvider) {
       } catch (err) {
         if (err instanceof StockProviderError) {
           if (err.code === 'RATE_LIMITED') {
-            setRetryAfter(reply);
+            setRetryAfter(reply, config);
             return reply.status(429).send({ code: err.code, message: err.message });
           }
           return reply.status(502).send({ code: err.code, message: err.message });
@@ -96,7 +92,7 @@ export function stockRoutes(_db: Db, provider: StockProvider) {
           if (err instanceof StockProviderError) {
             if (err.code === 'SYMBOL_NOT_FOUND') return reply.status(404).send({ error: err.message });
             if (err.code === 'RATE_LIMITED') {
-              setRetryAfter(reply);
+              setRetryAfter(reply, config);
               return reply.status(429).send({ code: err.code, message: err.message });
             }
             return reply.status(502).send({ code: err.code, message: err.message });
@@ -121,7 +117,7 @@ export function stockRoutes(_db: Db, provider: StockProvider) {
         if (err instanceof StockProviderError) {
           if (err.code === 'SYMBOL_NOT_FOUND') return reply.status(404).send({ error: err.message });
           if (err.code === 'RATE_LIMITED') {
-            setRetryAfter(reply);
+            setRetryAfter(reply, config);
             return reply.status(429).send({ code: err.code, message: err.message });
           }
           return reply.status(502).send({ error: err.message });
@@ -145,7 +141,7 @@ export function stockRoutes(_db: Db, provider: StockProvider) {
         if (err instanceof StockProviderError) {
           if (err.code === 'SYMBOL_NOT_FOUND') return reply.status(404).send({ error: err.message });
           if (err.code === 'RATE_LIMITED') {
-            setRetryAfter(reply);
+            setRetryAfter(reply, config);
             return reply.status(429).send({ code: err.code, message: err.message });
           }
           return reply.status(502).send({ error: err.message });

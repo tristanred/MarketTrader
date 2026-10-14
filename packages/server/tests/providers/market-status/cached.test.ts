@@ -33,4 +33,16 @@ describe('CachedMarketStatus', () => {
     await cached.getStatus();
     expect(inner.calls).toBe(2);
   });
+
+  it('re-reads a function TTL on every call', async () => {
+    const inner = new Counter();
+    let ttl = 60_000;
+    const cached = new CachedMarketStatus(inner, () => ttl);
+    await cached.getStatus();
+    await cached.getStatus();
+    expect(inner.calls).toBe(1);
+    ttl = 0;
+    await cached.getStatus();
+    expect(inner.calls).toBe(2);
+  });
 });

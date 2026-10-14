@@ -94,19 +94,18 @@ export const CONFIG_REGISTRY = {
     restartReason: 'Fastify reads it once when the server is constructed.',
   },
   LOGIN_MAX_FAILED_ATTEMPTS: {
-    category: 'security', kind: 'integer', mutability: 'restart',
+    category: 'security', kind: 'integer', mutability: 'live', min: 3, max: 100,
     description: 'Consecutive failed logins for one username before it is throttled.',
-    restartReason: 'Captured when the login tracker is constructed.',
   },
   LOGIN_FAILURE_WINDOW_MS: {
-    category: 'security', kind: 'integer', unit: 'ms', mutability: 'restart',
+    category: 'security', kind: 'integer', unit: 'ms', mutability: 'live', min: MINUTE, max: DAY,
     description: 'Failures older than this stop counting toward the threshold.',
-    restartReason: 'Captured when the login tracker is constructed.',
   },
+  // Capped at an hour: anyone can trip a lockout for any username, so a long
+  // one becomes a denial-of-service tool against a chosen account.
   LOGIN_LOCKOUT_MS: {
-    category: 'security', kind: 'integer', unit: 'ms', mutability: 'restart',
+    category: 'security', kind: 'integer', unit: 'ms', mutability: 'live', min: MINUTE, max: HOUR,
     description: 'How long a throttled username stays locked. Keep short: anyone can trigger it for any name.',
-    restartReason: 'Captured when the login tracker is constructed.',
   },
 
   // ── database ────────────────────────────────────────────────────────────
@@ -174,9 +173,8 @@ export const CONFIG_REGISTRY = {
     restartReason: PROVIDER_BOOT,
   },
   MARKET_STATUS_CACHE_TTL_MS: {
-    category: 'market-hours', kind: 'integer', unit: 'ms', mutability: 'restart',
+    category: 'market-hours', kind: 'integer', unit: 'ms', mutability: 'live', min: SECOND, max: HOUR,
     description: 'How long the market open/closed state is cached.',
-    restartReason: 'Captured when the market-status cache is constructed.',
   },
   MARKET_HOURS_MODE: {
     category: 'market-hours', kind: 'enum', options: VALID_MARKET_HOURS_MODES, mutability: 'live',

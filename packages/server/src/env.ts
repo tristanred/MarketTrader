@@ -190,10 +190,6 @@ export const env = {
    */
   ALPACA_API_SECRET_KEY: optional('ALPACA_API_SECRET_KEY', ''),
   MARKET_STATUS_PROVIDER: validatedMarketStatusProvider(stockProvider),
-  MARKET_STATUS_CACHE_TTL_MS: parsePositiveInt(
-    'MARKET_STATUS_CACHE_TTL_MS',
-    optional('MARKET_STATUS_CACHE_TTL_MS', '60000'),
-  ),
   NODE_ENV: validatedNodeEnv(),
 
   /** How often the pending-orders worker checks for orders to settle, in ms. */
@@ -256,27 +252,6 @@ export const env = {
     'SQLITE_BUSY_TIMEOUT_MS',
     optional('SQLITE_BUSY_TIMEOUT_MS', '5000'),
   ),
-
-  /**
-   * Consecutive failed logins for one username before `POST /auth/login` starts
-   * answering 429 for {@link env.LOGIN_LOCKOUT_MS}. Counted per account rather
-   * than per IP so the control survives an attacker rotating source addresses.
-   */
-  LOGIN_MAX_FAILED_ATTEMPTS: parsePositiveInt(
-    'LOGIN_MAX_FAILED_ATTEMPTS',
-    optional('LOGIN_MAX_FAILED_ATTEMPTS', '10'),
-  ),
-  /** Failures older than this stop counting toward the threshold. */
-  LOGIN_FAILURE_WINDOW_MS: parsePositiveInt(
-    'LOGIN_FAILURE_WINDOW_MS',
-    optional('LOGIN_FAILURE_WINDOW_MS', '900000'),
-  ),
-  /**
-   * How long an account stays throttled once the threshold trips. Kept short on
-   * purpose: anyone can trigger it for any username, so a long value would hand
-   * an attacker a denial-of-service against a chosen account.
-   */
-  LOGIN_LOCKOUT_MS: parsePositiveInt('LOGIN_LOCKOUT_MS', optional('LOGIN_LOCKOUT_MS', '900000')),
 
   /**
    * Base OTLP/HTTP endpoint of an OpenTelemetry Collector, e.g.
@@ -382,6 +357,32 @@ export const liveBootConfig = {
     'PRICE_POLLER_MAX_SYMBOLS',
     optional('PRICE_POLLER_MAX_SYMBOLS', '500'),
   ),
+  /** How long the market open/closed state is cached, in ms. */
+  MARKET_STATUS_CACHE_TTL_MS: parsePositiveInt(
+    'MARKET_STATUS_CACHE_TTL_MS',
+    optional('MARKET_STATUS_CACHE_TTL_MS', '60000'),
+  ),
+
+  /**
+   * Consecutive failed logins for one username before `POST /auth/login` starts
+   * answering 429 for {@link liveBootConfig.LOGIN_LOCKOUT_MS}. Counted per account rather
+   * than per IP so the control survives an attacker rotating source addresses.
+   */
+  LOGIN_MAX_FAILED_ATTEMPTS: parsePositiveInt(
+    'LOGIN_MAX_FAILED_ATTEMPTS',
+    optional('LOGIN_MAX_FAILED_ATTEMPTS', '10'),
+  ),
+  /** Failures older than this stop counting toward the threshold. */
+  LOGIN_FAILURE_WINDOW_MS: parsePositiveInt(
+    'LOGIN_FAILURE_WINDOW_MS',
+    optional('LOGIN_FAILURE_WINDOW_MS', '900000'),
+  ),
+  /**
+   * How long an account stays throttled once the threshold trips. Kept short on
+   * purpose: anyone can trigger it for any username, so a long value would hand
+   * an attacker a denial-of-service against a chosen account.
+   */
+  LOGIN_LOCKOUT_MS: parsePositiveInt('LOGIN_LOCKOUT_MS', optional('LOGIN_LOCKOUT_MS', '900000')),
 } as const;
 
 /** True when an OTLP endpoint is configured. Everything telemetry keys off this. */

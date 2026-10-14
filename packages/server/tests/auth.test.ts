@@ -3,6 +3,7 @@ import { eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { createTestApp, createTestAppWithDb, createTestDb } from './helpers/app.js';
 import { schema } from '../src/db/index.js';
+import { RuntimeConfig } from '../src/config/runtime-config.js';
 import { buildApp } from '../src/app.js';
 import { MockStockProvider } from './helpers/mock-provider.js';
 import { MockMarketStatusProvider } from './helpers/mock-market-status.js';
@@ -195,7 +196,11 @@ describe('POST /auth/login — per-account throttle', () => {
       marketStatusProvider: new MockMarketStatusProvider(),
       disablePoller: true,
       disableRateLimit: true,
-      loginThrottle: { maxAttempts: 3, windowMs: 60_000, lockoutMs: 300_000 },
+      runtimeConfig: RuntimeConfig.fromEnvironment({
+        LOGIN_MAX_FAILED_ATTEMPTS: 3,
+        LOGIN_FAILURE_WINDOW_MS: 60_000,
+        LOGIN_LOCKOUT_MS: 300_000,
+      }),
       leaderboardThrottleMs: 0,
     });
     for (const username of ['throttle-a', 'throttle-b']) {

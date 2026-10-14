@@ -1,13 +1,7 @@
-import { env } from '../env.js';
+import type { ConfigReader } from '../config/runtime-config.js';
 
-/** Tuning for {@link FailedLoginTracker}; each field falls back to its `LOGIN_*` env var. */
+/** Options for {@link FailedLoginTracker}. Thresholds come from the live `LOGIN_*` config. */
 export interface FailedLoginOptions {
-  /** Consecutive failures within {@link FailedLoginOptions.windowMs} before the throttle engages. */
-  maxAttempts?: number;
-  /** Failures older than this stop counting. */
-  windowMs?: number;
-  /** How long the throttle holds once it engages. */
-  lockoutMs?: number;
   /** When true, every method is a no-op. Tests and the e2e suite. */
   disabled?: boolean;
 }
@@ -49,16 +43,26 @@ const SWEEP_TARGET = Math.floor(MAX_TRACKED * 0.9);
  */
 export class FailedLoginTracker {
   private readonly entries = new Map<string, Entry>();
-  private readonly maxAttempts: number;
-  private readonly windowMs: number;
-  private readonly lockoutMs: number;
   private readonly disabled: boolean;
 
-  constructor(opts: FailedLoginOptions = {}) {
-    this.maxAttempts = opts.maxAttempts ?? env.LOGIN_MAX_FAILED_ATTEMPTS;
-    this.windowMs = opts.windowMs ?? env.LOGIN_FAILURE_WINDOW_MS;
-    this.lockoutMs = opts.lockoutMs ?? env.LOGIN_LOCKOUT_MS;
+  constructor(
+    private readonly config: ConfigReader,
+    opts: FailedLoginOptions = {},
+  ) {
     this.disabled = opts.disabled ?? false;
+  }
+
+  // Read per call, not captured, so an admin override applies to the next attempt.
+  private get maxAttempts(): number {
+    return this.config.get('LOGIN_MAX_FAILED_ATTEMPTS');
+  }
+
+  private get windowMs(): number {
+    return this.config.get('LOGIN_FAILURE_WINDOW_MS');
+  }
+
+  private get lockoutMs(): number {
+    return this.config.get('LOGIN_LOCKOUT_MS');
   }
 
   /**

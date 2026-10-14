@@ -60,7 +60,7 @@ export async function buildApp(
     disablePoller?: boolean;
     /** When true, registers the rate-limit plugin with no real ceiling. Tests only. */
     disableRateLimit?: boolean;
-    /** Overrides for the per-account login throttle. Pass `{ disabled: true }` in tests. */
+    /** Pass `{ disabled: true }` in tests; thresholds come from `runtimeConfig`. */
     loginThrottle?: FailedLoginOptions;
     /** Override leaderboard broadcast throttle in ms. Defaults to 1000. Pass 0 in tests. */
     leaderboardThrottleMs?: number;
@@ -87,7 +87,7 @@ export async function buildApp(
     injectedMarketStatus ??
     new CachedMarketStatus(
       createMarketStatusProvider(provider),
-      env.MARKET_STATUS_CACHE_TTL_MS,
+      () => runtimeConfig.get('MARKET_STATUS_CACHE_TTL_MS'),
     );
   const app = Fastify(fastifyOpts);
 
@@ -154,7 +154,7 @@ export async function buildApp(
 
   await app.register(healthRoutes);
   await app.register(versionRoutes);
-  await app.register(authRoutes(db, new FailedLoginTracker(loginThrottle)));
+  await app.register(authRoutes(db, new FailedLoginTracker(runtimeConfig, loginThrottle)));
   await app.register(gameRoutes(db, bus));
   await app.register(publicGamesRoutes(db));
   await app.register(stockRoutes(db, provider, runtimeConfig));

@@ -9,13 +9,15 @@ import type { MarketStatusProvider } from './interface.js';
 export class CachedMarketStatus implements MarketStatusProvider {
   private cached: { result: MarketStatusResult; fetchedAt: number } | null = null;
 
+  /** `ttlMs` may be a getter so a runtime override applies without rebuilding the cache. */
   constructor(
     private readonly inner: MarketStatusProvider,
-    private readonly ttlMs: number,
+    private readonly ttlMs: number | (() => number),
   ) {}
 
   async getStatus(): Promise<MarketStatusResult> {
-    if (this.cached && Date.now() - this.cached.fetchedAt < this.ttlMs) {
+    const ttl = typeof this.ttlMs === 'function' ? this.ttlMs() : this.ttlMs;
+    if (this.cached && Date.now() - this.cached.fetchedAt < ttl) {
       return this.cached.result;
     }
     const result = await this.inner.getStatus();

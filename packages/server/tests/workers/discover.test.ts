@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
+import { RuntimeConfig } from '../../src/config/runtime-config.js';
 import { createTestDb } from '../helpers/app.js';
 import { schema } from '../../src/db/index.js';
 import { MockProvider } from '../../src/providers/mock.js';
@@ -51,6 +52,7 @@ describe('startDiscoverWorker', () => {
     const worker = startDiscoverWorker({
       db,
       provider,
+      config: RuntimeConfig.fromEnvironment(),
       now: () => AFTER_CLOSE,
       intervalMs: 1000,
     });

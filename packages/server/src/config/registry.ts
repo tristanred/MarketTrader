@@ -189,19 +189,17 @@ export const CONFIG_REGISTRY = {
 
   // ── workers ─────────────────────────────────────────────────────────────
   PENDING_ORDERS_TICK_MS: {
-    category: 'workers', kind: 'integer', unit: 'ms', mutability: 'restart',
+    category: 'workers', kind: 'integer', unit: 'ms', mutability: 'live', min: 5 * SECOND, max: HOUR,
     description: 'How often pending orders settle and resting orders are checked for fills and expiry.',
-    restartReason: 'The worker arms its timer once at startup.',
   },
+  // Floor of a minute: every tick writes one row per active player.
   PORTFOLIO_SNAPSHOT_INTERVAL_MS: {
-    category: 'workers', kind: 'integer', unit: 'ms', mutability: 'restart',
+    category: 'workers', kind: 'integer', unit: 'ms', mutability: 'live', min: MINUTE, max: DAY,
     description: 'How often every active player’s portfolio value is captured for charts.',
-    restartReason: 'The worker arms its timer once at startup.',
   },
   DISCOVER_REFRESH_INTERVAL_MS: {
-    category: 'workers', kind: 'integer', unit: 'ms', mutability: 'restart',
+    category: 'workers', kind: 'integer', unit: 'ms', mutability: 'live', min: MINUTE, max: DAY,
     description: 'How often the Discover worker looks for missing market-mover and daily-pick lists.',
-    restartReason: 'The worker arms its timer once at startup.',
   },
 
   // ── limits ──────────────────────────────────────────────────────────────

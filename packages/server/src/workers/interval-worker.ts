@@ -38,6 +38,8 @@ export interface IntervalWorker {
  * when the interval fires, that fire is skipped (re-entrancy guard). A rejected
  * tick is routed to `onError` and does not stop the loop.
  *
+ * `intervalMs` may be a getter; it is re-read each time the timer re-arms.
+ *
  * `name` identifies the loop in telemetry — every tick gets a `worker.tick`
  * span and a duration/outcome metric, which is why background work is
  * observable without each worker instrumenting itself.
@@ -53,15 +55,17 @@ export interface IntervalWorker {
 export function startIntervalWorker(
   name: string,
   tick: () => Promise<void>,
-  intervalMs: number,
+  intervalMs: number | (() => number),
   onError?: (err: unknown) => void,
   options: { immediate?: boolean } = {},
 ): IntervalWorker {
+  const nextDelay = typeof intervalMs === 'function' ? intervalMs : () => intervalMs;
   let running = false;
   let stopped = false;
   // The currently-running tick's settled promise (resolves even if the tick
   // throws), or null when idle. stop() awaits this to drain a live tick.
   let inflight: Promise<void> | null = null;
+  let handle: ReturnType<typeof setTimeout> | undefined;
 
   const fire = () => {
     if (running || stopped) return;
@@ -75,13 +79,22 @@ export function startIntervalWorker(
         inflight = null;
       });
   };
-  const handle = setInterval(fire, intervalMs);
+  // A self-re-arming timeout instead of setInterval, so a changed interval
+  // applies at the next fire without restarting the worker. Re-armed right
+  // after fire(), not after the tick settles, to keep setInterval's cadence.
+  const schedule = () => {
+    handle = setTimeout(() => {
+      fire();
+      if (!stopped) schedule();
+    }, nextDelay());
+  };
+  schedule();
   if (options.immediate) fire();
 
   return {
     stop: async () => {
       stopped = true;
-      clearInterval(handle);
+      clearTimeout(handle);
       await inflight;
     },
   };

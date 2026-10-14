@@ -10,7 +10,6 @@ import { recordSnapshot } from '../services/portfolio-snapshot.js';
 import { emitTradeEvents } from '../services/trade-emit.js';
 import type { GameClientRegistry } from '../ws/registry.js';
 import type { EventBus } from '../events/bus.js';
-import { env } from '../env.js';
 import type { ConfigReader } from '../config/runtime-config.js';
 import { isTradingOpen } from '../services/trading-hours.js';
 import { startIntervalWorker, type IntervalWorker } from './interval-worker.js';
@@ -282,7 +281,7 @@ export function startPendingOrdersWorker(deps: {
   logger?: FastifyBaseLogger;
   intervalMs?: number;
 }): IntervalWorker {
-  const intervalMs = deps.intervalMs ?? env.PENDING_ORDERS_TICK_MS;
+  const intervalMs = deps.intervalMs ?? (() => deps.config.get('PENDING_ORDERS_TICK_MS'));
   return startIntervalWorker(
     'pending-orders',
     () => runPendingOrdersTick(deps),

@@ -192,31 +192,6 @@ export const env = {
   MARKET_STATUS_PROVIDER: validatedMarketStatusProvider(stockProvider),
   NODE_ENV: validatedNodeEnv(),
 
-  /** How often the pending-orders worker checks for orders to settle, in ms. */
-  PENDING_ORDERS_TICK_MS: parsePositiveInt(
-    'PENDING_ORDERS_TICK_MS',
-    optional('PENDING_ORDERS_TICK_MS', '30000'),
-  ),
-  /**
-   * How often the portfolio-snapshot worker captures every active player's
-   * total portfolio value. Default 5 minutes — aligns with the WS price-batch
-   * cadence. Drives the leaderboard race chart and per-row sparklines.
-   */
-  PORTFOLIO_SNAPSHOT_INTERVAL_MS: parsePositiveInt(
-    'PORTFOLIO_SNAPSHOT_INTERVAL_MS',
-    optional('PORTFOLIO_SNAPSHOT_INTERVAL_MS', '300000'),
-  ),
-  /**
-   * How often the Discover worker checks for missing lists: market movers for
-   * the session that just closed, and daily picks for games without one.
-   * Default 5 minutes — bounds how long a new game shows "preparing", and how
-   * soon after the 16:00 ET close the movers are captured.
-   */
-  DISCOVER_REFRESH_INTERVAL_MS: parsePositiveInt(
-    'DISCOVER_REFRESH_INTERVAL_MS',
-    optional('DISCOVER_REFRESH_INTERVAL_MS', '300000'),
-  ),
-
   /**
    * How often the server sends WebSocket ping frames to connected clients, in
    * ms. Must stay comfortably below the shortest idle timeout on the path
@@ -310,6 +285,31 @@ export const liveBootConfig = {
   MARKET_HOURS_MODE: validatedMarketHoursMode(),
   /** When true, PRE and POST sessions count as "open" for trading. */
   MARKET_HOURS_INCLUDE_EXTENDED: parseBool(optional('MARKET_HOURS_INCLUDE_EXTENDED', 'false')),
+
+  /** How often the pending-orders worker checks for orders to settle, in ms. */
+  PENDING_ORDERS_TICK_MS: parsePositiveInt(
+    'PENDING_ORDERS_TICK_MS',
+    optional('PENDING_ORDERS_TICK_MS', '30000'),
+  ),
+  /**
+   * How often the portfolio-snapshot worker captures every active player's
+   * total portfolio value. Default 5 minutes — aligns with the WS price-batch
+   * cadence. Drives the leaderboard race chart and per-row sparklines.
+   */
+  PORTFOLIO_SNAPSHOT_INTERVAL_MS: parsePositiveInt(
+    'PORTFOLIO_SNAPSHOT_INTERVAL_MS',
+    optional('PORTFOLIO_SNAPSHOT_INTERVAL_MS', '300000'),
+  ),
+  /**
+   * How often the Discover worker checks for missing lists: market movers for
+   * the session that just closed, and daily picks for games without one.
+   * Default 5 minutes — bounds how long a new game shows "preparing", and how
+   * soon after the 16:00 ET close the movers are captured.
+   */
+  DISCOVER_REFRESH_INTERVAL_MS: parsePositiveInt(
+    'DISCOVER_REFRESH_INTERVAL_MS',
+    optional('DISCOVER_REFRESH_INTERVAL_MS', '300000'),
+  ),
 
   // Stock-data resilience tunables. All durations are in milliseconds.
   /** TTL for the `stock_price_cache` table. Cache hits skip the upstream fetch. */

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { startIntervalWorker } from '../../src/workers/interval-worker.js';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -97,5 +97,36 @@ describe('startIntervalWorker', () => {
     expect(lazy).not.toHaveBeenCalled();
     await a.stop();
     await b.stop();
+  });
+});
+
+describe('startIntervalWorker with a dynamic interval', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('applies a changed interval from the next fire onward', async () => {
+    vi.useFakeTimers();
+    let interval = 1000;
+    const tick = vi.fn(async () => {});
+    const worker = startIntervalWorker('test-dynamic', tick, () => interval);
+
+    await vi.advanceTimersByTimeAsync(500);
+    interval = 100; // the timer armed at t=0 still fires at t=1000
+    await vi.advanceTimersByTimeAsync(500);
+    expect(tick).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(300); // fires at 1100, 1200, 1300
+    expect(tick).toHaveBeenCalledTimes(4);
+    await worker.stop();
+  });
+
+  it('keeps a fixed cadence regardless of tick duration, like setInterval', async () => {
+    vi.useFakeTimers();
+    const tick = vi.fn(() => new Promise<void>((r) => setTimeout(r, 30)));
+    const worker = startIntervalWorker('test-cadence', tick, () => 100);
+    await vi.advanceTimersByTimeAsync(350);
+    expect(tick).toHaveBeenCalledTimes(3); // 100, 200, 300 — not delayed by the 30ms ticks
+    await worker.stop();
   });
 });

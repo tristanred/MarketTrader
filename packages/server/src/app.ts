@@ -210,13 +210,14 @@ export async function buildApp(
     const snapshotWorker = startPortfolioSnapshotWorker({
       db,
       bus,
+      config: runtimeConfig,
       logger: app.log,
     });
     app.addHook('onClose', async () => {
       await snapshotWorker.stop();
     });
 
-    const discoverWorker = startDiscoverWorker({ db, provider, logger: app.log });
+    const discoverWorker = startDiscoverWorker({ db, provider, config: runtimeConfig, logger: app.log });
     app.addHook('onClose', async () => {
       await discoverWorker.stop();
     });

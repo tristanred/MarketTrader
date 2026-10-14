@@ -49,7 +49,8 @@ export function AdminConfigPage() {
         <h1 className="text-2xl font-semibold">Configuration</h1>
         <p className="text-sm text-muted-foreground">
           The options this server booted with. Live options can be changed here: the change applies
-          immediately, persists across restarts, and wins over the environment until you reset it.
+          from the next read (a wait already in progress finishes first), persists across restarts,
+          and wins over the environment until you reset it.
         </p>
       </div>
 

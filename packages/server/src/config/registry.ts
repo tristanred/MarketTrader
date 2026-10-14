@@ -105,7 +105,9 @@ export const CONFIG_REGISTRY = {
   // one becomes a denial-of-service tool against a chosen account.
   LOGIN_LOCKOUT_MS: {
     category: 'security', kind: 'integer', unit: 'ms', mutability: 'live', min: MINUTE, max: HOUR,
-    description: 'How long a throttled username stays locked. Keep short: anyone can trigger it for any name.',
+    description:
+      'How long a throttled username stays locked. Keep short: anyone can trigger it for any name. ' +
+      'Accounts already locked keep their expiry.',
   },
 
   // ── database ────────────────────────────────────────────────────────────
@@ -155,7 +157,7 @@ export const CONFIG_REGISTRY = {
   },
   STOCK_RATE_LIMIT_BACKOFF_MS: {
     category: 'stock-data', kind: 'integer', unit: 'ms', mutability: 'live', min: SECOND, max: HOUR,
-    description: 'After an upstream 429, refuse upstream calls for this long.',
+    description: 'After an upstream 429, refuse upstream calls for this long. Applies to the next 429, not one already in effect.',
   },
   STOCK_ALLOW_STALE_TRADES: {
     category: 'stock-data', kind: 'boolean', mutability: 'live',

@@ -149,8 +149,11 @@ Live options (cache TTLs, rate-limit backoff, stale-trade policy, market-hours m
 hours, login-throttle thresholds, worker intervals, watchlist and poller caps) live in
 `liveBootConfig` rather than `env` and are read through the app's injected `RuntimeConfig`. An
 override is a `system_settings` row keyed `config.override.<KEY>`, audited as
-`system.config.override` / `system.config.reset`, applied immediately, re-applied at boot (which
-logs a warning listing them), and wins over the environment until reset. Override bounds are
+`system.config.override` / `system.config.reset`, applied from the next read, re-applied at boot
+(which logs a warning listing them), and wins over the environment until reset. A wait already in
+progress finishes first: an active rate-limit backoff or login lockout keeps its expiry. Worker
+intervals are the exception — `startIntervalWorker` re-reads its interval at least every 10 s, so
+lowering one takes effect within that window. Override bounds are
 tighter than environment parsing so a mis-click cannot, say, set a 1 ms cache TTL. Restart-only
 options are read-only and say why. The panel also shows the bundle's `VITE_*` build-time values.
 

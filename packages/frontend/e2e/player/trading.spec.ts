@@ -16,7 +16,7 @@ test.describe('Player trading', () => {
       headers: { Authorization: `Bearer ${playerUser.accessToken}` },
     });
     // Buy via API — the arena UI no longer exposes Trade/Portfolio tabs;
-    // the test still exercises the live UI by asserting the holdings table
+    // the test still exercises the live UI by asserting the holdings rail
     // picks up the new position after navigation.
     const buy = await apiClient.post(`/games/${game.id}/trades`, {
       headers: { Authorization: `Bearer ${playerUser.accessToken}` },

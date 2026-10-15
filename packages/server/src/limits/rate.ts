@@ -16,7 +16,11 @@ export type RateLimitKey = 'trades' | 'orderCancels' | 'codeLookups';
 // basis. WeakMap so a request that never reaches the builder leaks nothing.
 const resolutions = new WeakMap<FastifyRequest, ResolvedLimit>();
 
-async function resolveOnce(limits: Limits, request: FastifyRequest, key: RateLimitKey): Promise<ResolvedLimit> {
+async function resolveOnce(
+  limits: Limits,
+  request: FastifyRequest,
+  key: RateLimitKey,
+): Promise<ResolvedLimit> {
   const cached = resolutions.get(request);
   if (cached?.key === key) return cached;
   const resolved = await limits.resolver.resolve(subjectOf(request), key);
@@ -37,7 +41,8 @@ export function rateLimitFor(limits: Limits, key: RateLimitKey): RateLimitOption
     timeWindow: windowMs,
     keyGenerator: (request) => `u:${request.account?.id ?? `ip:${request.ip}`}`,
     allowList: async (request) => (await resolveOnce(limits, request, key)).max === null,
-    max: async (request) => (await resolveOnce(limits, request, key)).max ?? Number.MAX_SAFE_INTEGER,
+    max: async (request) =>
+      (await resolveOnce(limits, request, key)).max ?? Number.MAX_SAFE_INTEGER,
     errorResponseBuilder: (request, context) => {
       const resolved: ResolvedLimit = resolutions.get(request) ?? {
         key,

@@ -27,6 +27,8 @@ export async function registerRateLimit(
     // per-route configs. Used in tests so shared-app fixtures don't hit caps
     // like /auth/register's 10/min.
     ...(opts.disabled ? { allowList: () => true } : {}),
-    ...(opts.onExceeded ? { onExceeded: (request: FastifyRequest) => opts.onExceeded?.(request) } : {}),
+    ...(opts.onExceeded
+      ? { onExceeded: (request: FastifyRequest) => opts.onExceeded?.(request) }
+      : {}),
   });
 }

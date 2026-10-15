@@ -47,7 +47,14 @@ function isOpenOrderDenial(err: unknown): boolean {
 }
 
 function pendingBuy(gamePlayerId: string) {
-  return { gamePlayerId, symbol: 'AAPL', direction: 'buy' as const, quantity: 1, reservedPrice: 1, openOrderLimit: OPEN_ORDER_LIMIT };
+  return {
+    gamePlayerId,
+    symbol: 'AAPL',
+    direction: 'buy' as const,
+    quantity: 1,
+    reservedPrice: 1,
+    openOrderLimit: OPEN_ORDER_LIMIT,
+  };
 }
 
 describe('reservePendingTrade open-order cap', () => {
@@ -57,12 +64,16 @@ describe('reservePendingTrade open-order cap', () => {
       await reservePendingTrade(db, pendingBuy(gamePlayerId));
     }
 
-    await expect(reservePendingTrade(db, pendingBuy(gamePlayerId))).rejects.toSatisfy(isOpenOrderDenial);
+    await expect(reservePendingTrade(db, pendingBuy(gamePlayerId))).rejects.toSatisfy(
+      isOpenOrderDenial,
+    );
 
     const pending = await db
       .select({ id: schema.trades.id })
       .from(schema.trades)
-      .where(and(eq(schema.trades.gamePlayerId, gamePlayerId), eq(schema.trades.status, 'pending')));
+      .where(
+        and(eq(schema.trades.gamePlayerId, gamePlayerId), eq(schema.trades.status, 'pending')),
+      );
     expect(pending).toHaveLength(MAX_OPEN_ORDERS);
   });
 
@@ -72,7 +83,9 @@ describe('reservePendingTrade open-order cap', () => {
       await reservePendingTrade(db, pendingBuy(gamePlayerId));
     }
     const cashBefore = await cashOf(db, gamePlayerId);
-    await expect(reservePendingTrade(db, pendingBuy(gamePlayerId))).rejects.toSatisfy(isOpenOrderDenial);
+    await expect(reservePendingTrade(db, pendingBuy(gamePlayerId))).rejects.toSatisfy(
+      isOpenOrderDenial,
+    );
     expect(await cashOf(db, gamePlayerId)).toBe(cashBefore);
   });
 
@@ -89,7 +102,9 @@ describe('reservePendingTrade open-order cap', () => {
         limitPrice: 0.01,
       })),
     );
-    await expect(reservePendingTrade(db, pendingBuy(gamePlayerId))).rejects.toSatisfy(isOpenOrderDenial);
+    await expect(reservePendingTrade(db, pendingBuy(gamePlayerId))).rejects.toSatisfy(
+      isOpenOrderDenial,
+    );
   });
 });
 

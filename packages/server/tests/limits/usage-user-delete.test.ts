@@ -23,16 +23,36 @@ describe('DELETE /admin/users/:id removes usage history', () => {
     const victim = await registerUser(app, 'usage-del-victim');
     const bystander = await registerUser(app, 'usage-del-bystander');
     await db.insert(schema.apiUsageHourly).values([
-      { subjectType: 'user', subjectId: victim.userId, route: 'GET /games', hourStart: '2026-10-14T13:00:00.000Z', count: 4 },
-      { subjectType: 'user', subjectId: bystander.userId, route: 'GET /games', hourStart: '2026-10-14T13:00:00.000Z', count: 1 },
+      {
+        subjectType: 'user',
+        subjectId: victim.userId,
+        route: 'GET /games',
+        hourStart: '2026-10-14T13:00:00.000Z',
+        count: 4,
+      },
+      {
+        subjectType: 'user',
+        subjectId: bystander.userId,
+        route: 'GET /games',
+        hourStart: '2026-10-14T13:00:00.000Z',
+        count: 1,
+      },
     ]);
     await db.insert(schema.limitDenialsHourly).values({
-      subjectType: 'user', subjectId: victim.userId, limitKey: 'trades',
-      hourStart: '2026-10-14T13:00:00.000Z', count: 2,
-      firstAt: '2026-10-14T13:01:00.000Z', lastAt: '2026-10-14T13:02:00.000Z',
+      subjectType: 'user',
+      subjectId: victim.userId,
+      limitKey: 'trades',
+      hourStart: '2026-10-14T13:00:00.000Z',
+      count: 2,
+      firstAt: '2026-10-14T13:01:00.000Z',
+      lastAt: '2026-10-14T13:02:00.000Z',
     });
 
-    const res = await app.inject({ method: 'DELETE', url: `/admin/users/${victim.userId}?force=true`, headers: admin });
+    const res = await app.inject({
+      method: 'DELETE',
+      url: `/admin/users/${victim.userId}?force=true`,
+      headers: admin,
+    });
     expect(res.statusCode).toBe(204);
 
     const usage = await db.select().from(schema.apiUsageHourly);
@@ -46,7 +66,11 @@ describe('DELETE /admin/users/:id removes usage history', () => {
     tracker.recordRequest({ type: 'user', id: victim.userId }, 'GET /games');
     tracker.recordDenial({ type: 'user', id: victim.userId }, 'trades');
 
-    const res = await app.inject({ method: 'DELETE', url: `/admin/users/${victim.userId}?force=true`, headers: admin });
+    const res = await app.inject({
+      method: 'DELETE',
+      url: `/admin/users/${victim.userId}?force=true`,
+      headers: admin,
+    });
     expect(res.statusCode).toBe(204);
     await flushUsage(db, tracker.swap());
 

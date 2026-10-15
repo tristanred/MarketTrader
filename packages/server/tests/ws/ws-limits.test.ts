@@ -24,15 +24,24 @@ import type { Db } from '../../src/db/index.js';
 function waitForOpen(ws: WebSocket, ms = 2000): Promise<void> {
   return new Promise((resolve, reject) => {
     const t = setTimeout(() => reject(new Error('WS open timeout')), ms);
-    ws.once('open', () => { clearTimeout(t); resolve(); });
-    ws.once('error', (e) => { clearTimeout(t); reject(e); });
+    ws.once('open', () => {
+      clearTimeout(t);
+      resolve();
+    });
+    ws.once('error', (e) => {
+      clearTimeout(t);
+      reject(e);
+    });
   });
 }
 
 function waitForClose(ws: WebSocket, ms = 2000): Promise<number> {
   return new Promise((resolve, reject) => {
     const t = setTimeout(() => reject(new Error('WS close timeout')), ms);
-    ws.once('close', (code) => { clearTimeout(t); resolve(code); });
+    ws.once('close', (code) => {
+      clearTimeout(t);
+      resolve(code);
+    });
   });
 }
 
@@ -85,7 +94,13 @@ describe('WebSocket limits', () => {
     await registerJwt(wsApp, db);
     registry = new GameClientRegistry();
     globalRegistry = new GlobalClientRegistry();
-    const engine = new AchievementEngine(db, new EventBus(), registry, new SystemSettingsService(db), []);
+    const engine = new AchievementEngine(
+      db,
+      new EventBus(),
+      registry,
+      new SystemSettingsService(db),
+      [],
+    );
     const wsLimits = {
       limits,
       config,
@@ -165,7 +180,11 @@ describe('WebSocket limits', () => {
 
   it('never caps an admin', async () => {
     const p = await makePlayer('ws-cap-admin', true);
-    const sockets = [gameSocket(p.gameId, p.token), gameSocket(p.gameId, p.token), globalSocket(p.token)];
+    const sockets = [
+      gameSocket(p.gameId, p.token),
+      gameSocket(p.gameId, p.token),
+      globalSocket(p.token),
+    ];
     await Promise.all(sockets.map((s) => waitForOpen(s)));
     for (const s of sockets) s.close();
     await Promise.all(sockets.map((s) => waitForClose(s)));
@@ -181,7 +200,10 @@ describe('WebSocket limits', () => {
     const error = waitForEvent(ws, 'error');
     ws.send(JSON.stringify({ event: 'subscribe', data: { symbols: ['TSLA'] } }));
 
-    expect(await error).toEqual({ event: 'error', data: { code: 'LIMIT_EXCEEDED', limit: 'wsSubscribes' } });
+    expect(await error).toEqual({
+      event: 'error',
+      data: { code: 'LIMIT_EXCEEDED', limit: 'wsSubscribes' },
+    });
     const [entry] = [...registry.getClients(p.gameId).values()];
     expect([...entry!.subscriptions]).toEqual(['MSFT']);
     expect(ws.readyState).toBe(WebSocket.OPEN);

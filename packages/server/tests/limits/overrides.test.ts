@@ -45,7 +45,11 @@ describe('LimitOverridesService', () => {
       .from(schema.adminAuditLog)
       .where(eq(schema.adminAuditLog.targetId, userId));
     expect(audit.map((r) => r.action)).toEqual(['user.limit.override', 'user.limit.override']);
-    expect(JSON.parse(audit[1]!.before!)).toEqual({ key: 'gamesCreated', value: 40, note: 'tournament organiser' });
+    expect(JSON.parse(audit[1]!.before!)).toEqual({
+      key: 'gamesCreated',
+      value: 40,
+      note: 'tournament organiser',
+    });
     expect(JSON.parse(audit[1]!.after!)).toEqual({ key: 'gamesCreated', value: 60, note: null });
   });
 
@@ -72,13 +76,20 @@ describe('LimitOverridesService', () => {
   it('listAll() names the user and the admin', async () => {
     await svc.set(adminId, userId, 'openOrders', 200, 'bot test');
     const entry = (await svc.listAll()).find((e) => e.userId === userId);
-    expect(entry).toMatchObject({ key: 'openOrders', value: 200, note: 'bot test', updatedBy: adminId });
+    expect(entry).toMatchObject({
+      key: 'openOrders',
+      value: 200,
+      note: 'bot test',
+      updatedBy: adminId,
+    });
     expect(entry!.username).toMatch(/^ov-user-/);
     expect(entry!.updatedByUsername).toMatch(/^ov-admin-/);
   });
 
   it('ignores rows whose key is no longer a LimitKey', async () => {
-    await db.insert(schema.userLimitOverrides).values({ userId, limitKey: 'retiredLimit', value: 3 });
+    await db
+      .insert(schema.userLimitOverrides)
+      .values({ userId, limitKey: 'retiredLimit', value: 3 });
     expect((await svc.forUser(userId)).size).toBe(0);
     expect((await svc.listAll()).some((e) => e.userId === userId)).toBe(false);
   });

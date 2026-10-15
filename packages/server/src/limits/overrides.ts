@@ -73,7 +73,13 @@ export class LimitOverridesService {
   }
 
   /** Creates or replaces one override and audits `user.limit.override`. `value` must already be validated. */
-  async set(adminId: string, userId: string, key: LimitKey, value: number, note: string | null): Promise<void> {
+  async set(
+    adminId: string,
+    userId: string,
+    key: LimitKey,
+    value: number,
+    note: string | null,
+  ): Promise<void> {
     const t = schema.userLimitOverrides;
     const now = new Date().toISOString();
     await this.db.transaction(async (tx) => {
@@ -141,7 +147,9 @@ export class LimitOverridesService {
       .from(t)
       .innerJoin(schema.users, eq(schema.users.id, t.userId));
 
-    const authorIds = [...new Set(rows.map((r) => r.updatedBy).filter((id): id is string => id !== null))];
+    const authorIds = [
+      ...new Set(rows.map((r) => r.updatedBy).filter((id): id is string => id !== null)),
+    ];
     const authors =
       authorIds.length === 0
         ? []

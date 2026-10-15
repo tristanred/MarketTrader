@@ -35,7 +35,10 @@ test.describe('Admin limits', () => {
       ['LIMITS_ENABLED', true],
       [GAMES_LIMIT, 1],
     ] as const) {
-      const res = await apiClient.put(`/admin/config/${key}`, { headers: adminHeaders, data: { value } });
+      const res = await apiClient.put(`/admin/config/${key}`, {
+        headers: adminHeaders,
+        data: { value },
+      });
       expect(res.ok(), await res.text()).toBeTruthy();
     }
 
@@ -54,7 +57,11 @@ test.describe('Admin limits', () => {
     expect((await createGame('limits-e2e-1')).status()).toBe(201);
     const denied = await createGame('limits-e2e-2');
     expect(denied.status()).toBe(429);
-    expect(await denied.json()).toMatchObject({ code: 'LIMIT_EXCEEDED', limit: 'gamesCreated', max: 1 });
+    expect(await denied.json()).toMatchObject({
+      code: 'LIMIT_EXCEEDED',
+      limit: 'gamesCreated',
+      max: 1,
+    });
 
     await adminPage.goto(`/admin/users/${player.userId}`);
     const row = adminPage.locator('[data-limit-key="gamesCreated"]');

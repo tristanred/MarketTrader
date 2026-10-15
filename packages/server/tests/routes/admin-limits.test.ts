@@ -54,19 +54,30 @@ describe('/admin/limits and /admin/users/:id/limits', () => {
   });
 
   it('rejects unauthenticated (401) and non-admin (403) callers', async () => {
-    for (const url of ['/admin/limits/policy', '/admin/limits/top', '/admin/limits/overrides', `/admin/users/${memberId}/limits`]) {
+    for (const url of [
+      '/admin/limits/policy',
+      '/admin/limits/top',
+      '/admin/limits/overrides',
+      `/admin/users/${memberId}/limits`,
+    ]) {
       expect((await app.inject({ method: 'GET', url })).statusCode).toBe(401);
       expect((await app.inject({ method: 'GET', url, headers: member })).statusCode).toBe(403);
     }
     const put = await app.inject({
-      method: 'PUT', url: `/admin/users/${memberId}/limits/gamesCreated`, headers: member, payload: { value: 5 },
+      method: 'PUT',
+      url: `/admin/users/${memberId}/limits/gamesCreated`,
+      headers: member,
+      payload: { value: 5 },
     });
     expect(put.statusCode).toBe(403);
   });
 
   it('reports the policy and the caller IP as the server sees it', async () => {
     const privileged = await app.inject({
-      method: 'GET', url: '/admin/limits/policy', headers: admin, remoteAddress: '10.1.2.3',
+      method: 'GET',
+      url: '/admin/limits/policy',
+      headers: admin,
+      remoteAddress: '10.1.2.3',
     });
     expect(privileged.statusCode).toBe(200);
     expect(privileged.json<AdminLimitPolicy>()).toMatchObject({
@@ -80,16 +91,31 @@ describe('/admin/limits and /admin/users/:id/limits', () => {
     });
 
     const outside = await app.inject({
-      method: 'GET', url: '/admin/limits/policy', headers: admin, remoteAddress: '203.0.113.7',
+      method: 'GET',
+      url: '/admin/limits/policy',
+      headers: admin,
+      remoteAddress: '203.0.113.7',
     });
-    expect(outside.json<AdminLimitPolicy>()).toMatchObject({ requestIp: '203.0.113.7', requestIpPrivileged: false });
+    expect(outside.json<AdminLimitPolicy>()).toMatchObject({
+      requestIp: '203.0.113.7',
+      requestIpPrivileged: false,
+    });
   });
 
   it('shows a new user on probation with live usage counts', async () => {
-    const created = await app.inject({ method: 'POST', url: '/games', headers: member, payload: gamePayload('lim g1') });
+    const created = await app.inject({
+      method: 'POST',
+      url: '/games',
+      headers: member,
+      payload: gamePayload('lim g1'),
+    });
     expect(created.statusCode).toBe(201);
 
-    const res = await app.inject({ method: 'GET', url: `/admin/users/${memberId}/limits`, headers: admin });
+    const res = await app.inject({
+      method: 'GET',
+      url: `/admin/users/${memberId}/limits`,
+      headers: admin,
+    });
     expect(res.statusCode).toBe(200);
     const body = res.json<AdminUserLimitsResponse>();
     expect(body.userId).toBe(memberId);
@@ -119,7 +145,12 @@ describe('/admin/limits and /admin/users/:id/limits', () => {
     // Its own user: the shared member's game count feeds the top-consumers test below.
     const owner = await registerUser(app, 'lim-lowered');
     for (const name of ['low g1', 'low g2']) {
-      const res = await app.inject({ method: 'POST', url: '/games', headers: owner.headers, payload: gamePayload(name) });
+      const res = await app.inject({
+        method: 'POST',
+        url: '/games',
+        headers: owner.headers,
+        payload: gamePayload(name),
+      });
       expect(res.statusCode).toBe(201);
     }
     const put = await app.inject({
@@ -130,13 +161,21 @@ describe('/admin/limits and /admin/users/:id/limits', () => {
     });
     expect(put.statusCode).toBe(200);
 
-    const res = await app.inject({ method: 'GET', url: `/admin/users/${owner.userId}/limits`, headers: admin });
+    const res = await app.inject({
+      method: 'GET',
+      url: `/admin/users/${owner.userId}/limits`,
+      headers: admin,
+    });
     const row = res.json<AdminUserLimitsResponse>().rows.find((r) => r.key === 'activeGamesOwned')!;
     expect(row).toMatchObject({ basis: 'override', effectiveMax: 1, used: 2 });
   });
 
   it('marks an admin as immune', async () => {
-    const res = await app.inject({ method: 'GET', url: `/admin/users/${adminId}/limits`, headers: admin });
+    const res = await app.inject({
+      method: 'GET',
+      url: `/admin/users/${adminId}/limits`,
+      headers: admin,
+    });
     const row = res.json<AdminUserLimitsResponse>().rows.find((r) => r.key === 'trades')!;
     expect(row).toMatchObject({ basis: 'admin', effectiveMax: null });
   });
@@ -156,31 +195,63 @@ describe('/admin/limits and /admin/users/:id/limits', () => {
       override: { value: 40, note: 'office organiser' },
     });
 
-    const list = await app.inject({ method: 'GET', url: '/admin/limits/overrides', headers: admin });
+    const list = await app.inject({
+      method: 'GET',
+      url: '/admin/limits/overrides',
+      headers: admin,
+    });
     expect(list.json<AdminLimitOverrideEntry[]>()).toContainEqual(
-      expect.objectContaining({ userId: memberId, username: 'lim-member', key: 'gamesCreated', value: 40 }),
+      expect.objectContaining({
+        userId: memberId,
+        username: 'lim-member',
+        key: 'gamesCreated',
+        value: 40,
+      }),
     );
 
     const audit = await db
       .select()
       .from(schema.adminAuditLog)
-      .where(and(eq(schema.adminAuditLog.action, 'user.limit.override'), eq(schema.adminAuditLog.targetId, memberId)));
+      .where(
+        and(
+          eq(schema.adminAuditLog.action, 'user.limit.override'),
+          eq(schema.adminAuditLog.targetId, memberId),
+        ),
+      );
     expect(audit).toHaveLength(1);
 
-    const del = await app.inject({ method: 'DELETE', url: `/admin/users/${memberId}/limits/gamesCreated`, headers: admin });
+    const del = await app.inject({
+      method: 'DELETE',
+      url: `/admin/users/${memberId}/limits/gamesCreated`,
+      headers: admin,
+    });
     expect(del.statusCode).toBe(200);
-    expect(del.json<AdminUserLimitRow>()).toMatchObject({ basis: 'probation', effectiveMax: 3, override: null });
+    expect(del.json<AdminUserLimitRow>()).toMatchObject({
+      basis: 'probation',
+      effectiveMax: 3,
+      override: null,
+    });
 
     const reset = await db
       .select()
       .from(schema.adminAuditLog)
-      .where(and(eq(schema.adminAuditLog.action, 'user.limit.reset'), eq(schema.adminAuditLog.targetId, memberId)));
+      .where(
+        and(
+          eq(schema.adminAuditLog.action, 'user.limit.reset'),
+          eq(schema.adminAuditLog.targetId, memberId),
+        ),
+      );
     expect(reset).toHaveLength(1);
   });
 
   it('validates override keys and values', async () => {
     const put = (key: string, payload: Record<string, unknown>, id = memberId) =>
-      app.inject({ method: 'PUT', url: `/admin/users/${id}/limits/${key}`, headers: admin, payload });
+      app.inject({
+        method: 'PUT',
+        url: `/admin/users/${id}/limits/${key}`,
+        headers: admin,
+        payload,
+      });
 
     const unknownKey = await put('notALimit', { value: 5 });
     expect(unknownKey.statusCode).toBe(404);
@@ -205,7 +276,11 @@ describe('/admin/limits and /admin/users/:id/limits', () => {
     const a = await registerUser(app, 'lim-sib-a', { remoteAddress: '192.0.2.77' });
     const b = await registerUser(app, 'lim-sib-b', { remoteAddress: '192.0.2.77' });
 
-    const res = await app.inject({ method: 'GET', url: `/admin/users/${a.userId}/limits`, headers: admin });
+    const res = await app.inject({
+      method: 'GET',
+      url: `/admin/users/${a.userId}/limits`,
+      headers: admin,
+    });
     const body = res.json<AdminUserLimitsResponse>();
     expect(body.registrationIp).toBe('192.0.2.77');
     expect(body.siblingAccounts.map((s) => s.id)).toEqual([b.userId]);
@@ -214,16 +289,30 @@ describe('/admin/limits and /admin/users/:id/limits', () => {
 
   it('ranks top consumers and shows a user’s volume and denials', async () => {
     for (let i = 0; i < 3; i++) {
-      expect((await app.inject({ method: 'GET', url: '/games', headers: member })).statusCode).toBe(200);
+      expect((await app.inject({ method: 'GET', url: '/games', headers: member })).statusCode).toBe(
+        200,
+      );
     }
     // Force a denial: an override of 1 while the member already created one game this week.
     await app.inject({
-      method: 'PUT', url: `/admin/users/${memberId}/limits/gamesCreated`, headers: admin, payload: { value: 1 },
+      method: 'PUT',
+      url: `/admin/users/${memberId}/limits/gamesCreated`,
+      headers: admin,
+      payload: { value: 1 },
     });
-    const denied = await app.inject({ method: 'POST', url: '/games', headers: member, payload: gamePayload('lim g2') });
+    const denied = await app.inject({
+      method: 'POST',
+      url: '/games',
+      headers: member,
+      payload: gamePayload('lim g2'),
+    });
     expect(denied.statusCode).toBe(429);
 
-    const top = await app.inject({ method: 'GET', url: '/admin/limits/top?metric=requests&window=24h', headers: admin });
+    const top = await app.inject({
+      method: 'GET',
+      url: '/admin/limits/top?metric=requests&window=24h',
+      headers: admin,
+    });
     expect(top.statusCode).toBe(200);
     const topBody = top.json<AdminTopConsumersResponse>();
     expect(topBody).toMatchObject({ window: '24h', metric: 'requests' });
@@ -231,19 +320,37 @@ describe('/admin/limits and /admin/users/:id/limits', () => {
     expect(memberRow).toMatchObject({ subjectType: 'user', username: 'lim-member' });
     expect(memberRow.count).toBeGreaterThanOrEqual(3);
 
-    const denials = await app.inject({ method: 'GET', url: '/admin/limits/top?metric=denials', headers: admin });
+    const denials = await app.inject({
+      method: 'GET',
+      url: '/admin/limits/top?metric=denials',
+      headers: admin,
+    });
     expect(denials.json<AdminTopConsumersResponse>().rows).toContainEqual(
       expect.objectContaining({ subjectId: memberId, top: 'gamesCreated' }),
     );
 
-    const detail = await app.inject({ method: 'GET', url: `/admin/users/${memberId}/limits`, headers: admin });
+    const detail = await app.inject({
+      method: 'GET',
+      url: `/admin/users/${memberId}/limits`,
+      headers: admin,
+    });
     const body = detail.json<AdminUserLimitsResponse>();
     expect(body.requestVolume7d).toContainEqual(expect.objectContaining({ route: 'GET /games' }));
-    expect(body.denials7d).toContainEqual(expect.objectContaining({ limitKey: 'gamesCreated', count: 1 }));
+    expect(body.denials7d).toContainEqual(
+      expect.objectContaining({ limitKey: 'gamesCreated', count: 1 }),
+    );
 
-    const bad = await app.inject({ method: 'GET', url: '/admin/limits/top?window=1y', headers: admin });
+    const bad = await app.inject({
+      method: 'GET',
+      url: '/admin/limits/top?window=1y',
+      headers: admin,
+    });
     expect(bad.statusCode).toBe(400);
 
-    await app.inject({ method: 'DELETE', url: `/admin/users/${memberId}/limits/gamesCreated`, headers: admin });
+    await app.inject({
+      method: 'DELETE',
+      url: `/admin/users/${memberId}/limits/gamesCreated`,
+      headers: admin,
+    });
   });
 });

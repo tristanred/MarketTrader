@@ -48,7 +48,10 @@ export async function loadAccount(
       adminGroupId: userGroups.groupId,
     })
     .from(users)
-    .leftJoin(userGroups, and(eq(userGroups.userId, users.id), eq(userGroups.groupId, ADMIN_GROUP_ID)))
+    .leftJoin(
+      userGroups,
+      and(eq(userGroups.userId, users.id), eq(userGroups.groupId, ADMIN_GROUP_ID)),
+    )
     .where(eq(users.id, userId))
     .limit(1);
   if (!row) return undefined;

@@ -18,16 +18,24 @@ describe('limit error handling', () => {
       );
     });
     app.get('/__concurrent', async () => {
-      throw new LimitExceededError({ key: 'activeGamesOwned', max: 5, basis: 'base', privileged: false, probation: false });
+      throw new LimitExceededError({
+        key: 'activeGamesOwned',
+        max: 5,
+        basis: 'base',
+        privileged: false,
+        probation: false,
+      });
     });
     app.get('/__other', async () => {
       throw app.httpErrors.badRequest('nope');
     });
-    app.withTypeProvider<ZodTypeProvider>().get(
-      '/__validated',
-      { schema: { querystring: z.object({ n: z.coerce.number().int() }) } },
-      async () => ({ ok: true }),
-    );
+    app
+      .withTypeProvider<ZodTypeProvider>()
+      .get(
+        '/__validated',
+        { schema: { querystring: z.object({ n: z.coerce.number().int() }) } },
+        async () => ({ ok: true }),
+      );
   });
 
   afterAll(async () => {
@@ -80,9 +88,23 @@ describe('limit error handling', () => {
   });
 
   it('carries the HTTP status on the error so onError capture sees a 4xx', () => {
-    const err = new LimitExceededError({ key: 'openOrders', max: 1, basis: 'base', privileged: false, probation: false });
+    const err = new LimitExceededError({
+      key: 'openOrders',
+      max: 1,
+      basis: 'base',
+      privileged: false,
+      probation: false,
+    });
     expect(err.statusCode).toBe(409);
-    expect(new LimitExceededError({ key: 'trades', max: 1, basis: 'base', privileged: false, probation: false }).statusCode).toBe(429);
+    expect(
+      new LimitExceededError({
+        key: 'trades',
+        max: 1,
+        basis: 'base',
+        privileged: false,
+        probation: false,
+      }).statusCode,
+    ).toBe(429);
   });
 
   it('exposes the limits bundle on the app', () => {

@@ -53,7 +53,12 @@ function limitBuy(db: Db, gamePlayerId: string, symbol: string, limit: ResolvedL
   });
 }
 
-function pendingBuy(db: Db, gamePlayerId: string, symbol: string, limit: ResolvedLimit | undefined) {
+function pendingBuy(
+  db: Db,
+  gamePlayerId: string,
+  symbol: string,
+  limit: ResolvedLimit | undefined,
+) {
   return reservePendingTrade(db, {
     gamePlayerId,
     symbol,
@@ -69,22 +74,30 @@ describe('open-order cap', () => {
     const { db, gamePlayerId } = await seed();
     await limitBuy(db, gamePlayerId, 'AAA', limitOf(2));
     await limitBuy(db, gamePlayerId, 'BBB', limitOf(2));
-    await expect(limitBuy(db, gamePlayerId, 'CCC', limitOf(2))).rejects.toBeInstanceOf(LimitExceededError);
+    await expect(limitBuy(db, gamePlayerId, 'CCC', limitOf(2))).rejects.toBeInstanceOf(
+      LimitExceededError,
+    );
   });
 
   it('refuses a pending order past the resolved max', async () => {
     const { db, gamePlayerId } = await seed();
     await pendingBuy(db, gamePlayerId, 'AAA', limitOf(2));
     await pendingBuy(db, gamePlayerId, 'BBB', limitOf(2));
-    await expect(pendingBuy(db, gamePlayerId, 'CCC', limitOf(2))).rejects.toBeInstanceOf(LimitExceededError);
+    await expect(pendingBuy(db, gamePlayerId, 'CCC', limitOf(2))).rejects.toBeInstanceOf(
+      LimitExceededError,
+    );
   });
 
   it('counts working and pending rows together', async () => {
     const { db, gamePlayerId } = await seed();
     await limitBuy(db, gamePlayerId, 'AAA', limitOf(2));
     await pendingBuy(db, gamePlayerId, 'BBB', limitOf(2));
-    await expect(pendingBuy(db, gamePlayerId, 'CCC', limitOf(2))).rejects.toBeInstanceOf(LimitExceededError);
-    await expect(limitBuy(db, gamePlayerId, 'DDD', limitOf(2))).rejects.toBeInstanceOf(LimitExceededError);
+    await expect(pendingBuy(db, gamePlayerId, 'CCC', limitOf(2))).rejects.toBeInstanceOf(
+      LimitExceededError,
+    );
+    await expect(limitBuy(db, gamePlayerId, 'DDD', limitOf(2))).rejects.toBeInstanceOf(
+      LimitExceededError,
+    );
   });
 
   it('counts all three rows of a bracket against the cap', async () => {
@@ -116,9 +129,13 @@ describe('open-order cap', () => {
 
   it('applies no cap when the resolved max is null (admin) or no limit is passed', async () => {
     const { db, gamePlayerId } = await seed();
-    for (const symbol of ['AAA', 'BBB', 'CCC']) await limitBuy(db, gamePlayerId, symbol, limitOf(null));
+    for (const symbol of ['AAA', 'BBB', 'CCC'])
+      await limitBuy(db, gamePlayerId, symbol, limitOf(null));
     for (const symbol of ['DDD', 'EEE']) await pendingBuy(db, gamePlayerId, symbol, undefined);
-    const open = await db.select({ id: schema.trades.id }).from(schema.trades).where(eq(schema.trades.gamePlayerId, gamePlayerId));
+    const open = await db
+      .select({ id: schema.trades.id })
+      .from(schema.trades)
+      .where(eq(schema.trades.gamePlayerId, gamePlayerId));
     expect(open).toHaveLength(5);
   });
 });

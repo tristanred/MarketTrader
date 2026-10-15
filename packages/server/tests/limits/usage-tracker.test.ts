@@ -6,7 +6,12 @@ const T0 = Date.UTC(2026, 9, 14, 13, 20); // 13:20Z
 
 function clock(start = T0) {
   let t = start;
-  return { now: () => t, set: (v: number) => { t = v; } };
+  return {
+    now: () => t,
+    set: (v: number) => {
+      t = v;
+    },
+  };
 }
 
 describe('hourStartOf', () => {
@@ -29,12 +34,18 @@ describe('UsageTracker', () => {
     const rows = t.snapshotView().requests;
     expect(rows).toHaveLength(4);
     expect(rows).toContainEqual({
-      subjectType: 'user', subjectId: 'u1', route: 'GET /watchlists',
-      hourStart: '2026-10-14T13:00:00.000Z', count: 2,
+      subjectType: 'user',
+      subjectId: 'u1',
+      route: 'GET /watchlists',
+      hourStart: '2026-10-14T13:00:00.000Z',
+      count: 2,
     });
     expect(rows).toContainEqual({
-      subjectType: 'user', subjectId: 'u1', route: 'GET /watchlists',
-      hourStart: '2026-10-14T14:00:00.000Z', count: 1,
+      subjectType: 'user',
+      subjectId: 'u1',
+      route: 'GET /watchlists',
+      hourStart: '2026-10-14T14:00:00.000Z',
+      count: 1,
     });
   });
 
@@ -46,9 +57,13 @@ describe('UsageTracker', () => {
     t.recordDenial({ type: 'user', id: 'u1' }, 'trades');
     expect(t.snapshotView().denials).toEqual([
       {
-        subjectType: 'user', subjectId: 'u1', limitKey: 'trades',
-        hourStart: '2026-10-14T13:00:00.000Z', count: 2,
-        firstAt: new Date(T0).toISOString(), lastAt: new Date(T0 + 60_000).toISOString(),
+        subjectType: 'user',
+        subjectId: 'u1',
+        limitKey: 'trades',
+        hourStart: '2026-10-14T13:00:00.000Z',
+        count: 2,
+        firstAt: new Date(T0).toISOString(),
+        lastAt: new Date(T0 + 60_000).toISOString(),
       },
     ]);
   });
@@ -77,7 +92,11 @@ describe('UsageTracker', () => {
     const snap = t.swap();
     expect(snap.requests).toHaveLength(1);
     expect(snap.denials).toHaveLength(1);
-    expect(t.snapshotView()).toEqual({ requests: [], denials: [], overflow: { requests: 0, denials: 0 } });
+    expect(t.snapshotView()).toEqual({
+      requests: [],
+      denials: [],
+      overflow: { requests: 0, denials: 0 },
+    });
   });
 
   it('snapshotView does not drain or alias the buffers', () => {
@@ -96,7 +115,10 @@ describe('UsageTracker', () => {
     t.recordRequest({ type: 'user', id: 'kept' }, 'GET /games');
     t.forgetUser('gone');
     const view = t.snapshotView();
-    expect(view.requests.map((r) => `${r.subjectType}:${r.subjectId}`).sort()).toEqual(['ip:gone', 'user:kept']);
+    expect(view.requests.map((r) => `${r.subjectType}:${r.subjectId}`).sort()).toEqual([
+      'ip:gone',
+      'user:kept',
+    ]);
     expect(view.denials).toEqual([]);
   });
 

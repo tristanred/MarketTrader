@@ -30,7 +30,11 @@ describe('request.account', () => {
   beforeAll(async () => {
     ({ app, db } = await createTestAppWithDb());
     // Must be added before the first inject — routes cannot be added once ready.
-    app.get('/__account', { onRequest: app.authenticate }, async (request) => request.account ?? null);
+    app.get(
+      '/__account',
+      { onRequest: app.authenticate },
+      async (request) => request.account ?? null,
+    );
   });
 
   afterAll(async () => {
@@ -49,12 +53,23 @@ describe('request.account', () => {
   it('is isAdmin true for an admin, and false on the next request after demotion', async () => {
     const admin = await registerAdmin(app, 'acct-admin');
     const headers = { authorization: `Bearer ${admin.token}` };
-    expect((await app.inject({ method: 'GET', url: '/__account', headers })).json<RequestAccount>().isAdmin).toBe(true);
+    expect(
+      (await app.inject({ method: 'GET', url: '/__account', headers })).json<RequestAccount>()
+        .isAdmin,
+    ).toBe(true);
 
     await db
       .delete(schema.userGroups)
-      .where(and(eq(schema.userGroups.userId, admin.userId), eq(schema.userGroups.groupId, ADMIN_GROUP_ID)));
-    expect((await app.inject({ method: 'GET', url: '/__account', headers })).json<RequestAccount>().isAdmin).toBe(false);
+      .where(
+        and(
+          eq(schema.userGroups.userId, admin.userId),
+          eq(schema.userGroups.groupId, ADMIN_GROUP_ID),
+        ),
+      );
+    expect(
+      (await app.inject({ method: 'GET', url: '/__account', headers })).json<RequestAccount>()
+        .isAdmin,
+    ).toBe(false);
   });
 
   it('loadAccount reports disabled and undefined for unknown users', async () => {
@@ -67,10 +82,18 @@ describe('request.account', () => {
   it('requireAdmin still answers 403 to a member and 200 to an admin', async () => {
     const member = await registerUser(app, 'acct-guard-member');
     const admin = await registerAdmin(app, 'acct-guard-admin');
-    expect((await app.inject({ method: 'GET', url: '/admin/config', headers: member.headers })).statusCode).toBe(403);
     expect(
-      (await app.inject({ method: 'GET', url: '/admin/config', headers: { authorization: `Bearer ${admin.token}` } }))
+      (await app.inject({ method: 'GET', url: '/admin/config', headers: member.headers }))
         .statusCode,
+    ).toBe(403);
+    expect(
+      (
+        await app.inject({
+          method: 'GET',
+          url: '/admin/config',
+          headers: { authorization: `Bearer ${admin.token}` },
+        })
+      ).statusCode,
     ).toBe(200);
   });
 });

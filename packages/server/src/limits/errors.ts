@@ -41,7 +41,10 @@ export class LimitExceededError extends Error {
  * The response body for a denial. While the account is on probation the body
  * also carries `LIMITS_MATURITY_DAYS`, so a client can say how long the reduced limit lasts.
  */
-export function limitExceededBody(err: LimitExceededError, config: ConfigReader): LimitExceededBody {
+export function limitExceededBody(
+  err: LimitExceededError,
+  config: ConfigReader,
+): LimitExceededBody {
   return {
     error: err.message,
     code: 'LIMIT_EXCEEDED',

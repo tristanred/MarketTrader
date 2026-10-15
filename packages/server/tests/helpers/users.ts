@@ -24,7 +24,11 @@ export async function registerUser(
     throw new Error(`registerUser: register failed: ${res.statusCode} ${res.body}`);
   }
   const body = res.json<{ token: string; user: { id: string } }>();
-  return { token: body.token, userId: body.user.id, headers: { authorization: `Bearer ${body.token}` } };
+  return {
+    token: body.token,
+    userId: body.user.id,
+    headers: { authorization: `Bearer ${body.token}` },
+  };
 }
 
 /**

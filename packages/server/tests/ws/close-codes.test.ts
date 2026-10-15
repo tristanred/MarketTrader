@@ -38,7 +38,10 @@ describe('WebSocket close codes', () => {
   });
 
   it('keeps the three codes disjoint', () => {
-    expect(new Set([WS_POLICY_CLOSE_CODE, WS_INVALID_FRAME_CLOSE_CODE, WS_LIMIT_EXCEEDED_CLOSE_CODE]).size).toBe(3);
+    expect(
+      new Set([WS_POLICY_CLOSE_CODE, WS_INVALID_FRAME_CLOSE_CODE, WS_LIMIT_EXCEEDED_CLOSE_CODE])
+        .size,
+    ).toBe(3);
   });
 
   it('keeps the limit code inside the private range ws will send', () => {

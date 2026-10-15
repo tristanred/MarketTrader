@@ -44,7 +44,11 @@ export function recordRateLimitDenial(tracker: UsageTracker, request: FastifyReq
 }
 
 /** The error handler's fallback for a {@link LimitExceededError} no recorder saw (e.g. `assertOpenOrderCapacity`). */
-export function recordUnrecordedDenial(tracker: UsageTracker, request: FastifyRequest, err: LimitExceededError): void {
+export function recordUnrecordedDenial(
+  tracker: UsageTracker,
+  request: FastifyRequest,
+  err: LimitExceededError,
+): void {
   denialRecorderFor(tracker)(subjectOf(request), err.resolved.key);
 }
 

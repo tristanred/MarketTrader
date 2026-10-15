@@ -47,7 +47,13 @@ describe('usage-store', () => {
 
     const rows = await db.select().from(schema.apiUsageHourly);
     expect(rows).toEqual([
-      { subjectType: 'user', subjectId: 'u1', route: 'GET /games', hourStart: '2026-10-14T13:00:00.000Z', count: 3 },
+      {
+        subjectType: 'user',
+        subjectId: 'u1',
+        route: 'GET /games',
+        hourStart: '2026-10-14T13:00:00.000Z',
+        count: 3,
+      },
     ]);
   });
 
@@ -171,7 +177,10 @@ describe('usage-store', () => {
 
     await deleteUsageForUser(db, 'gone');
     const rows = await db.select().from(schema.apiUsageHourly);
-    expect(rows.map((r) => `${r.subjectType}:${r.subjectId}`).sort()).toEqual(['ip:gone', 'user:kept']);
+    expect(rows.map((r) => `${r.subjectType}:${r.subjectId}`).sort()).toEqual([
+      'ip:gone',
+      'user:kept',
+    ]);
     expect(await db.select().from(schema.limitDenialsHourly)).toHaveLength(0);
   });
 });

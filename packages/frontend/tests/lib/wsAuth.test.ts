@@ -21,7 +21,10 @@ describe('the WebSocket wire contract', () => {
   });
 
   it('keeps all three codes distinct', () => {
-    expect(new Set([WS_POLICY_CLOSE_CODE, WS_INVALID_FRAME_CLOSE_CODE, WS_LIMIT_EXCEEDED_CLOSE_CODE]).size).toBe(3);
+    expect(
+      new Set([WS_POLICY_CLOSE_CODE, WS_INVALID_FRAME_CLOSE_CODE, WS_LIMIT_EXCEEDED_CLOSE_CODE])
+        .size,
+    ).toBe(3);
   });
 
   it('pins the auth subprotocol', () => {

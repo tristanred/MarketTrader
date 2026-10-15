@@ -51,7 +51,12 @@ describe('registrations per IP per day', () => {
     const over = await register('198.51.100.20');
     expect(over.statusCode).toBe(429);
     const body = over.json<LimitExceededBody>();
-    expect(body).toMatchObject({ code: 'LIMIT_EXCEEDED', limit: 'registrationsPerIp', max: 2, probation: false });
+    expect(body).toMatchObject({
+      code: 'LIMIT_EXCEEDED',
+      limit: 'registrationsPerIp',
+      max: 2,
+      probation: false,
+    });
     expect(body.retryAfterSeconds).toBeGreaterThan(0);
     expect(body.retryAfterSeconds).toBeLessThanOrEqual(86_400);
   });

@@ -19,7 +19,10 @@ let meterProvider: metricsSdk.MeterProvider;
 
 beforeAll(() => {
   exporter = new metricsSdk.InMemoryMetricExporter(metricsSdk.AggregationTemporality.CUMULATIVE);
-  const reader = new metricsSdk.PeriodicExportingMetricReader({ exporter, exportIntervalMillis: 60_000 });
+  const reader = new metricsSdk.PeriodicExportingMetricReader({
+    exporter,
+    exportIntervalMillis: 60_000,
+  });
   meterProvider = new metricsSdk.MeterProvider({ readers: [reader] });
   metricsApi.setGlobalMeterProvider(meterProvider);
 });
@@ -68,7 +71,12 @@ describe('usage hooks', () => {
     await app.inject({ method: 'GET', url: '/watchlists', headers: u.headers });
     await settle();
     expect(tracker.snapshotView().requests).toContainEqual(
-      expect.objectContaining({ subjectType: 'user', subjectId: u.userId, route: 'GET /watchlists', count: 1 }),
+      expect.objectContaining({
+        subjectType: 'user',
+        subjectId: u.userId,
+        route: 'GET /watchlists',
+        count: 1,
+      }),
     );
   });
 
@@ -96,14 +104,21 @@ describe('usage hooks', () => {
   it('refuses a user past the per-minute ceiling with a LIMIT_EXCEEDED 429', async () => {
     const u = await registerUser(app, 'usage-ceiling');
     for (let i = 0; i < 3; i++) {
-      expect((await app.inject({ method: 'GET', url: '/watchlists', headers: u.headers })).statusCode).toBe(200);
+      expect(
+        (await app.inject({ method: 'GET', url: '/watchlists', headers: u.headers })).statusCode,
+      ).toBe(200);
     }
     const res = await app.inject({ method: 'GET', url: '/watchlists', headers: u.headers });
     expect(res.statusCode).toBe(429);
     expect(res.headers['retry-after']).toBe('30');
     expect(res.json()).toMatchObject({ code: 'LIMIT_EXCEEDED', limit: 'apiRequests', max: 3 });
     expect(tracker.snapshotView().denials).toContainEqual(
-      expect.objectContaining({ subjectType: 'user', subjectId: u.userId, limitKey: 'apiRequests', count: 1 }),
+      expect.objectContaining({
+        subjectType: 'user',
+        subjectId: u.userId,
+        limitKey: 'apiRequests',
+        count: 1,
+      }),
     );
   });
 
@@ -111,14 +126,26 @@ describe('usage hooks', () => {
     const admin = await registerAdmin(app, 'usage-admin');
     const headers = { Authorization: `Bearer ${admin.token}` };
     for (let i = 0; i < 6; i++) {
-      expect((await app.inject({ method: 'GET', url: '/watchlists', headers })).statusCode).toBe(200);
+      expect((await app.inject({ method: 'GET', url: '/watchlists', headers })).statusCode).toBe(
+        200,
+      );
     }
   });
 
   it('records a denial raised through the enforcer', async () => {
     const u = await registerUser(app, 'usage-enforcer');
-    await app.inject({ method: 'POST', url: '/watchlists', headers: u.headers, payload: { name: 'one' } });
-    const res = await app.inject({ method: 'POST', url: '/watchlists', headers: u.headers, payload: { name: 'two' } });
+    await app.inject({
+      method: 'POST',
+      url: '/watchlists',
+      headers: u.headers,
+      payload: { name: 'one' },
+    });
+    const res = await app.inject({
+      method: 'POST',
+      url: '/watchlists',
+      headers: u.headers,
+      payload: { name: 'two' },
+    });
     expect(res.statusCode).toBe(409);
     expect(tracker.snapshotView().denials).toContainEqual(
       expect.objectContaining({ subjectId: u.userId, limitKey: 'watchlists' }),
@@ -128,7 +155,11 @@ describe('usage hooks', () => {
   it('records a denial raised by the rate-limit plugin under its limit key', async () => {
     const u = await registerUser(app, 'usage-rate');
     await app.inject({ method: 'GET', url: '/games/by-code/ABCDEFGH', headers: u.headers });
-    const res = await app.inject({ method: 'GET', url: '/games/by-code/ABCDEFGH', headers: u.headers });
+    const res = await app.inject({
+      method: 'GET',
+      url: '/games/by-code/ABCDEFGH',
+      headers: u.headers,
+    });
     expect(res.statusCode).toBe(429);
     // Exactly once: onExceeded counts it, and the error the builder returns is
     // marked recorded so the error handler does not count it again.

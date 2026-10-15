@@ -4,12 +4,20 @@ import { LimitResolver, type LimitSubject } from '../../src/limits/resolver.js';
 import { LimitEnforcer, secondsUntilWindowFrees } from '../../src/limits/enforce.js';
 import { LimitExceededError } from '../../src/limits/errors.js';
 
-const mature = { id: 'u1', createdAt: new Date(Date.now() - 30 * 86_400_000).toISOString(), isAdmin: false };
+const mature = {
+  id: 'u1',
+  createdAt: new Date(Date.now() - 30 * 86_400_000).toISOString(),
+  isAdmin: false,
+};
 const admin = { ...mature, id: 'a1', isAdmin: true };
 const subject: LimitSubject = { account: mature, ip: '198.51.100.1' };
 
 function setup() {
-  const config = RuntimeConfig.fromEnvironment({ LIMITS_ENABLED: true, LIMIT_ACTIVE_GAMES_OWNED: 2, LIMIT_GAMES_CREATED_PER_WEEK: 2 });
+  const config = RuntimeConfig.fromEnvironment({
+    LIMITS_ENABLED: true,
+    LIMIT_ACTIVE_GAMES_OWNED: 2,
+    LIMIT_GAMES_CREATED_PER_WEEK: 2,
+  });
   const resolver = new LimitResolver(config, { get: async () => undefined });
   const recordDenial = vi.fn();
   return { enforcer: new LimitEnforcer(resolver, recordDenial), recordDenial };
@@ -18,15 +26,23 @@ function setup() {
 describe('LimitEnforcer', () => {
   it('admits while usage is below the max', async () => {
     const { enforcer, recordDenial } = setup();
-    await expect(enforcer.enforceFor(subject, 'activeGamesOwned', async () => 1)).resolves.toBeUndefined();
+    await expect(
+      enforcer.enforceFor(subject, 'activeGamesOwned', async () => 1),
+    ).resolves.toBeUndefined();
     expect(recordDenial).not.toHaveBeenCalled();
   });
 
   it('throws LimitExceededError at the max and records the denial', async () => {
     const { enforcer, recordDenial } = setup();
-    const err = await enforcer.enforceFor(subject, 'activeGamesOwned', async () => 2).catch((e: unknown) => e);
+    const err = await enforcer
+      .enforceFor(subject, 'activeGamesOwned', async () => 2)
+      .catch((e: unknown) => e);
     expect(err).toBeInstanceOf(LimitExceededError);
-    expect((err as LimitExceededError).resolved).toMatchObject({ key: 'activeGamesOwned', max: 2, basis: 'base' });
+    expect((err as LimitExceededError).resolved).toMatchObject({
+      key: 'activeGamesOwned',
+      max: 2,
+      basis: 'base',
+    });
     expect(recordDenial).toHaveBeenCalledWith(subject, 'activeGamesOwned');
     expect((err as LimitExceededError).recorded).toBe(true);
   });

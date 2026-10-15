@@ -27,7 +27,12 @@ import {
   countRegistrationsSince,
   windowStart,
 } from '../../limits/quota-counts.js';
-import { topConsumers, userDenials, userRequestVolume, windowStartIso } from '../../limits/usage-store.js';
+import {
+  topConsumers,
+  userDenials,
+  userRequestVolume,
+  windowStartIso,
+} from '../../limits/usage-store.js';
 
 const WEEK_HOURS = 24 * 7;
 const SIBLING_LIMIT = 50;
@@ -48,7 +53,8 @@ function overrideCeiling(key: LimitKey): number | undefined {
   return descriptor.mutability === 'live' ? descriptor.max : undefined;
 }
 
-type KeyCheck = { ok: true; key: LimitKey } | { ok: false; status: 404 | 409; code: string; message: string };
+type KeyCheck =
+  { ok: true; key: LimitKey } | { ok: false; status: 404 | 409; code: string; message: string };
 
 function checkOverridableKey(raw: string): KeyCheck {
   if (!isLimitKey(raw)) {
@@ -160,7 +166,10 @@ export function adminLimitsRoutes(
       case 'openOrders':
         return maxOpenOrdersInAnyGame(userId);
       case 'watchlists': {
-        const [row] = await db.select({ c: count() }).from(watchlists).where(eq(watchlists.userId, userId));
+        const [row] = await db
+          .select({ c: count() })
+          .from(watchlists)
+          .where(eq(watchlists.userId, userId));
         return Number(row?.c ?? 0);
       }
       case 'watchlistItems':
@@ -169,200 +178,268 @@ export function adminLimitsRoutes(
         return wsConnectionCount(userId);
       case 'registrationsPerIp': {
         if (!target.registrationIp) return null;
-        return countRegistrationsSince(db, target.registrationIp, windowStart('registrationsPerIp', now.getTime()));
+        return countRegistrationsSince(
+          db,
+          target.registrationIp,
+          windowStart('registrationsPerIp', now.getTime()),
+        );
       }
     }
   }
 
-  async function buildRows(target: TargetUser, keys: readonly LimitKey[]): Promise<AdminUserLimitRow[]> {
+  async function buildRows(
+    target: TargetUser,
+    keys: readonly LimitKey[],
+  ): Promise<AdminUserLimitRow[]> {
     const now = new Date();
     const overrides = await limits.overrides.listForUser(target.account.id);
-    return Promise.all(keys.map(async (key): Promise<AdminUserLimitRow> => {
-      const descriptor = LIMIT_CATALOGUE[key];
-      const resolved = await limits.resolver.resolveForUser(target.account, key);
-      const override = overrides.get(key);
-      return {
-        key,
-        label: descriptor.label,
-        kind: descriptor.kind,
-        configKey: descriptor.configKey,
-        baseValue: limits.resolver.baseValue(key),
-        effectiveMax: resolved.max,
-        basis: resolved.basis,
-        override: override
-          ? { value: override.value, note: override.note, updatedBy: override.updatedBy, updatedAt: override.updatedAt }
-          : null,
-        used: await usedFor(key, target, now),
-        overridable: descriptor.overridable,
-      };
-    }));
+    return Promise.all(
+      keys.map(async (key): Promise<AdminUserLimitRow> => {
+        const descriptor = LIMIT_CATALOGUE[key];
+        const resolved = await limits.resolver.resolveForUser(target.account, key);
+        const override = overrides.get(key);
+        return {
+          key,
+          label: descriptor.label,
+          kind: descriptor.kind,
+          configKey: descriptor.configKey,
+          baseValue: limits.resolver.baseValue(key),
+          effectiveMax: resolved.max,
+          basis: resolved.basis,
+          override: override
+            ? {
+                value: override.value,
+                note: override.note,
+                updatedBy: override.updatedBy,
+                updatedAt: override.updatedAt,
+              }
+            : null,
+          used: await usedFor(key, target, now),
+          overridable: descriptor.overridable,
+        };
+      }),
+    );
   }
 
   return async function (rawApp: FastifyInstance): Promise<void> {
     const app = rawApp.withTypeProvider<ZodTypeProvider>();
 
-    app.get('/admin/limits/policy', {
-      onRequest: rawApp.requireAdmin,
-      schema: { tags: ['Admin'], summary: 'User-limit policy and the caller IP as seen by the server.', security: [{ bearerAuth: [] }] },
-    }, async (request, reply) => {
-      const body: AdminLimitPolicy = {
-        enabled: !limits.resolver.isDisabled(),
-        maturityDays: config.get('LIMITS_MATURITY_DAYS'),
-        probationPercent: config.get('LIMITS_PROBATION_PERCENT'),
-        privilegedCidrs: config.get('LIMITS_PRIVILEGED_CIDRS').split(',').map((s) => s.trim()).filter(Boolean),
-        privilegedMultiplier: config.get('LIMITS_PRIVILEGED_MULTIPLIER'),
-        requestIp: request.ip,
-        requestIpPrivileged: isPrivilegedConnection(request.ip, config),
-      };
-      return reply.send(body);
-    });
-
-    app.get('/admin/limits/top', {
-      onRequest: rawApp.requireAdmin,
-      schema: {
-        tags: ['Admin'],
-        summary: 'Users and IPs ranked by requests or limit denials.',
-        security: [{ bearerAuth: [] }],
-        querystring: topQuery,
+    app.get(
+      '/admin/limits/policy',
+      {
+        onRequest: rawApp.requireAdmin,
+        schema: {
+          tags: ['Admin'],
+          summary: 'User-limit policy and the caller IP as seen by the server.',
+          security: [{ bearerAuth: [] }],
+        },
       },
-    }, async (request, reply) => {
-      const { window, metric, limit } = request.query;
-      const ranked = await topConsumers(db, limits.tracker, {
-        sinceIso: windowStartIso(new Date(), window === '24h' ? 24 : WEEK_HOURS),
-        metric,
-        limit,
-      });
-
-      const userIds = ranked.filter((r) => r.subjectType === 'user').map((r) => r.subjectId);
-      const userRows = userIds.length === 0
-        ? []
-        : await db
-            .select({ id: users.id, username: users.username, registrationIp: users.registrationIp })
-            .from(users)
-            .where(inArray(users.id, userIds));
-      const userById = new Map(userRows.map((u) => [u.id, u]));
-
-      const ips = new Set<string>();
-      for (const u of userRows) if (u.registrationIp) ips.add(u.registrationIp);
-      const ipCounts = ips.size === 0
-        ? []
-        : await db
-            .select({ ip: users.registrationIp, c: count() })
-            .from(users)
-            .where(inArray(users.registrationIp, [...ips]))
-            .groupBy(users.registrationIp);
-      const accountsPerIp = new Map(ipCounts.map((r) => [r.ip ?? '', Number(r.c)]));
-
-      const body: AdminTopConsumersResponse = {
-        window,
-        metric,
-        rows: ranked.map((r) => {
-          if (r.subjectType === 'ip') {
-            return { ...r, username: null, sharedRegistrationIpCount: 0 };
-          }
-          const user = userById.get(r.subjectId);
-          const shared = user?.registrationIp ? (accountsPerIp.get(user.registrationIp) ?? 1) - 1 : 0;
-          return { ...r, username: user?.username ?? null, sharedRegistrationIpCount: shared };
-        }),
-      };
-      return reply.send(body);
-    });
-
-    app.get('/admin/limits/overrides', {
-      onRequest: rawApp.requireAdmin,
-      schema: { tags: ['Admin'], summary: 'Every active per-user limit override.', security: [{ bearerAuth: [] }] },
-    }, async (_request, reply) => {
-      const body: AdminLimitOverrideEntry[] = await limits.overrides.listAll();
-      return reply.send(body);
-    });
-
-    app.get('/admin/users/:id/limits', {
-      onRequest: rawApp.requireAdmin,
-      schema: {
-        tags: ['Admin'],
-        summary: 'A user’s effective limits, current usage, and recent request history.',
-        security: [{ bearerAuth: [] }],
-        params: userParams,
+      async (request, reply) => {
+        const body: AdminLimitPolicy = {
+          enabled: !limits.resolver.isDisabled(),
+          maturityDays: config.get('LIMITS_MATURITY_DAYS'),
+          probationPercent: config.get('LIMITS_PROBATION_PERCENT'),
+          privilegedCidrs: config
+            .get('LIMITS_PRIVILEGED_CIDRS')
+            .split(',')
+            .map((s) => s.trim())
+            .filter(Boolean),
+          privilegedMultiplier: config.get('LIMITS_PRIVILEGED_MULTIPLIER'),
+          requestIp: request.ip,
+          requestIpPrivileged: isPrivilegedConnection(request.ip, config),
+        };
+        return reply.send(body);
       },
-    }, async (request, reply) => {
-      const target = await loadTarget(request.params.id);
-      if (!target) return reply.status(404).send({ error: 'User not found' });
+    );
 
-      const mature = isMatureUser(target.account, config);
-      const since = windowStartIso(new Date(), WEEK_HOURS);
-      const siblings = target.registrationIp
-        ? (await accountsFromIp(target.registrationIp)).filter((a) => a.id !== target.account.id).slice(0, SIBLING_LIMIT)
-        : [];
-
-      // An unparseable createdAt keeps the account on probation with no known end.
-      const endsAt = maturityEndsAt(target.account, config);
-      const body: AdminUserLimitsResponse = {
-        userId: target.account.id,
-        mature,
-        probationEndsAt: mature || Number.isNaN(endsAt.getTime()) ? null : endsAt.toISOString(),
-        privilegedMultiplier: config.get('LIMITS_PRIVILEGED_MULTIPLIER'),
-        rows: await buildRows(target, LIMIT_KEYS),
-        registrationIp: target.registrationIp,
-        siblingAccounts: siblings,
-        requestVolume7d: await userRequestVolume(db, limits.tracker, target.account.id, since, VOLUME_TOP_N),
-        denials7d: await userDenials(db, limits.tracker, target.account.id, since),
-      };
-      return reply.send(body);
-    });
-
-    app.put('/admin/users/:id/limits/:key', {
-      onRequest: rawApp.requireAdmin,
-      schema: {
-        tags: ['Admin'],
-        summary: 'Override one limit for one user.',
-        security: [{ bearerAuth: [] }],
-        params: userKeyParams,
-        body: setBody,
+    app.get(
+      '/admin/limits/top',
+      {
+        onRequest: rawApp.requireAdmin,
+        schema: {
+          tags: ['Admin'],
+          summary: 'Users and IPs ranked by requests or limit denials.',
+          security: [{ bearerAuth: [] }],
+          querystring: topQuery,
+        },
       },
-    }, async (request, reply) => {
-      const check = checkOverridableKey(request.params.key);
-      if (!check.ok) return reply.status(check.status).send({ code: check.code, message: check.message });
-
-      const ceiling = overrideCeiling(check.key);
-      if (ceiling !== undefined && request.body.value > ceiling) {
-        return reply.status(400).send({
-          code: 'INVALID_LIMIT_VALUE',
-          message: `${check.key} overrides may not exceed ${ceiling}.`,
+      async (request, reply) => {
+        const { window, metric, limit } = request.query;
+        const ranked = await topConsumers(db, limits.tracker, {
+          sinceIso: windowStartIso(new Date(), window === '24h' ? 24 : WEEK_HOURS),
+          metric,
+          limit,
         });
-      }
 
-      const target = await loadTarget(request.params.id);
-      if (!target) return reply.status(404).send({ error: 'User not found' });
+        const userIds = ranked.filter((r) => r.subjectType === 'user').map((r) => r.subjectId);
+        const userRows =
+          userIds.length === 0
+            ? []
+            : await db
+                .select({
+                  id: users.id,
+                  username: users.username,
+                  registrationIp: users.registrationIp,
+                })
+                .from(users)
+                .where(inArray(users.id, userIds));
+        const userById = new Map(userRows.map((u) => [u.id, u]));
 
-      await limits.overrides.set(
-        request.user.id,
-        target.account.id,
-        check.key,
-        request.body.value,
-        request.body.note ?? null,
-      );
-      const [row] = await buildRows(target, [check.key]);
-      return reply.send(row);
-    });
+        const ips = new Set<string>();
+        for (const u of userRows) if (u.registrationIp) ips.add(u.registrationIp);
+        const ipCounts =
+          ips.size === 0
+            ? []
+            : await db
+                .select({ ip: users.registrationIp, c: count() })
+                .from(users)
+                .where(inArray(users.registrationIp, [...ips]))
+                .groupBy(users.registrationIp);
+        const accountsPerIp = new Map(ipCounts.map((r) => [r.ip ?? '', Number(r.c)]));
 
-    app.delete('/admin/users/:id/limits/:key', {
-      onRequest: rawApp.requireAdmin,
-      schema: {
-        tags: ['Admin'],
-        summary: 'Remove a user’s override; the global limit applies again.',
-        security: [{ bearerAuth: [] }],
-        params: userKeyParams,
+        const body: AdminTopConsumersResponse = {
+          window,
+          metric,
+          rows: ranked.map((r) => {
+            if (r.subjectType === 'ip') {
+              return { ...r, username: null, sharedRegistrationIpCount: 0 };
+            }
+            const user = userById.get(r.subjectId);
+            const shared = user?.registrationIp
+              ? (accountsPerIp.get(user.registrationIp) ?? 1) - 1
+              : 0;
+            return { ...r, username: user?.username ?? null, sharedRegistrationIpCount: shared };
+          }),
+        };
+        return reply.send(body);
       },
-    }, async (request, reply) => {
-      const check = checkOverridableKey(request.params.key);
-      if (!check.ok) return reply.status(check.status).send({ code: check.code, message: check.message });
+    );
 
-      const target = await loadTarget(request.params.id);
-      if (!target) return reply.status(404).send({ error: 'User not found' });
+    app.get(
+      '/admin/limits/overrides',
+      {
+        onRequest: rawApp.requireAdmin,
+        schema: {
+          tags: ['Admin'],
+          summary: 'Every active per-user limit override.',
+          security: [{ bearerAuth: [] }],
+        },
+      },
+      async (_request, reply) => {
+        const body: AdminLimitOverrideEntry[] = await limits.overrides.listAll();
+        return reply.send(body);
+      },
+    );
 
-      await limits.overrides.clear(request.user.id, target.account.id, check.key);
-      const [row] = await buildRows(target, [check.key]);
-      return reply.send(row);
-    });
+    app.get(
+      '/admin/users/:id/limits',
+      {
+        onRequest: rawApp.requireAdmin,
+        schema: {
+          tags: ['Admin'],
+          summary: 'A user’s effective limits, current usage, and recent request history.',
+          security: [{ bearerAuth: [] }],
+          params: userParams,
+        },
+      },
+      async (request, reply) => {
+        const target = await loadTarget(request.params.id);
+        if (!target) return reply.status(404).send({ error: 'User not found' });
+
+        const mature = isMatureUser(target.account, config);
+        const since = windowStartIso(new Date(), WEEK_HOURS);
+        const siblings = target.registrationIp
+          ? (await accountsFromIp(target.registrationIp))
+              .filter((a) => a.id !== target.account.id)
+              .slice(0, SIBLING_LIMIT)
+          : [];
+
+        // An unparseable createdAt keeps the account on probation with no known end.
+        const endsAt = maturityEndsAt(target.account, config);
+        const body: AdminUserLimitsResponse = {
+          userId: target.account.id,
+          mature,
+          probationEndsAt: mature || Number.isNaN(endsAt.getTime()) ? null : endsAt.toISOString(),
+          privilegedMultiplier: config.get('LIMITS_PRIVILEGED_MULTIPLIER'),
+          rows: await buildRows(target, LIMIT_KEYS),
+          registrationIp: target.registrationIp,
+          siblingAccounts: siblings,
+          requestVolume7d: await userRequestVolume(
+            db,
+            limits.tracker,
+            target.account.id,
+            since,
+            VOLUME_TOP_N,
+          ),
+          denials7d: await userDenials(db, limits.tracker, target.account.id, since),
+        };
+        return reply.send(body);
+      },
+    );
+
+    app.put(
+      '/admin/users/:id/limits/:key',
+      {
+        onRequest: rawApp.requireAdmin,
+        schema: {
+          tags: ['Admin'],
+          summary: 'Override one limit for one user.',
+          security: [{ bearerAuth: [] }],
+          params: userKeyParams,
+          body: setBody,
+        },
+      },
+      async (request, reply) => {
+        const check = checkOverridableKey(request.params.key);
+        if (!check.ok)
+          return reply.status(check.status).send({ code: check.code, message: check.message });
+
+        const ceiling = overrideCeiling(check.key);
+        if (ceiling !== undefined && request.body.value > ceiling) {
+          return reply.status(400).send({
+            code: 'INVALID_LIMIT_VALUE',
+            message: `${check.key} overrides may not exceed ${ceiling}.`,
+          });
+        }
+
+        const target = await loadTarget(request.params.id);
+        if (!target) return reply.status(404).send({ error: 'User not found' });
+
+        await limits.overrides.set(
+          request.user.id,
+          target.account.id,
+          check.key,
+          request.body.value,
+          request.body.note ?? null,
+        );
+        const [row] = await buildRows(target, [check.key]);
+        return reply.send(row);
+      },
+    );
+
+    app.delete(
+      '/admin/users/:id/limits/:key',
+      {
+        onRequest: rawApp.requireAdmin,
+        schema: {
+          tags: ['Admin'],
+          summary: 'Remove a user’s override; the global limit applies again.',
+          security: [{ bearerAuth: [] }],
+          params: userKeyParams,
+        },
+      },
+      async (request, reply) => {
+        const check = checkOverridableKey(request.params.key);
+        if (!check.ok)
+          return reply.status(check.status).send({ code: check.code, message: check.message });
+
+        const target = await loadTarget(request.params.id);
+        if (!target) return reply.status(404).send({ error: 'User not found' });
+
+        await limits.overrides.clear(request.user.id, target.account.id, check.key);
+        const [row] = await buildRows(target, [check.key]);
+        return reply.send(row);
+      },
+    );
   };
 }

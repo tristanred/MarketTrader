@@ -75,7 +75,12 @@ describe('game quotas', () => {
     const over = await createGame(app, token, 'g3');
     expect(over.statusCode).toBe(429);
     const body = over.json<LimitExceededBody>();
-    expect(body).toMatchObject({ code: 'LIMIT_EXCEEDED', limit: 'gamesCreated', max: 2, probation: false });
+    expect(body).toMatchObject({
+      code: 'LIMIT_EXCEEDED',
+      limit: 'gamesCreated',
+      max: 2,
+      probation: false,
+    });
     expect(body.retryAfterSeconds).toBeGreaterThan(0);
     expect(body.retryAfterSeconds).toBeLessThanOrEqual(7 * 86_400);
     expect(Number(over.headers['retry-after'])).toBe(body.retryAfterSeconds);
@@ -109,7 +114,10 @@ describe('game quotas', () => {
     config.set('LIMIT_ACTIVE_GAMES_OWNED', 1);
     const { token, userId } = await registerUser(app, fresh('ender'));
     await createGame(app, token, 'e1');
-    await db.update(schema.games).set({ status: 'ended' }).where(eq(schema.games.createdBy, userId));
+    await db
+      .update(schema.games)
+      .set({ status: 'ended' })
+      .where(eq(schema.games.createdBy, userId));
 
     expect((await createGame(app, token, 'e2')).statusCode).toBe(201);
   });
@@ -257,7 +265,10 @@ describe('game quotas', () => {
     const over = await createGame(app, user.token, 'l5');
     expect(over.statusCode).toBe(409);
     expect(over.json<LimitExceededBody>()).toMatchObject({ limit: 'activeGamesOwned', max: 2 });
-    const owned = await db.select().from(schema.games).where(eq(schema.games.createdBy, user.userId));
+    const owned = await db
+      .select()
+      .from(schema.games)
+      .where(eq(schema.games.createdBy, user.userId));
     expect(owned).toHaveLength(5);
   });
 });

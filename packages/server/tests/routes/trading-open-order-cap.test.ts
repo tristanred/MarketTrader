@@ -33,7 +33,12 @@ async function createGame(app: FastifyInstance, token: string): Promise<string> 
   return res.json<{ id: string }>().id;
 }
 
-function trade(app: FastifyInstance, token: string, gameId: string, payload: Record<string, unknown>) {
+function trade(
+  app: FastifyInstance,
+  token: string,
+  gameId: string,
+  payload: Record<string, unknown>,
+) {
   return app.inject({
     method: 'POST',
     url: `/games/${gameId}/trades`,
@@ -42,7 +47,14 @@ function trade(app: FastifyInstance, token: string, gameId: string, payload: Rec
   });
 }
 
-const limitBuy = { symbol: 'AAPL', direction: 'buy', quantity: 1, orderType: 'limit', timeInForce: 'gtc', limitPrice: 90 };
+const limitBuy = {
+  symbol: 'AAPL',
+  direction: 'buy',
+  quantity: 1,
+  orderType: 'limit',
+  timeInForce: 'gtc',
+  limitPrice: 90,
+};
 const marketBuy = { symbol: 'AAPL', direction: 'buy', quantity: 1 };
 
 describe('POST /games/:id/trades — open-order cap over HTTP', () => {

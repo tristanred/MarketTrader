@@ -67,11 +67,15 @@ describe('POST /games bounds', () => {
 
   it('creates no row for a rejected game', async () => {
     const before = await app.inject({
-      method: 'GET', url: '/games', headers: { Authorization: `Bearer ${token}` },
+      method: 'GET',
+      url: '/games',
+      headers: { Authorization: `Bearer ${token}` },
     });
     await create({ startingBalance: 1e12 });
     const after = await app.inject({
-      method: 'GET', url: '/games', headers: { Authorization: `Bearer ${token}` },
+      method: 'GET',
+      url: '/games',
+      headers: { Authorization: `Bearer ${token}` },
     });
     expect(after.json<unknown[]>()).toHaveLength(before.json<unknown[]>().length);
   });

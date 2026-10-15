@@ -72,7 +72,12 @@ export interface AdminUserLimitRow {
   /** Resolved for a non-privileged connection; null = unlimited. */
   effectiveMax: number | null;
   basis: LimitBasis;
-  override: { value: number; note: string | null; updatedBy: string | null; updatedAt: string } | null;
+  override: {
+    value: number;
+    note: string | null;
+    updatedBy: string | null;
+    updatedAt: string;
+  } | null;
   /** Current usage; null where it cannot be attributed to the user (ip limits, plugin-backed rates, wsSubscribes). */
   used: number | null;
   overridable: boolean;

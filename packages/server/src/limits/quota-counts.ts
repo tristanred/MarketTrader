@@ -27,7 +27,11 @@ export function windowStart(key: LimitKey, now: number = Date.now()): string {
 }
 
 /** Games `userId` created at or after `since` (a {@link toSqlTimestamp} value). */
-export async function countGamesCreatedSince(db: Reader, userId: string, since: string): Promise<number> {
+export async function countGamesCreatedSince(
+  db: Reader,
+  userId: string,
+  since: string,
+): Promise<number> {
   const { games } = schema;
   const [row] = await db
     .select({ n: count() })
@@ -37,7 +41,11 @@ export async function countGamesCreatedSince(db: Reader, userId: string, since: 
 }
 
 /** ISO UTC time of `userId`'s oldest game created at or after `since` ({@link toSqlTimestamp} format); null when none. */
-export async function oldestGameCreatedSince(db: Reader, userId: string, since: string): Promise<string | null> {
+export async function oldestGameCreatedSince(
+  db: Reader,
+  userId: string,
+  since: string,
+): Promise<string | null> {
   const { games } = schema;
   const [row] = await db
     .select({ at: min(games.createdAt) })
@@ -67,7 +75,11 @@ export async function countActiveGamesOwned(
 }
 
 /** Seats `userId` took at or after `since` ({@link toSqlTimestamp} format), creator seats included. */
-export async function countGamesJoinedSince(db: Reader, userId: string, since: string): Promise<number> {
+export async function countGamesJoinedSince(
+  db: Reader,
+  userId: string,
+  since: string,
+): Promise<number> {
   const { gamePlayers } = schema;
   const [row] = await db
     .select({ n: count() })
@@ -77,7 +89,11 @@ export async function countGamesJoinedSince(db: Reader, userId: string, since: s
 }
 
 /** ISO UTC time of `userId`'s oldest seat taken at or after `since` ({@link toSqlTimestamp} format); null when none. */
-export async function oldestJoinSince(db: Reader, userId: string, since: string): Promise<string | null> {
+export async function oldestJoinSince(
+  db: Reader,
+  userId: string,
+  since: string,
+): Promise<string | null> {
   const { gamePlayers } = schema;
   const [row] = await db
     .select({ at: min(gamePlayers.joinedAt) })
@@ -99,7 +115,9 @@ export async function countActiveGamesJoined(
     .select({ n: count() })
     .from(gamePlayers)
     .innerJoin(games, eq(gamePlayers.gameId, games.id))
-    .where(and(eq(gamePlayers.userId, userId), ne(games.status, 'ended'), gt(games.endDate, nowIso)));
+    .where(
+      and(eq(gamePlayers.userId, userId), ne(games.status, 'ended'), gt(games.endDate, nowIso)),
+    );
   return Number(row?.n ?? 0);
 }
 
@@ -112,7 +130,9 @@ export async function countOpenOrders(db: Reader, gamePlayerId: string): Promise
   const [row] = await db
     .select({ n: count() })
     .from(trades)
-    .where(and(eq(trades.gamePlayerId, gamePlayerId), inArray(trades.status, [...OPEN_ORDER_STATUSES])));
+    .where(
+      and(eq(trades.gamePlayerId, gamePlayerId), inArray(trades.status, [...OPEN_ORDER_STATUSES])),
+    );
   return Number(row?.n ?? 0);
 }
 
@@ -136,7 +156,11 @@ export async function assertOpenOrderCapacity(
 }
 
 /** Accounts registered from `ip` at or after `since` ({@link toSqlTimestamp} format). */
-export async function countRegistrationsSince(db: Reader, ip: string, since: string): Promise<number> {
+export async function countRegistrationsSince(
+  db: Reader,
+  ip: string,
+  since: string,
+): Promise<number> {
   const { users } = schema;
   const [row] = await db
     .select({ n: count() })
@@ -146,7 +170,11 @@ export async function countRegistrationsSince(db: Reader, ip: string, since: str
 }
 
 /** ISO UTC time of the oldest account registered from `ip` at or after `since` ({@link toSqlTimestamp} format); null when none. */
-export async function oldestRegistrationSince(db: Reader, ip: string, since: string): Promise<string | null> {
+export async function oldestRegistrationSince(
+  db: Reader,
+  ip: string,
+  since: string,
+): Promise<string | null> {
   const { users } = schema;
   const [row] = await db
     .select({ at: min(users.createdAt) })

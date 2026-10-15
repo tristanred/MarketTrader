@@ -68,7 +68,9 @@ describe('GET /games/browse pagination', () => {
     const all = (await browse('?limit=50')).json<BrowseGamesResponse>().games.map((g) => g.id);
     const pages = await Promise.all(
       [0, 7, 14, 21].map(async (offset) =>
-        (await browse(`?limit=7&offset=${offset}`)).json<BrowseGamesResponse>().games.map((g) => g.id),
+        (await browse(`?limit=7&offset=${offset}`))
+          .json<BrowseGamesResponse>()
+          .games.map((g) => g.id),
       ),
     );
     const joined = pages.flat();

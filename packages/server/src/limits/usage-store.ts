@@ -34,13 +34,15 @@ export async function flushUsage(db: Db, snapshot: UsageSnapshot): Promise<void>
     for (const chunk of chunks(snapshot.requests, FLUSH_CHUNK)) {
       await tx
         .insert(usage)
-        .values(chunk.map((r) => ({
-          subjectType: r.subjectType,
-          subjectId: r.subjectId,
-          route: r.route,
-          hourStart: r.hourStart,
-          count: r.count,
-        })))
+        .values(
+          chunk.map((r) => ({
+            subjectType: r.subjectType,
+            subjectId: r.subjectId,
+            route: r.route,
+            hourStart: r.hourStart,
+            count: r.count,
+          })),
+        )
         .onConflictDoUpdate({
           target: [usage.subjectType, usage.subjectId, usage.route, usage.hourStart],
           set: { count: sql`${usage.count} + excluded.count` },
@@ -49,15 +51,17 @@ export async function flushUsage(db: Db, snapshot: UsageSnapshot): Promise<void>
     for (const chunk of chunks(snapshot.denials, FLUSH_CHUNK)) {
       await tx
         .insert(denials)
-        .values(chunk.map((d) => ({
-          subjectType: d.subjectType,
-          subjectId: d.subjectId,
-          limitKey: d.limitKey,
-          hourStart: d.hourStart,
-          count: d.count,
-          firstAt: d.firstAt,
-          lastAt: d.lastAt,
-        })))
+        .values(
+          chunk.map((d) => ({
+            subjectType: d.subjectType,
+            subjectId: d.subjectId,
+            limitKey: d.limitKey,
+            hourStart: d.hourStart,
+            count: d.count,
+            firstAt: d.firstAt,
+            lastAt: d.lastAt,
+          })),
+        )
         .onConflictDoUpdate({
           target: [denials.subjectType, denials.subjectId, denials.limitKey, denials.hourStart],
           set: {
@@ -72,7 +76,9 @@ export async function flushUsage(db: Db, snapshot: UsageSnapshot): Promise<void>
 /** Deletes hourly rows whose bucket starts before `olderThanIso`. */
 export async function pruneUsage(db: Db, olderThanIso: string): Promise<void> {
   await db.delete(schema.apiUsageHourly).where(lt(schema.apiUsageHourly.hourStart, olderThanIso));
-  await db.delete(schema.limitDenialsHourly).where(lt(schema.limitDenialsHourly.hourStart, olderThanIso));
+  await db
+    .delete(schema.limitDenialsHourly)
+    .where(lt(schema.limitDenialsHourly.hourStart, olderThanIso));
 }
 
 /**
@@ -84,10 +90,20 @@ export async function pruneUsage(db: Db, olderThanIso: string): Promise<void> {
 export async function deleteUsageForUser(tx: Pick<Db, 'delete'>, userId: string): Promise<void> {
   await tx
     .delete(schema.apiUsageHourly)
-    .where(and(eq(schema.apiUsageHourly.subjectType, 'user'), eq(schema.apiUsageHourly.subjectId, userId)));
+    .where(
+      and(
+        eq(schema.apiUsageHourly.subjectType, 'user'),
+        eq(schema.apiUsageHourly.subjectId, userId),
+      ),
+    );
   await tx
     .delete(schema.limitDenialsHourly)
-    .where(and(eq(schema.limitDenialsHourly.subjectType, 'user'), eq(schema.limitDenialsHourly.subjectId, userId)));
+    .where(
+      and(
+        eq(schema.limitDenialsHourly.subjectType, 'user'),
+        eq(schema.limitDenialsHourly.subjectId, userId),
+      ),
+    );
 }
 
 /** One subject's total in a window and the route (or limit key) contributing most. */
@@ -112,9 +128,22 @@ function bufferedContributions(
   sinceIso: string,
 ): Contribution[] {
   const view = tracker.snapshotView();
-  const rows = metric === 'requests'
-    ? view.requests.map((r) => ({ subjectType: r.subjectType, subjectId: r.subjectId, key: r.route, hourStart: r.hourStart, count: r.count }))
-    : view.denials.map((d) => ({ subjectType: d.subjectType, subjectId: d.subjectId, key: d.limitKey, hourStart: d.hourStart, count: d.count }));
+  const rows =
+    metric === 'requests'
+      ? view.requests.map((r) => ({
+          subjectType: r.subjectType,
+          subjectId: r.subjectId,
+          key: r.route,
+          hourStart: r.hourStart,
+          count: r.count,
+        }))
+      : view.denials.map((d) => ({
+          subjectType: d.subjectType,
+          subjectId: d.subjectId,
+          key: d.limitKey,
+          hourStart: d.hourStart,
+          count: d.count,
+        }));
   return rows
     .filter((r) => r.hourStart >= sinceIso)
     .map(({ subjectType, subjectId, key, count }) => ({ subjectType, subjectId, key, count }));
@@ -143,13 +172,31 @@ async function storedContributions(
     if (heaviest.length === 0) return [];
     const keep = new Set(heaviest.map((s) => `${s.subjectType}:${s.subjectId}`));
     const rows = await db
-      .select({ subjectType: t.subjectType, subjectId: t.subjectId, key: t.route, total: sum(t.count) })
+      .select({
+        subjectType: t.subjectType,
+        subjectId: t.subjectId,
+        key: t.route,
+        total: sum(t.count),
+      })
       .from(t)
-      .where(and(gte(t.hourStart, sinceIso), inArray(t.subjectId, heaviest.map((s) => s.subjectId))))
+      .where(
+        and(
+          gte(t.hourStart, sinceIso),
+          inArray(
+            t.subjectId,
+            heaviest.map((s) => s.subjectId),
+          ),
+        ),
+      )
       .groupBy(t.subjectType, t.subjectId, t.route);
     return rows
       .filter((r) => keep.has(`${r.subjectType}:${r.subjectId}`))
-      .map((r) => ({ subjectType: r.subjectType, subjectId: r.subjectId, key: r.key, count: Number(r.total ?? 0) }));
+      .map((r) => ({
+        subjectType: r.subjectType,
+        subjectId: r.subjectId,
+        key: r.key,
+        count: Number(r.total ?? 0),
+      }));
   }
 
   const t = schema.limitDenialsHourly;
@@ -164,13 +211,31 @@ async function storedContributions(
   if (heaviest.length === 0) return [];
   const keep = new Set(heaviest.map((s) => `${s.subjectType}:${s.subjectId}`));
   const rows = await db
-    .select({ subjectType: t.subjectType, subjectId: t.subjectId, key: t.limitKey, total: sum(t.count) })
+    .select({
+      subjectType: t.subjectType,
+      subjectId: t.subjectId,
+      key: t.limitKey,
+      total: sum(t.count),
+    })
     .from(t)
-    .where(and(gte(t.hourStart, sinceIso), inArray(t.subjectId, heaviest.map((s) => s.subjectId))))
+    .where(
+      and(
+        gte(t.hourStart, sinceIso),
+        inArray(
+          t.subjectId,
+          heaviest.map((s) => s.subjectId),
+        ),
+      ),
+    )
     .groupBy(t.subjectType, t.subjectId, t.limitKey);
   return rows
     .filter((r) => keep.has(`${r.subjectType}:${r.subjectId}`))
-    .map((r) => ({ subjectType: r.subjectType, subjectId: r.subjectId, key: r.key, count: Number(r.total ?? 0) }));
+    .map((r) => ({
+      subjectType: r.subjectType,
+      subjectId: r.subjectId,
+      key: r.key,
+      count: Number(r.total ?? 0),
+    }));
 }
 
 /**
@@ -186,7 +251,10 @@ export async function topConsumers(
 ): Promise<TopConsumerRow[]> {
   const stored = await storedContributions(db, opts.metric, opts.sinceIso);
 
-  const bySubject = new Map<string, { subjectType: 'user' | 'ip'; subjectId: string; perKey: Map<string, number> }>();
+  const bySubject = new Map<
+    string,
+    { subjectType: 'user' | 'ip'; subjectId: string; perKey: Map<string, number> }
+  >();
   for (const c of [...stored, ...bufferedContributions(tracker, opts.metric, opts.sinceIso)]) {
     const id = `${c.subjectType}:${c.subjectId}`;
     let entry = bySubject.get(id);
@@ -255,11 +323,16 @@ export async function userDenials(
     .where(and(eq(t.subjectType, 'user'), eq(t.subjectId, userId), gte(t.hourStart, sinceIso)))
     .groupBy(t.limitKey);
 
-  const byKey = new Map(rows.map((r) => [r.limitKey, { count: Number(r.total ?? 0), lastAt: r.lastAt ?? '' }]));
+  const byKey = new Map(
+    rows.map((r) => [r.limitKey, { count: Number(r.total ?? 0), lastAt: r.lastAt ?? '' }]),
+  );
   for (const d of tracker.snapshotView().denials) {
     if (d.subjectType !== 'user' || d.subjectId !== userId || d.hourStart < sinceIso) continue;
     const prev = byKey.get(d.limitKey) ?? { count: 0, lastAt: '' };
-    byKey.set(d.limitKey, { count: prev.count + d.count, lastAt: d.lastAt > prev.lastAt ? d.lastAt : prev.lastAt });
+    byKey.set(d.limitKey, {
+      count: prev.count + d.count,
+      lastAt: d.lastAt > prev.lastAt ? d.lastAt : prev.lastAt,
+    });
   }
   return [...byKey]
     .map(([limitKey, v]) => ({ limitKey, count: v.count, lastAt: v.lastAt }))

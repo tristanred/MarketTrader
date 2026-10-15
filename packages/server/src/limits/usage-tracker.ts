@@ -106,7 +106,8 @@ export class UsageTracker {
     }
     const row = this.requests.get(key);
     if (row) row.count += 1;
-    else this.requests.set(key, { subjectType: subject.type, subjectId, route, hourStart, count: 1 });
+    else
+      this.requests.set(key, { subjectType: subject.type, subjectId, route, hourStart, count: 1 });
   }
 
   recordDenial(subject: UsageSubject, limitKey: string): void {
@@ -126,7 +127,13 @@ export class UsageTracker {
       row.lastAt = iso;
     } else {
       this.denials.set(key, {
-        subjectType: subject.type, subjectId, limitKey, hourStart, count: 1, firstAt: iso, lastAt: iso,
+        subjectType: subject.type,
+        subjectId,
+        limitKey,
+        hourStart,
+        count: 1,
+        firstAt: iso,
+        lastAt: iso,
       });
     }
   }

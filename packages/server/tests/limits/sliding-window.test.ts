@@ -4,7 +4,12 @@ import { SlidingWindowCounter } from '../../src/limits/sliding-window.js';
 describe('SlidingWindowCounter', () => {
   function clock(start = 0) {
     let t = start;
-    return { now: () => t, set: (v: number) => { t = v; } };
+    return {
+      now: () => t,
+      set: (v: number) => {
+        t = v;
+      },
+    };
   }
 
   it('counts hits inside the window', () => {

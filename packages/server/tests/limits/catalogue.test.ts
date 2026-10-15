@@ -10,13 +10,16 @@ describe('LIMIT_CATALOGUE', () => {
     expect(Object.keys(LIMIT_CATALOGUE).sort()).toEqual([...LIMIT_KEYS].sort());
   });
 
-  it.each([...LIMIT_KEYS])('%s is backed by a live integer option in the limits category', (key) => {
-    const { configKey } = LIMIT_CATALOGUE[key];
-    expect(isLiveKey(configKey), configKey).toBe(true);
-    const d = descriptorFor(configKey);
-    expect(d.category).toBe('limits');
-    expect(d.kind).toBe('integer');
-  });
+  it.each([...LIMIT_KEYS])(
+    '%s is backed by a live integer option in the limits category',
+    (key) => {
+      const { configKey } = LIMIT_CATALOGUE[key];
+      expect(isLiveKey(configKey), configKey).toBe(true);
+      const d = descriptorFor(configKey);
+      expect(d.category).toBe('limits');
+      expect(d.kind).toBe('integer');
+    },
+  );
 
   it.each([...LIMIT_KEYS])('%s has a window consistent with its kind', (key) => {
     const d = LIMIT_CATALOGUE[key];

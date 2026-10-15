@@ -51,7 +51,12 @@ describe('per-user rate limits', () => {
     const over = await lookup(app, token);
     expect(over.statusCode).toBe(429);
     const body = over.json<LimitExceededBody>();
-    expect(body).toMatchObject({ code: 'LIMIT_EXCEEDED', limit: 'codeLookups', max: 2, probation: false });
+    expect(body).toMatchObject({
+      code: 'LIMIT_EXCEEDED',
+      limit: 'codeLookups',
+      max: 2,
+      probation: false,
+    });
     expect(body.retryAfterSeconds).toBeGreaterThan(0);
     expect(over.headers['retry-after']).toBeDefined();
   });

@@ -12,7 +12,14 @@ import {
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import { toast } from '@/components/ui/toast';
 import { ConfirmDialog } from '@/components/admin/ConfirmDialog';
 import { PrivilegedIpBanner } from '@/components/admin/PrivilegedIpBanner';
@@ -32,7 +39,11 @@ function Toggle<T extends string>({
   onChange: (next: T) => void;
 }) {
   return (
-    <div role="group" aria-label={label} className="inline-flex rounded-md border border-hairline-strong p-0.5">
+    <div
+      role="group"
+      aria-label={label}
+      className="inline-flex rounded-md border border-hairline-strong p-0.5"
+    >
       {options.map((o) => (
         <button
           key={o.value}
@@ -41,7 +52,9 @@ function Toggle<T extends string>({
           onClick={() => onChange(o.value)}
           className={cn(
             'rounded px-2.5 py-1 text-xs font-medium',
-            o.value === value ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:text-foreground',
+            o.value === value
+              ? 'bg-accent text-accent-foreground'
+              : 'text-muted-foreground hover:text-foreground',
           )}
         >
           {o.label}
@@ -88,8 +101,8 @@ export function AdminLimitsPage() {
       <div className="space-y-1">
         <h1 className="text-2xl font-semibold">Limits</h1>
         <p className="text-sm text-muted-foreground">
-          Global values are edited in Configuration; per-user overrides on each user&apos;s page. Admins are
-          never limited.
+          Global values are edited in Configuration; per-user overrides on each user&apos;s page.
+          Admins are never limited.
         </p>
       </div>
 
@@ -111,7 +124,9 @@ export function AdminLimitsPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>User / IP</TableHead>
-                  <TableHead className="text-right">{metric === 'requests' ? 'Requests' : 'Denials'}</TableHead>
+                  <TableHead className="text-right">
+                    {metric === 'requests' ? 'Requests' : 'Denials'}
+                  </TableHead>
                   <TableHead>{metric === 'requests' ? 'Top route' : 'Top limit'}</TableHead>
                   <TableHead>Signals</TableHead>
                 </TableRow>
@@ -163,7 +178,9 @@ export function AdminLimitsPage() {
         </CardHeader>
         <CardContent className="overflow-x-auto">
           {overrides.isLoading && <Skeleton className="h-24 w-full" />}
-          {overrides.isError && <p className="text-sm text-destructive">Could not load overrides.</p>}
+          {overrides.isError && (
+            <p className="text-sm text-destructive">Could not load overrides.</p>
+          )}
           {overrides.data && (
             <Table aria-label="Active overrides">
               <TableHeader>
@@ -193,7 +210,9 @@ export function AdminLimitsPage() {
                     </TableCell>
                     <TableCell className="text-xs">{LIMIT_LABELS[o.key]}</TableCell>
                     <TableCell className="text-right font-mono text-xs">{o.value}</TableCell>
-                    <TableCell className="max-w-xs text-xs text-muted-foreground">{o.note ?? '—'}</TableCell>
+                    <TableCell className="max-w-xs text-xs text-muted-foreground">
+                      {o.note ?? '—'}
+                    </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
                       {new Date(o.updatedAt).toLocaleString()}
                       {o.updatedByUsername && ` · ${o.updatedByUsername}`}
@@ -225,7 +244,11 @@ export function AdminLimitsPage() {
             <dl className="grid grid-cols-1 gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
               <div>
                 <dt className="text-muted-foreground">Enforcement</dt>
-                <dd>{policy.data.enabled ? 'On' : 'Off — per-user limits are lifted; per-IP route limits stay'}</dd>
+                <dd>
+                  {policy.data.enabled
+                    ? 'On'
+                    : 'Off — per-user limits are lifted; per-IP route limits stay'}
+                </dd>
               </div>
               <div>
                 <dt className="text-muted-foreground">Account maturity</dt>

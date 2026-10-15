@@ -1,11 +1,19 @@
-import { useMemo, useState } from 'react';
+import { Fragment, useMemo, useState } from 'react';
 import type { AdminConfigEntry, ConfigCategory } from '@markettrader/shared';
 import { useAdminConfig } from '@/api/admin/config';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import { ConfigEntryRow } from '@/components/admin/ConfigEntryRow';
+import { PrivilegedIpBanner } from '@/components/admin/PrivilegedIpBanner';
 import { clientBuildConfig } from '@/lib/clientBuildConfig';
 
 const CATEGORY_LABELS: Record<ConfigCategory, string> = {
@@ -23,7 +31,9 @@ const CATEGORY_LABELS: Record<ConfigCategory, string> = {
 
 function matches(entry: AdminConfigEntry, query: string): boolean {
   const q = query.trim().toLowerCase();
-  return q === '' || entry.key.toLowerCase().includes(q) || entry.description.toLowerCase().includes(q);
+  return (
+    q === '' || entry.key.toLowerCase().includes(q) || entry.description.toLowerCase().includes(q)
+  );
 }
 
 /** Admin view of every host option, with inline editing for the live-editable ones. */
@@ -56,8 +66,8 @@ export function AdminConfigPage() {
 
       {overrideCount > 0 && (
         <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm">
-          {overrideCount} runtime override{overrideCount === 1 ? '' : 's'} active — the environment value
-          is ignored for {overrideCount === 1 ? 'it' : 'them'} until reset.
+          {overrideCount} runtime override{overrideCount === 1 ? '' : 's'} active — the environment
+          value is ignored for {overrideCount === 1 ? 'it' : 'them'} until reset.
         </div>
       )}
 
@@ -69,7 +79,11 @@ export function AdminConfigPage() {
           onChange={(e) => setQuery(e.target.value)}
         />
         <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={liveOnly} onChange={(e) => setLiveOnly(e.target.checked)} />
+          <input
+            type="checkbox"
+            checked={liveOnly}
+            onChange={(e) => setLiveOnly(e.target.checked)}
+          />
           Live-editable only
         </label>
       </div>
@@ -78,28 +92,31 @@ export function AdminConfigPage() {
       {config.isError && <p className="text-sm text-destructive">Could not load configuration.</p>}
 
       {groups.map(({ category, entries }) => (
-        <Card key={category}>
-          <CardHeader>
-            <CardTitle className="text-base">{CATEGORY_LABELS[category]}</CardTitle>
-          </CardHeader>
-          <CardContent className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Option</TableHead>
-                  <TableHead>Value</TableHead>
-                  <TableHead>Source</TableHead>
-                  <TableHead>Change</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {entries.map((e) => (
-                  <ConfigEntryRow key={e.key} entry={e} />
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
+        <Fragment key={category}>
+          {category === 'limits' && <PrivilegedIpBanner />}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">{CATEGORY_LABELS[category]}</CardTitle>
+            </CardHeader>
+            <CardContent className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Option</TableHead>
+                    <TableHead>Value</TableHead>
+                    <TableHead>Source</TableHead>
+                    <TableHead>Change</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {entries.map((e) => (
+                    <ConfigEntryRow key={e.key} entry={e} />
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </Fragment>
       ))}
 
       <Card>
@@ -108,7 +125,8 @@ export function AdminConfigPage() {
         </CardHeader>
         <CardContent className="overflow-x-auto">
           <p className="mb-2 text-xs text-muted-foreground">
-            Inlined by Vite when this bundle was built. Changing one requires rebuilding the frontend.
+            Inlined by Vite when this bundle was built. Changing one requires rebuilding the
+            frontend.
           </p>
           <Table>
             <TableBody>
@@ -118,7 +136,9 @@ export function AdminConfigPage() {
                     <div className="font-mono text-xs font-medium">{b.key}</div>
                     <p className="mt-1 text-xs text-muted-foreground">{b.description}</p>
                   </TableCell>
-                  <TableCell className="align-top font-mono text-xs">{b.value || '(empty)'}</TableCell>
+                  <TableCell className="align-top font-mono text-xs">
+                    {b.value || '(empty)'}
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>

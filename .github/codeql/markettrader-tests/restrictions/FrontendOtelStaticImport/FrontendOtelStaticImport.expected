@@ -1,0 +1,3 @@
+| packages/frontend/src/App.tsx:1:1:1:60 | import  ... /otel'; | observability/otel is imported statically, which puts the OTel browser SDK in the entry bundle; load it with import('./observability/otel') after render. |
+| packages/frontend/src/App.tsx:2:1:2:30 | import  ... /otel'; | observability/otel is imported statically, which puts the OTel browser SDK in the entry bundle; load it with import('./observability/otel') after render. |
+| packages/frontend/src/App.tsx:3:1:3:71 | export  ... el.ts'; | observability/otel is imported statically, which puts the OTel browser SDK in the entry bundle; load it with import('./observability/otel') after render. |

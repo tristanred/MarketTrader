@@ -1,0 +1,13 @@
+| packages/frontend/src/hooks/useTracing.ts:1:1:1:43 | import  ... y/api'; | Imports 'trace' from @opentelemetry/api outside observability/; only SpanStatusCode may be imported here \u2014 add a helper in observability/telemetry.ts. |
+| packages/frontend/src/hooks/useTracing.ts:2:1:2:47 | import  ... -logs'; | Imports 'logs' from @opentelemetry/api-logs outside observability/; only SpanStatusCode may be imported here \u2014 add a helper in observability/telemetry.ts. |
+| packages/frontend/src/hooks/useTracing.ts:3:1:3:65 | import  ... -zone'; | '@opentelemetry/context-zone' is only imported by observability/otel.ts; SDK setup stays in the one bootstrap module. |
+| packages/frontend/src/hooks/useTracing.ts:4:1:4:65 | import  ... e-web'; | '@opentelemetry/sdk-trace-web' is only imported by observability/otel.ts; SDK setup stays in the one bootstrap module. |
+| packages/server/src/observability/telemetry.ts:3:1:3:72 | import  ... tions'; | '@opentelemetry/semantic-conventions' is only imported by observability/otel.ts; SDK setup stays in the one bootstrap module. |
+| packages/server/src/services/trade.ts:4:1:4:67 | import  ... y/api'; | Imports 'metrics' from @opentelemetry/api outside observability/; only SpanStatusCode may be imported here \u2014 add a helper in observability/telemetry.ts. |
+| packages/server/src/services/trade.ts:5:1:5:42 | import  ... y/api'; | Imports '*' from @opentelemetry/api outside observability/; only SpanStatusCode may be imported here \u2014 add a helper in observability/telemetry.ts. |
+| packages/server/src/services/trade.ts:6:1:6:50 | import  ... -node'; | '@opentelemetry/sdk-node' is only imported by observability/otel.ts; SDK setup stays in the one bootstrap module. |
+| packages/server/src/services/trade.ts:7:1:7:88 | import  ... -node'; | '@opentelemetry/auto-instrumentations-node' is only imported by observability/otel.ts; SDK setup stays in the one bootstrap module. |
+| packages/server/src/services/trade.ts:8:1:8:40 | import  ... /otel'; | @fastify/otel is only imported by plugins/otel.ts, which registers it before every route. |
+| packages/server/src/services/trade.ts:9:1:9:45 | import  ... /core'; | '@opentelemetry/core' is only imported by observability/otel.ts; SDK setup stays in the one bootstrap module. |
+| packages/server/src/services/trade.ts:10:1:10:60 | import  ... or-b3'; | '@opentelemetry/propagator-b3' is only imported by observability/otel.ts; SDK setup stays in the one bootstrap module. |
+| packages/server/src/services/trade.ts:17:10:17:37 | import( ... y/api') | @opentelemetry/api loaded outside observability/; only `import { SpanStatusCode }` is allowed here \u2014 add a helper in observability/telemetry.ts. |

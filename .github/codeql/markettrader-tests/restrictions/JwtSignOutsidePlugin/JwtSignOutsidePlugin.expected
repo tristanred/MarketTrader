@@ -1,0 +1,8 @@
+| packages/server/src/routes/auth.ts:2:1:2:40 | import  ... t-jwt'; | 'fast-jwt' imported outside plugins/jwt.ts; mint tokens with signAccessToken/signRefreshToken so the 'type' claim is always set. |
+| packages/server/src/routes/auth.ts:13:10:13:35 | app.jwt ...  'u' }) | JWT signed directly; mint tokens with signAccessToken/signRefreshToken from plugins/jwt.ts so the 'type' claim is always set. |
+| packages/server/src/routes/auth.ts:18:10:18:29 | j.sign({ sub: 'u' }) | JWT signed directly; mint tokens with signAccessToken/signRefreshToken from plugins/jwt.ts so the 'type' claim is always set. |
+| packages/server/src/routes/auth.ts:22:10:22:36 | reply.j ...  'u' }) | JWT signed directly; mint tokens with signAccessToken/signRefreshToken from plugins/jwt.ts so the 'type' claim is always set. |
+| packages/server/src/routes/auth.ts:27:10:27:27 | sign({ sub: 'u' }) | JWT signed directly; mint tokens with signAccessToken/signRefreshToken from plugins/jwt.ts so the 'type' claim is always set. |
+| packages/server/src/routes/auth.ts:32:10:32:31 | jwt.sig ...  'u' }) | JWT signed directly; mint tokens with signAccessToken/signRefreshToken from plugins/jwt.ts so the 'type' claim is always set. |
+| packages/server/src/routes/auth.ts:36:10:36:41 | maybeAp ...  'u' }) | JWT signed directly; mint tokens with signAccessToken/signRefreshToken from plugins/jwt.ts so the 'type' claim is always set. |
+| packages/server/src/routes/auth.ts:40:10:40:46 | request ...  'u' }) | JWT signed directly; mint tokens with signAccessToken/signRefreshToken from plugins/jwt.ts so the 'type' claim is always set. |

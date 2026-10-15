@@ -1,0 +1,6 @@
+| packages/server/src/app.ts:34:11:34:29 | broadcaster.start() | broadcaster.start() is never stopped: add app.addHook('onClose', ...) that stops/clears 'broadcaster'. |
+| packages/server/src/app.ts:45:28:45:48 | startDi ... orker() | startDiscoverWorker(...) is never stopped: add app.addHook('onClose', ...) that stops/clears 'discoverWorker'. |
+| packages/server/src/app.ts:52:5:52:30 | startPe ... orker() | startPendingOrdersWorker(...) discards its handle, so it can never be stopped; store it and stop it in app.addHook('onClose', ...). |
+| packages/server/src/app.ts:55:23:55:40 | startWsHeartbeat() | startWsHeartbeat(...) is never stopped: add app.addHook('onClose', ...) that stops/clears 'heartbeat'. |
+| packages/server/src/app.ts:65:20:65:46 | setInte ... , 1000) | setInterval(...) is never stopped: add app.addHook('onClose', ...) that stops/clears 'leaked'. |
+| packages/server/src/app.ts:83:3:83:22 | feed2.startPolling() | feed2.startPolling() is never stopped: add app.addHook('onClose', ...) that stops/clears 'feed2'. |

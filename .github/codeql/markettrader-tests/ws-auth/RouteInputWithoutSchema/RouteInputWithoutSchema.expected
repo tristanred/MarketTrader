@@ -1,0 +1,8 @@
+| packages/server/src/routes/games.ts:14:1:14:118 | app.get ... ams.id) | Route GET /games/:id/players has no `schema.params` although its path has parameters; validate it at route entry with a Zod schema. |
+| packages/server/src/routes/games.ts:17:1:17:64 | app.get ... > ({})) | Route GET /games/:id/raw has no `schema.params` although its path has parameters; validate it at route entry with a Zod schema. |
+| packages/server/src/routes/games.ts:23:1:26:2 | app.pat ... ame;\\n}) | Route PATCH /games has no `schema.body` although its handler reads request.body; validate it at route entry with a Zod schema. |
+| packages/server/src/routes/games.ts:32:1:34:2 | app.get ... .q);\\n}) | Route GET /games/search has no `schema.querystring` although its handler reads request.query; validate it at route entry with a Zod schema. |
+| packages/server/src/routes/games.ts:48:3:48:91 | app.get ... > ({})) | Route GET /games/:id/plugin-bad has no `schema.params` although its path has parameters; validate it at route entry with a Zod schema. |
+| packages/server/src/routes/games.ts:51:3:54:4 | app.del ... s;\\n  }) | Route DELETE /games/:id/items has no `schema.body` although its handler reads request.body; validate it at route entry with a Zod schema. |
+| packages/server/src/routes/games.ts:57:3:60:4 | app.get ... e;\\n  }) | Route GET /games/list has no `schema.querystring` although its handler reads request.query; validate it at route entry with a Zod schema. |
+| packages/server/src/ws/live-route.ts:4:1:6:2 | app.get ... id);\\n}) | Route GET /games/:id/live has no `schema.params` although its path has parameters; validate it at route entry with a Zod schema. |

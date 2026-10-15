@@ -1,0 +1,2 @@
+| packages/server/src/services/join-code.ts:4:10:4:20 | Math.random | Math.random in server code; use node:crypto (randomInt, randomBytes, randomUUID). |
+| packages/server/src/services/join-code.ts:7:34:7:44 | Math.random | Math.random in server code; use node:crypto (randomInt, randomBytes, randomUUID). |

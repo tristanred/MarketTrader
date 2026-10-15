@@ -1,0 +1,4 @@
+| bad/packages/server/src/app.ts:14:11:14:30 | registerSwagger(app) | registerSwagger(...) runs before registerOtel(app) in buildApp; register registerOtel first so it applies to every route. |
+| missing/packages/server/src/app.ts:8:3:8:47 | app.get ... rue })) | app.get(...) runs before registerOtel(app) in buildApp; register registerOtel first so it applies to every route. |
+| missing/packages/server/src/app.ts:8:3:8:47 | app.get ... rue })) | app.get(...) runs before registerWebsocket(app) in buildApp; register registerWebsocket first so it applies to every route. |
+| missing/packages/server/src/app.ts:10:9:10:34 | app.reg ... Routes) | app.register(...) runs before registerOtel(app) in buildApp; register registerOtel first so it applies to every route. |

@@ -1,0 +1,13 @@
+| packages/frontend/src/components/QuoteInfo.tsx:7:3:7:14 | el.innerHTML | Assigning innerHTML/outerHTML injects raw HTML; render through React or set textContent. |
+| packages/frontend/src/components/QuoteInfo.tsx:8:3:8:14 | el.outerHTML | Assigning innerHTML/outerHTML injects raw HTML; render through React or set textContent. |
+| packages/frontend/src/components/QuoteInfo.tsx:9:3:9:42 | el.inse ... , html) | insertAdjacentHTML injects raw HTML; render through React. |
+| packages/frontend/src/components/QuoteInfo.tsx:10:3:10:22 | document.write(html) | document.write injects raw HTML; render through React. |
+| packages/frontend/src/components/QuoteInfo.tsx:11:3:11:15 | eval('1 + 1') | eval() executes a string as code; it is never needed in the SPA. |
+| packages/frontend/src/components/QuoteInfo.tsx:12:13:12:36 | new Fun ... urn 1') | The Function constructor executes a string as code; it is never needed in the SPA. |
+| packages/frontend/src/components/QuoteInfo.tsx:14:3:14:14 | el.innerHTML | Assigning innerHTML/outerHTML injects raw HTML; render through React or set textContent. |
+| packages/frontend/src/components/QuoteInfo.tsx:15:3:15:17 | el['innerHTML'] | Assigning innerHTML/outerHTML injects raw HTML; render through React or set textContent. |
+| packages/frontend/src/components/QuoteInfo.tsx:17:13:17:32 | Function('return 1') | The Function constructor executes a string as code; it is never needed in the SPA. |
+| packages/frontend/src/components/QuoteInfo.tsx:21:12:21:53 | dangero ... html }} | dangerouslySetInnerHTML injects raw HTML; render the content as React children. |
+| packages/frontend/src/components/QuoteInfo.tsx:22:7:22:47 | <a href ... ">x</a> | target="_blank" without rel="noopener noreferrer" lets the opened page reach window.opener. |
+| packages/frontend/src/components/QuoteInfo.tsx:23:7:23:62 | <a href ... ">x</a> | target="_blank" without rel="noopener noreferrer" lets the opened page reach window.opener. |
+| packages/frontend/src/components/QuoteInfo.tsx:29:7:29:49 | <a href ... }>x</a> | target="_blank" without rel="noopener noreferrer" lets the opened page reach window.opener. |

@@ -10,8 +10,10 @@ export function log(level: string, body: string, attrs?: Record<string, unknown>
 }
 
 export function identifyUser(user: AuthUser): void {
-  ph.identify(user.id, { username: user.username, groups: user.groups }); // BAD (possibly deliberate): PostHog person property
+  ph.identify(user.id, { username: user.username, groups: user.groups }); // OK: the username person property is deliberate
   ph.identify(user.id, { groups: user.groups }); // OK: opaque id only
+  ph.identify(user.id, { handle: user.username }); // BAD: only the `username` trait is exempt
+  ph.identify(user.username); // BAD: username as the distinct id
 }
 
 export function onLogin(user: AuthUser): void {

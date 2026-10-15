@@ -51,6 +51,16 @@ class TelemetryPiiSink extends DataFlow::Node {
       MarketTrader::serverFile(c.getFile(), "db/seed-admin.ts") and
       c.getCalleeName() = "log" and
       SecretsLib::withinLiteral(c.getAnArgument(), this)
+    ) and
+    // The PostHog person profile carries the username on purpose, so people can
+    // be recognised in the PostHog UI. Only the `username` trait of an
+    // `identify(id, traits)` call is exempt; the distinct id and every event
+    // property stay covered.
+    not exists(DataFlow::MethodCallNode identify |
+      identify.getMethodName() = "identify" and
+      MarketTrader::isFrontendSrc(identify.getFile()) and
+      this =
+        identify.getArgument(1).getALocalSource().(DataFlow::ObjectLiteralNode).getAPropertyWrite("username").getRhs()
     )
   }
 }

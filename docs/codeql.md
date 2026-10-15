@@ -81,7 +81,7 @@ Status is as of the commit that introduced the pack. "Holds" means zero results.
 | `refresh-token-leak` | The refresh token is delivered only via `setCookie('refreshToken', …)` | Holds |
 | `refresh-cookie-not-httponly` | The refresh cookie is set with `httpOnly: true` | Holds |
 | `refresh-cookie-read-outside-auth` | Only `routes/auth.ts` reads `request.cookies.refreshToken` | Holds |
-| `pii-in-telemetry` | Usernames/emails/passwords stay out of logs, analytics, span and metric attributes | 2: `routes/auth.ts` failed-login log; frontend `lib/posthog.ts` `identify` traits |
+| `pii-in-telemetry` | Usernames/emails/passwords stay out of logs, analytics, span and metric attributes. Exception: the `username` trait of a frontend `identify(id, traits)` call — the PostHog person profile carries it deliberately | 1: `routes/auth.ts` failed-login log |
 | `unbounded-input-to-log-or-map` | Request strings with no Zod length bound are not logged or used as long-lived Map keys | 4: login `username` (no `.max()`) |
 
 ### dataflow

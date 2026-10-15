@@ -1,11 +1,44 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
 import type { FastifyInstance } from 'fastify';
-import { createTestAppWithDb, registerAdmin } from '../helpers/app.js';
+import { metrics as metricsApi } from '@opentelemetry/api';
+import { metrics as metricsSdk } from '@opentelemetry/sdk-node';
+import { buildApp } from '../../src/app.js';
+import { createTestAppWithDb, createTestDb, registerAdmin } from '../helpers/app.js';
+import { MockStockProvider } from '../helpers/mock-provider.js';
+import { MockMarketStatusProvider } from '../helpers/mock-market-status.js';
 import { registerUser } from '../helpers/users.js';
 import { RuntimeConfig } from '../../src/config/runtime-config.js';
 import { UsageTracker } from '../../src/limits/usage-tracker.js';
 
 const settle = () => new Promise((r) => setImmediate(r));
+
+// The meters bind to whichever provider exists on first use and keep it, so the
+// provider has to be in place before any test in this file records a denial.
+let exporter: metricsSdk.InMemoryMetricExporter;
+let meterProvider: metricsSdk.MeterProvider;
+
+beforeAll(() => {
+  exporter = new metricsSdk.InMemoryMetricExporter(metricsSdk.AggregationTemporality.CUMULATIVE);
+  const reader = new metricsSdk.PeriodicExportingMetricReader({ exporter, exportIntervalMillis: 60_000 });
+  meterProvider = new metricsSdk.MeterProvider({ readers: [reader] });
+  metricsApi.setGlobalMeterProvider(meterProvider);
+});
+
+afterAll(async () => {
+  await meterProvider.shutdown();
+  metricsApi.disable();
+});
+
+async function deniedPoints(limit: string): Promise<metricsSdk.DataPoint<number>[]> {
+  await meterProvider.forceFlush();
+  return exporter
+    .getMetrics()
+    .flatMap((rm) => rm.scopeMetrics)
+    .flatMap((sm) => sm.metrics)
+    .filter((m) => m.descriptor.name === 'markettrader.limits.denied')
+    .flatMap((m) => m.dataPoints as metricsSdk.DataPoint<number>[])
+    .filter((p) => p.attributes.limit === limit);
+}
 
 describe('usage hooks', () => {
   let app: FastifyInstance;
@@ -104,5 +137,60 @@ describe('usage hooks', () => {
       .denials.filter((d) => d.subjectId === u.userId && d.limitKey === 'codeLookups');
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ subjectType: 'user', count: 1 });
+  });
+});
+
+describe('usage hooks on the per-IP rate-limit layer', () => {
+  let app: FastifyInstance;
+  let tracker: UsageTracker;
+
+  beforeEach(async () => {
+    tracker = new UsageTracker();
+    // Own app: the fixture's disableRateLimit bypass would keep the IP layer
+    // from ever answering 429.
+    app = await buildApp({
+      logger: false,
+      db: await createTestDb(),
+      provider: new MockStockProvider(),
+      marketStatusProvider: new MockMarketStatusProvider(),
+      disablePoller: true,
+      disableRateLimit: false,
+      limits: { disabled: false },
+      loginThrottle: { disabled: true },
+      leaderboardThrottleMs: 0,
+      usageTracker: tracker,
+      runtimeConfig: RuntimeConfig.fromEnvironment(),
+    });
+  });
+
+  afterEach(async () => {
+    await app.close();
+  });
+
+  it('counts a plugin 429 on an IP-keyed route exactly once, in the tracker and the meter', async () => {
+    const ip = '198.51.100.23';
+    const login = () =>
+      app.inject({
+        method: 'POST',
+        url: '/auth/login',
+        remoteAddress: ip,
+        payload: { username: 'nobody-here', password: 'wrong-password' },
+      });
+    for (let i = 0; i < 5; i++) {
+      expect((await login()).statusCode).toBe(401);
+    }
+    expect((await login()).statusCode).toBe(429);
+    await settle();
+
+    // The plugin's default 429 is not a LimitExceededError, so only onExceeded
+    // may count it; the error handler's fallback must not add a second.
+    const label = 'ip:POST /auth/login';
+    const rows = tracker.snapshotView().denials.filter((d) => d.subjectId === ip);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ subjectType: 'ip', limitKey: label, count: 1 });
+
+    const points = await deniedPoints(label);
+    expect(points).toHaveLength(1);
+    expect(points[0]?.value).toBe(1);
   });
 });

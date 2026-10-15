@@ -104,6 +104,22 @@ describe('per-user rate limits', () => {
     expect(over.json<LimitExceededBody>().limit).toBe('orderCancels');
   });
 
+  it('counts working-order and pending cancels against one budget', async () => {
+    const { token } = await registerUser(app, fresh('two-route-canceller'));
+    const cancel = (url: string) =>
+      app.inject({ method: 'DELETE', url, headers: { Authorization: `Bearer ${token}` } });
+    const working = '/games/no-such-game/trades/no-such-order';
+    const pending = '/games/no-such-game/trades/pending/no-such-pending';
+
+    expect((await cancel(working)).statusCode).toBe(404);
+    expect((await cancel(pending)).statusCode).toBe(404);
+    for (const url of [working, pending]) {
+      const over = await cancel(url);
+      expect(over.statusCode).toBe(429);
+      expect(over.json<LimitExceededBody>()).toMatchObject({ limit: 'orderCancels', max: 2 });
+    }
+  });
+
   it('never fires under the default test fixture', async () => {
     const plain = await createTestApp();
     const { token } = await registerUser(plain, 'fixture-user');

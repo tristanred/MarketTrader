@@ -121,6 +121,12 @@ export function tradingRoutes(
   return async function (rawApp: FastifyInstance): Promise<void> {
     const app = rawApp.withTypeProvider<ZodTypeProvider>();
 
+    // One handler for both cancel routes. A route's `config.rateLimit` gets its
+    // own store from the plugin, so attaching the config to each would give a
+    // user one `orderCancels` budget per route instead of one in total.
+    // After `authenticate` in each `onRequest`, so the key is the user, not the IP.
+    const cancelLimiter = rawApp.rateLimit(rateLimitFor(limits, 'orderCancels'));
+
     // Counts refused orders by reason. Deliberately a hook rather than a call at
     // each of the dozen `reply.status(4xx)` sites: those branches are added and
     // reshuffled often, and a hook cannot fall out of sync with them. The reason
@@ -574,8 +580,7 @@ export function tradingRoutes(
     app.delete(
       '/games/:id/trades/:tradeId',
       {
-        onRequest: rawApp.authenticate,
-        config: { rateLimit: rateLimitFor(limits, 'orderCancels') },
+        onRequest: [rawApp.authenticate, cancelLimiter],
         schema: {
           tags: ['Trading'],
           summary: 'Cancel a resting working order (limit/stop/bracket).',
@@ -645,8 +650,7 @@ export function tradingRoutes(
     app.delete(
       '/games/:id/trades/pending/:pendingId',
       {
-        onRequest: rawApp.authenticate,
-        config: { rateLimit: rateLimitFor(limits, 'orderCancels') },
+        onRequest: [rawApp.authenticate, cancelLimiter],
         schema: {
           tags: ['Trading'],
           summary: 'Cancel a pending trade.',

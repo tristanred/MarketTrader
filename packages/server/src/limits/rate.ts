@@ -33,7 +33,8 @@ async function resolveOnce(
  * id, sized by the resolver on every request (so overrides and live edits
  * apply at once), skipped when the resolver says unlimited, and answered with
  * a {@link LimitExceededError}. Needs `authenticate` in the route's `onRequest`,
- * which the plugin runs first.
+ * which the plugin runs first. A key shared by several routes must go through
+ * one `app.rateLimit(...)` handler: each route config gets its own counter.
  */
 export function rateLimitFor(limits: Limits, key: RateLimitKey): RateLimitOptions {
   const windowMs = LIMIT_CATALOGUE[key].windowMs ?? 60_000;

@@ -317,13 +317,18 @@ holding a per-IP in-process lock from the count to the insert.
 - `wsConnections`: checked at upgrade, after auth, by counting the user's entries across both
   registries. Over the limit → close with **`4429`** (`WS_LIMIT_EXCEEDED_CLOSE_CODE`, added to
   `ws/close-codes.ts`). Kept disjoint from 1008 (credential) and 4400 (invalid frame).
-- `wsSubscribes`: counted per user across sockets in the `UsageTracker`. An over-limit `subscribe`
-  is **dropped** (previous subscription stays in force), the server replies
-  `{ type: 'error', code: 'LIMIT_EXCEEDED', limit: 'wsSubscribes' }`, and a denial is recorded.
+- `wsSubscribes`: counted per user across sockets by a `SlidingWindowCounter` in the live route. An
+  over-limit `subscribe` is **dropped** (previous subscription stays in force), the server replies
+  `{ event: 'error', data: { code: 'LIMIT_EXCEEDED', limit: 'wsSubscribes' } }`, and a denial is
+  recorded.
   The socket is not closed: closing would give the client a fresh socket and an immediate
   re-subscribe, which throttles nothing.
 - Frontend: both socket hooks treat a `4429` close as a normal backoff case (never `tryRefresh`);
-  `useGameSocket` debounces `subscribe` sends (250 ms) so honest clients never approach the cap.
+  `useGameSocket` debounces `subscribe` sends (250 ms). That does not keep honest clients off the
+  cap: every new game socket subscribes from `onopen`, and the probation value is 8/min, so a new
+  player moving between the game page and its sibling routes can reach it. On the `wsSubscribes`
+  error frame the hook forgets its last-sent set and re-sends the current set after 60 s, re-arming on
+  each refusal; symbol changes wait for that retry rather than spending more of the window.
 
 ### 5.5 Error shape
 

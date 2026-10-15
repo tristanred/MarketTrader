@@ -149,6 +149,8 @@ Every exported function, class, and interface must have a JSDoc comment unless t
   `SlidingWindowCounter` in the live route) is **dropped** and answered with the frame
   `{ event: 'error', data: { code: 'LIMIT_EXCEEDED', limit: 'wsSubscribes' } }`, not with a close —
   closing would hand the client a fresh socket and an immediate re-subscribe, which throttles nothing.
+  `useGameSocket` answers that frame by re-sending its current set after 60 s (re-armed on each
+  refusal) — without it the client believes a set the server never applied, and prices freeze.
   The WS upgrade rate limits are per IP and not admin-exempt (the socket authenticates after the
   upgrade).
 - **Heartbeat** — `startWsHeartbeat` (`ws/heartbeat.ts`) pings every socket in both registries every

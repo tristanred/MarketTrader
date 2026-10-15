@@ -194,6 +194,62 @@ describe('useGameSocket', () => {
     });
   });
 
+  const subscribeRefused = { event: 'error', data: { code: 'LIMIT_EXCEEDED', limit: 'wsSubscribes' } };
+
+  it('re-sends a refused subscribe once the window has had time to drain', async () => {
+    render(withQueryClient(<Harness symbols={['AAPL']} />));
+    await tick(0);
+    const ws = MockWebSocket.instances[0]!;
+    expect(ws.sent).toHaveLength(1);
+
+    act(() => ws.receive(subscribeRefused));
+    await tick(59_000);
+    expect(ws.sent).toHaveLength(1);
+    await tick(1_000);
+    expect(ws.sent).toHaveLength(2);
+    expect(JSON.parse(ws.sent[1]!)).toEqual({ event: 'subscribe', data: { symbols: ['AAPL'] } });
+
+    // Refused again: the retry re-arms rather than giving up.
+    act(() => ws.receive(subscribeRefused));
+    await tick(60_000);
+    expect(ws.sent).toHaveLength(3);
+  });
+
+  it('holds symbol changes behind a pending retry and sends the latest set', async () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const wrap = (symbols: string[]) => (
+      <QueryClientProvider client={qc}>
+        <Harness symbols={symbols} />
+      </QueryClientProvider>
+    );
+    const view = render(wrap(['AAPL']));
+    await tick(0);
+    const ws = MockWebSocket.instances[0]!;
+    act(() => ws.receive(subscribeRefused));
+
+    view.rerender(wrap(['AAPL', 'TSLA']));
+    await tick(1_000);
+    expect(ws.sent).toHaveLength(1);
+
+    await tick(59_000);
+    expect(ws.sent).toHaveLength(2);
+    expect(JSON.parse(ws.sent[1]!)).toEqual({
+      event: 'subscribe',
+      data: { symbols: ['AAPL', 'TSLA'] },
+    });
+  });
+
+  it('drops a pending subscribe retry on unmount', async () => {
+    const view = render(withQueryClient(<Harness symbols={['AAPL']} />));
+    await tick(0);
+    const ws = MockWebSocket.instances[0]!;
+    act(() => ws.receive(subscribeRefused));
+    view.unmount();
+    ws.readyState = MockWebSocket.OPEN;
+    await tick(60_000);
+    expect(ws.sent).toHaveLength(1);
+  });
+
   it('does not re-send when a re-render passes an equal symbol set', async () => {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const wrap = (symbols: string[]) => (

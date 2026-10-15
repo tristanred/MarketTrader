@@ -376,7 +376,7 @@ Two rates are not on the plugin:
 
 **Consequences:**
 - **Single-host assumption.** Rate windows, the subscribe window, the override cache, and unflushed usage are per process. A restart resets rate windows (quotas are unaffected). A crash loses at most one flush interval of usage. Moving to several instances means a shared store, as already noted for the login throttle.
-- **Quota overshoot.** On Postgres, two simultaneous requests can overshoot a quota by one. SQLite serialises writers, so the check is exact there.
+- **Quota overshoot.** A count-then-insert check is not atomic on either database: the count is a plain read, so SQLite's single writer does not help, and every request in flight between the count and the write can read the same total and be admitted. The overshoot is bounded by that number of in-flight requests, not by one. Registration, the sybil control, awaits argon2 in that gap, so it is serialised per IP from count to insert by an in-process `KeyedLock` (`limits/keyed-lock.ts`); that relies on the single-process deployment above. The other quota and concurrent checks stay soft, bounded by one user's own concurrent requests.
 - **`request.ip` is load-bearing.** The privileged allowlist and every per-IP limit depend on `TRUST_PROXY` matching the proxy hop. `/admin/config` and `/admin/limits` show the caller's IP as the server sees it, so this can be checked.
 - **New close code.** `4429` (`WS_LIMIT_EXCEEDED_CLOSE_CODE`) refuses a socket past the per-user connection cap. It is disjoint from 1008 and 4400, and clients treat it as a plain backoff.
 - **Registration IPs are stored.** `users.registration_ip` is personal data; `docs/pii-inventory.md` lists it with everything else the system keeps about people.

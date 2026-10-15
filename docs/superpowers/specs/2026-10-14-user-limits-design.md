@@ -299,14 +299,18 @@ catches unique-constraint errors, which would abort a Postgres transaction:
 await limits.enforce(request, 'gamesCreated', () => countGamesCreatedSince(tx, userId, weekAgo));
 ```
 
-Two concurrent requests may overshoot a cap by one. Accepted as a soft limit (documented).
+Concurrent requests may overshoot a cap by as many requests as are in flight between the count and
+the insert — on SQLite too, because the count is a plain read. Accepted as a soft limit for per-user
+caps (documented in ADR-017). Registration is the exception: it awaits argon2 inside that gap and is
+the sybil control, so it is serialised per IP in-process (`KeyedLock`) from count to insert.
 
 `POST /games/:id/trades` swaps its old per-IP 30/min config for the per-user `trades` limit — a
 route carries one `config.rateLimit`, and the `apiRequests` ceiling still bounds it per user.
 Open-order denials change from 422 `TOO_MANY_OPEN_ORDERS` to 409 `LIMIT_EXCEEDED`.
 
 **Registration** — `POST /auth/register` stores `request.ip` in `registration_ip` and enforces
-`registrationsPerIp` against `COUNT(users WHERE registration_ip = ip AND created_at > now − 24h)`.
+`registrationsPerIp` against `COUNT(users WHERE registration_ip = ip AND created_at > now − 24h)`,
+holding a per-IP in-process lock from the count to the insert.
 
 **WebSockets**
 

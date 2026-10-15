@@ -7,6 +7,7 @@ import {
   windowStart,
 } from '../limits/quota-counts.js';
 import { secondsUntilWindowFrees } from '../limits/enforce.js';
+import { KeyedLock } from '../limits/keyed-lock.js';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
@@ -86,6 +87,7 @@ export function authRoutes(db: Db, loginThrottle: FailedLoginTracker, limits: Li
     const app = rawApp.withTypeProvider<ZodTypeProvider>();
     const { users } = schema;
     const perIp = (max: number) => ({ rateLimit: withPrivilegedIp(limits.config, { max, timeWindow: '1 minute' }) });
+    const registrationLock = new KeyedLock();
 
     // Logged once when the throttle engages, not on every subsequent rejection —
     // a locked account under sustained attack would otherwise flood the log.
@@ -108,40 +110,45 @@ export function authRoutes(db: Db, loginThrottle: FailedLoginTracker, limits: Li
 
       // Before hashing: argon2 is the expensive step, and a refused address
       // should not get to spend it. Counted from `users.registration_ip`, so a
-      // restart does not hand out a fresh day.
-      const now = Date.now();
-      const since = windowStart('registrationsPerIp', now);
-      await limits.enforcer.enforceFor(
-        { ip },
-        'registrationsPerIp',
-        () => countRegistrationsSince(db, ip, since),
-        {
-          retryAfter: async () =>
-            secondsUntilWindowFrees(
-              await oldestRegistrationSince(db, ip, since),
-              LIMIT_CATALOGUE.registrationsPerIp.windowMs!,
-              now,
-            ),
-        },
-      );
+      // restart does not hand out a fresh day. Serialised per address from the
+      // count to the insert: the hash awaits between them, and every request
+      // in flight would otherwise count the same rows and all be admitted.
+      const user = await registrationLock.run(ip, async () => {
+        const now = Date.now();
+        const since = windowStart('registrationsPerIp', now);
+        await limits.enforcer.enforceFor(
+          { ip },
+          'registrationsPerIp',
+          () => countRegistrationsSince(db, ip, since),
+          {
+            retryAfter: async () =>
+              secondsUntilWindowFrees(
+                await oldestRegistrationSince(db, ip, since),
+                LIMIT_CATALOGUE.registrationsPerIp.windowMs!,
+                now,
+              ),
+          },
+        );
 
-      const passwordHash = await hash(password);
-      let user: { id: string; username: string } | undefined;
-      try {
-        // Registration grants no group membership, ever. The first admin comes
-        // from the boot-time seed in `db/seed-admin.ts`; promotions after that
-        // go through an existing admin.
-        [user] = await db
-          .insert(users)
-          .values({ username, passwordHash, registrationIp: ip })
-          .returning({ id: users.id, username: users.username });
-      } catch (err: unknown) {
-        if (isUniqueConstraintError(err)) {
-          return reply.status(409).send({ error: 'Username already taken' });
+        const passwordHash = await hash(password);
+        try {
+          // Registration grants no group membership, ever. The first admin comes
+          // from the boot-time seed in `db/seed-admin.ts`; promotions after that
+          // go through an existing admin.
+          const [row] = await db
+            .insert(users)
+            .values({ username, passwordHash, registrationIp: ip })
+            .returning({ id: users.id, username: users.username });
+          return row;
+        } catch (err: unknown) {
+          if (isUniqueConstraintError(err)) return 'taken' as const;
+          throw err;
         }
-        throw err;
-      }
+      });
 
+      if (user === 'taken') {
+        return reply.status(409).send({ error: 'Username already taken' });
+      }
       if (!user) {
         return reply.status(500).send({ error: 'Failed to create user' });
       }

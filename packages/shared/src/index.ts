@@ -6,6 +6,7 @@ export * from './types/discover.js';
 export * from './types/featured-game.js';
 export * from './types/game.js';
 export * from './types/leaderboard-history.js';
+export * from './types/limits.js';
 export * from './types/player.js';
 export * from './types/stock.js';
 export * from './types/system-settings.js';

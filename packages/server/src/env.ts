@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { isIP } from 'node:net';
+import { isAddressOrSubnet, validateCidrList } from './limits/cidr.js';
 
 // TODO(polygon-provider): add 'polygon' once PolygonProvider is implemented
 export const VALID_PROVIDERS = ['yahoo', 'alpaca', 'mock'] as const;
@@ -59,19 +59,16 @@ function parseBool(raw: string): boolean {
   return raw.trim().toLowerCase() === 'true';
 }
 
+/** Reads a comma-separated IP/CIDR list, failing at boot on any malformed entry. */
+function validatedCidrList(name: string): string {
+  const raw = optional(name, '').trim();
+  const problem = validateCidrList(raw);
+  if (problem) throw new Error(`Invalid ${name}: ${problem}.`);
+  return raw;
+}
+
 /** Named address ranges `proxy-addr` understands, accepted verbatim by Fastify. */
 const TRUST_PROXY_PRESETS = ['loopback', 'linklocal', 'uniquelocal'] as const;
-
-/** True for `10.0.0.0/8`, `::1/128`, and bare addresses in either family. */
-function isAddressOrSubnet(token: string): boolean {
-  const slash = token.indexOf('/');
-  if (slash === -1) return isIP(token) !== 0;
-  const address = token.slice(0, slash);
-  const prefix = token.slice(slash + 1);
-  const family = isIP(address);
-  if (family === 0 || !/^\d+$/.test(prefix)) return false;
-  return Number(prefix) <= (family === 4 ? 32 : 128);
-}
 
 /**
  * Parses `TRUST_PROXY` into Fastify's `trustProxy` option: `false`, a hop count,
@@ -369,6 +366,93 @@ export const liveBootConfig = {
   ),
   /** Most players one game may hold. Joins past it are refused with 409 GAME_FULL. */
   GAME_MAX_PLAYERS: parsePositiveInt('GAME_MAX_PLAYERS', optional('GAME_MAX_PLAYERS', '100')),
+
+  // Per-user limits. Each LIMIT_* value is the global ceiling for a mature
+  // account on an ordinary connection; see limits/catalogue.ts for what each
+  // one counts and limits/resolver.ts for probation and the privileged multiplier.
+  /** Master switch. False lifts every limit in limits/catalogue.ts. */
+  LIMITS_ENABLED: parseBool(optional('LIMITS_ENABLED', 'true')),
+  /** Days a new account runs on reduced limits. 0 turns probation off. */
+  LIMITS_MATURITY_DAYS: parseNonNegativeInt(
+    'LIMITS_MATURITY_DAYS',
+    optional('LIMITS_MATURITY_DAYS', '7'),
+  ),
+  /** Share of each limit an account on probation gets, rounded up, never below 1. */
+  LIMITS_PROBATION_PERCENT: parsePositiveInt(
+    'LIMITS_PROBATION_PERCENT',
+    optional('LIMITS_PROBATION_PERCENT', '25'),
+  ),
+  /**
+   * Comma-separated IPs and CIDR subnets (an office) whose requests get
+   * {@link liveBootConfig.LIMITS_PRIVILEGED_MULTIPLIER} on every limit. Matched
+   * against `request.ip`, so it is only as trustworthy as TRUST_PROXY.
+   */
+  LIMITS_PRIVILEGED_CIDRS: validatedCidrList('LIMITS_PRIVILEGED_CIDRS'),
+  /** Factor applied to every limit for a privileged connection. */
+  LIMITS_PRIVILEGED_MULTIPLIER: parsePositiveInt(
+    'LIMITS_PRIVILEGED_MULTIPLIER',
+    optional('LIMITS_PRIVILEGED_MULTIPLIER', '10'),
+  ),
+  /** Authenticated REST requests per user per minute, across every route. */
+  LIMIT_API_REQUESTS_PER_MINUTE: parsePositiveInt(
+    'LIMIT_API_REQUESTS_PER_MINUTE',
+    optional('LIMIT_API_REQUESTS_PER_MINUTE', '600'),
+  ),
+  /** Orders placed per user per minute. */
+  LIMIT_TRADES_PER_MINUTE: parsePositiveInt(
+    'LIMIT_TRADES_PER_MINUTE',
+    optional('LIMIT_TRADES_PER_MINUTE', '60'),
+  ),
+  /** Order cancellations (working and pending) per user per minute. */
+  LIMIT_ORDER_CANCELS_PER_MINUTE: parsePositiveInt(
+    'LIMIT_ORDER_CANCELS_PER_MINUTE',
+    optional('LIMIT_ORDER_CANCELS_PER_MINUTE', '60'),
+  ),
+  /** Invite-code lookups per user per minute; bounds code enumeration. */
+  LIMIT_CODE_LOOKUPS_PER_MINUTE: parsePositiveInt(
+    'LIMIT_CODE_LOOKUPS_PER_MINUTE',
+    optional('LIMIT_CODE_LOOKUPS_PER_MINUTE', '20'),
+  ),
+  /** WebSocket `subscribe` frames per user per minute, across sockets. */
+  LIMIT_WS_SUBSCRIBES_PER_MINUTE: parsePositiveInt(
+    'LIMIT_WS_SUBSCRIBES_PER_MINUTE',
+    optional('LIMIT_WS_SUBSCRIBES_PER_MINUTE', '30'),
+  ),
+  /** Games one user may create in any rolling 7 days. */
+  LIMIT_GAMES_CREATED_PER_WEEK: parsePositiveInt(
+    'LIMIT_GAMES_CREATED_PER_WEEK',
+    optional('LIMIT_GAMES_CREATED_PER_WEEK', '10'),
+  ),
+  /** Games one user may own that have not ended. */
+  LIMIT_ACTIVE_GAMES_OWNED: parsePositiveInt(
+    'LIMIT_ACTIVE_GAMES_OWNED',
+    optional('LIMIT_ACTIVE_GAMES_OWNED', '5'),
+  ),
+  /** Games one user may join (including ones they create) in any rolling 24 hours. */
+  LIMIT_GAMES_JOINED_PER_DAY: parsePositiveInt(
+    'LIMIT_GAMES_JOINED_PER_DAY',
+    optional('LIMIT_GAMES_JOINED_PER_DAY', '20'),
+  ),
+  /** Games one user may be in that have not ended. */
+  LIMIT_ACTIVE_GAMES_JOINED: parsePositiveInt(
+    'LIMIT_ACTIVE_GAMES_JOINED',
+    optional('LIMIT_ACTIVE_GAMES_JOINED', '30'),
+  ),
+  /** Working plus pending orders one player may have open in one game. */
+  LIMIT_OPEN_ORDERS_PER_PLAYER: parsePositiveInt(
+    'LIMIT_OPEN_ORDERS_PER_PLAYER',
+    optional('LIMIT_OPEN_ORDERS_PER_PLAYER', '50'),
+  ),
+  /** Live sockets one user may hold open across both WebSocket routes. */
+  LIMIT_WS_CONNECTIONS_PER_USER: parsePositiveInt(
+    'LIMIT_WS_CONNECTIONS_PER_USER',
+    optional('LIMIT_WS_CONNECTIONS_PER_USER', '10'),
+  ),
+  /** Accounts that may be registered from one IP in any rolling 24 hours. */
+  LIMIT_REGISTRATIONS_PER_IP_PER_DAY: parsePositiveInt(
+    'LIMIT_REGISTRATIONS_PER_IP_PER_DAY',
+    optional('LIMIT_REGISTRATIONS_PER_IP_PER_DAY', '5'),
+  ),
 
   /**
    * Hard cap on how many distinct symbols one price-poller tick may fetch.

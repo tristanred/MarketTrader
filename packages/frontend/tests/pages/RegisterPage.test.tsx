@@ -16,7 +16,9 @@ import { ApiError } from '@/lib/api';
 import { RegisterPage } from '@/pages/RegisterPage';
 
 function renderPage() {
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+  const qc = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
   render(
     <QueryClientProvider client={qc}>
       <MemoryRouter>
@@ -62,7 +64,9 @@ describe('RegisterPage', () => {
   });
 
   it('still reports a taken username', async () => {
-    apiFetch.mockRejectedValue(new ApiError(409, { error: 'Username already taken' }, '409 Conflict'));
+    apiFetch.mockRejectedValue(
+      new ApiError(409, { error: 'Username already taken' }, '409 Conflict'),
+    );
     renderPage();
     await submit();
     expect(await screen.findByText('Username already taken')).toBeInTheDocument();

@@ -22,7 +22,9 @@ function setup() {
 // every effective max the limits views show.
 describe('admin config API hooks', () => {
   beforeEach(() => {
-    apiFetch.mockReset().mockResolvedValue({ key: 'LIMITS_PRIVILEGED_CIDRS', value: '203.0.113.0/24' });
+    apiFetch
+      .mockReset()
+      .mockResolvedValue({ key: 'LIMITS_PRIVILEGED_CIDRS', value: '203.0.113.0/24' });
   });
 
   it('refreshes the limits views after saving an option', async () => {

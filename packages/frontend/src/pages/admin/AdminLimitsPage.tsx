@@ -256,7 +256,9 @@ export function AdminLimitsPage() {
               </div>
               <div>
                 <dt className="text-muted-foreground">Probation</dt>
-                <dd>{policy.data.probationPercent}% of each per-user limit, except live connections</dd>
+                <dd>
+                  {policy.data.probationPercent}% of each per-user limit, except live connections
+                </dd>
               </div>
               <div>
                 <dt className="text-muted-foreground">Privileged multiplier</dt>

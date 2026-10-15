@@ -99,9 +99,7 @@ describe('registrations per IP per day', () => {
   // Every request awaits argon2 between the count and the insert, so without
   // per-IP serialisation each one in flight counts zero rows and is admitted.
   it('holds the cap against parallel registrations from one address', async () => {
-    const results = await Promise.all(
-      Array.from({ length: 8 }, () => register('198.51.100.80')),
-    );
+    const results = await Promise.all(Array.from({ length: 8 }, () => register('198.51.100.80')));
     const codes = results.map((r) => r.statusCode).sort();
     expect(codes).toEqual([201, 201, 429, 429, 429, 429, 429, 429]);
   });

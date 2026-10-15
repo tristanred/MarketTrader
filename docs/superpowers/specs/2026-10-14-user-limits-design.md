@@ -84,7 +84,8 @@ counter abstraction.
 
 `resolve(subject, key) → { max: number | null, basis, privileged, probation }` (`null` = unlimited):
 
-1. `LIMITS_ENABLED === false` → `null`, basis `disabled`.
+1. `LIMITS_ENABLED === false` → `null`, basis `disabled`. (The pre-existing per-IP layer in §4.3 is not
+   switched off by this — it predates this feature and stays as the floor.)
 2. Subject is an **admin** → `null`, basis `admin`.
 3. A **per-user override** exists for `key` → that exact value, basis `override`. No multipliers —
    an override is what the admin deliberately chose.
@@ -167,7 +168,7 @@ their own game — `gamesJoined` and `activeGamesJoined`. Joining checks the two
 | `registrationsPerIp` | `LIMIT_REGISTRATIONS_PER_IP_PER_DAY` | `POST /auth/register` — `COUNT(users)` with this `registration_ip` in last 24 h | 5 (50 on a privileged IP) |
 
 Existing per-IP `@fastify/rate-limit` configs (login 5/min, register 10/min, logout, refresh,
-`/stocks/*`, watchlist items, trades, WS upgrades) keep their hard-coded numbers but their `max`
+`/stocks/*`, watchlist items, WS upgrades) keep their hard-coded numbers but their `max`
 becomes a function applying the privileged multiplier (and admin immunity where `request.account`
 is known). This is the IP layer underneath the per-user layer — same two-layer principle as the
 login controls; neither replaces the other.
@@ -290,14 +291,19 @@ the new per-user configs and the existing per-IP ones (gap #13).
 the user's last-60-s count against the resolved max; over → `LimitExceededError`. Admin routes
 and `/health`, `/version`, `/docs` are excluded.
 
-**Quota / concurrent** — in the route, before the insert, inside the same transaction:
+**Quota / concurrent** — in the route, immediately before the insert. Open orders are checked inside
+the insert transaction; game create/join check just before it, because the invite-code retry loop
+catches unique-constraint errors, which would abort a Postgres transaction:
 
 ```ts
 await limits.enforce(request, 'gamesCreated', () => countGamesCreatedSince(tx, userId, weekAgo));
 ```
 
-SQLite serialises writers, so the check is exact there; on Postgres two concurrent requests may
-overshoot by one. Accepted as a soft limit (documented).
+Two concurrent requests may overshoot a cap by one. Accepted as a soft limit (documented).
+
+`POST /games/:id/trades` swaps its old per-IP 30/min config for the per-user `trades` limit — a
+route carries one `config.rateLimit`, and the `apiRequests` ceiling still bounds it per user.
+Open-order denials change from 422 `TOO_MANY_OPEN_ORDERS` to 409 `LIMIT_EXCEEDED`.
 
 **Registration** — `POST /auth/register` stores `request.ip` in `registration_ip` and enforces
 `registrationsPerIp` against `COUNT(users WHERE registration_ip = ip AND created_at > now − 24h)`.

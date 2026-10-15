@@ -8,6 +8,8 @@ import { registerHelmet } from './plugins/helmet.js';
 import { registerRateLimit } from './plugins/rate-limit.js';
 import { registerWebsocket } from './plugins/websocket.js';
 import { registerSwagger } from './plugins/swagger.js';
+import { createLimits } from './limits/index.js';
+import { registerLimitErrorHandler } from './limits/errors.js';
 import { healthRoutes } from './routes/health.js';
 import { versionRoutes } from './routes/version.js';
 import { authRoutes } from './routes/auth.js';
@@ -69,6 +71,8 @@ export async function buildApp(
     analytics?: AnalyticsClient | null;
     /** Live options for this app instance. Defaults to the process environment. */
     runtimeConfig?: RuntimeConfig;
+    /** Pass `{ disabled: true }` to lift every per-user limit. Tests only. */
+    limits?: { disabled?: boolean };
   } = {},
 ): Promise<FastifyInstance> {
   const {
@@ -81,6 +85,7 @@ export async function buildApp(
     leaderboardThrottleMs,
     analytics = getPostHog(),
     runtimeConfig = RuntimeConfig.fromEnvironment(),
+    limits: limitOptions = {},
     ...fastifyOpts
   } = opts;
   const provider = injectedProvider ?? new CachedProvider(db, createProvider(runtimeConfig), runtimeConfig);
@@ -107,6 +112,8 @@ export async function buildApp(
   await registerJwt(app, db);
   await registerRateLimit(app, { disabled: disableRateLimit });
   await registerSwagger(app);
+  // Before any route plugin: route contexts inherit the error handler at registration.
+  registerLimitErrorHandler(app, runtimeConfig);
 
   const registry = new GameClientRegistry();
   const globalRegistry = new GlobalClientRegistry();
@@ -124,6 +131,14 @@ export async function buildApp(
       'runtime config overrides active; they take precedence over the environment until reset in /admin/config',
     );
   }
+
+  // After overrides load, so the first resolved limit already reflects them.
+  const limits = createLimits({
+    db,
+    config: runtimeConfig,
+    ...(limitOptions.disabled !== undefined ? { disabled: limitOptions.disabled } : {}),
+  });
+  app.decorate('limits', limits);
 
   // In-process event bus + achievement engine. Construct before route
   // registration so route factories can capture the bus reference.

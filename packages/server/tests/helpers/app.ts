@@ -34,6 +34,12 @@ export async function createTestDb() {
 export interface TestAppOptions {
   /** Live options for the app; build with `RuntimeConfig.fromEnvironment({ … })`. */
   runtimeConfig?: RuntimeConfig;
+  /**
+   * Per-user limits. Disabled unless a test opts in with `{ disabled: false }`,
+   * because new accounts are on probation and shared fixtures would trip the
+   * reduced quotas.
+   */
+  limits?: { disabled?: boolean };
 }
 
 export async function createTestApp(
@@ -74,6 +80,7 @@ export async function createTestAppWithDb(
     loginThrottle: { disabled: true },
     leaderboardThrottleMs: 0,
     runtimeConfig: config,
+    limits: options.limits ?? { disabled: true },
   });
   return { app, db, config };
 }

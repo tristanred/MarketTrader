@@ -23,7 +23,7 @@ async function createGame(
   token: string,
   name: string,
   visibility: 'public' | 'private',
-): Promise<string> {
+): Promise<{ id: string; inviteCode: string }> {
   const res = await app.inject({
     method: 'POST',
     url: '/games',
@@ -31,7 +31,7 @@ async function createGame(
     payload: { name, ...ACTIVE_WINDOW, startingBalance: 10000, visibility },
   });
   if (res.statusCode !== 201) throw new Error(`createGame failed: ${res.statusCode} ${res.body}`);
-  return res.json<{ id: string; status: string }>().id;
+  return res.json<{ id: string; inviteCode: string }>();
 }
 
 describe('GET /public/featured-games hides private games', () => {
@@ -42,8 +42,25 @@ describe('GET /public/featured-games hides private games', () => {
   beforeAll(async () => {
     app = await createTestApp();
     const token = await register(app, 'f10-organiser');
-    privateId = await createGame(app, token, 'F10 Secret Tournament', 'private');
-    publicId = await createGame(app, token, 'F10 Open Tournament', 'public');
+    const priv = await createGame(app, token, 'F10 Secret Tournament', 'private');
+    const pub = await createGame(app, token, 'F10 Open Tournament', 'public');
+    privateId = priv.id;
+    publicId = pub.id;
+
+    // Both games need two players so the visibility filter, not the player
+    // floor, is what keeps the private one out.
+    const second = await register(app, 'f10-second');
+    await app.inject({
+      method: 'POST',
+      url: `/games/${publicId}/join`,
+      headers: { Authorization: `Bearer ${second}` },
+    });
+    await app.inject({
+      method: 'POST',
+      url: `/games/${privateId}/join`,
+      headers: { Authorization: `Bearer ${second}` },
+      payload: { inviteCode: priv.inviteCode },
+    });
   });
 
   afterAll(async () => {

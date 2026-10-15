@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { eq } from 'drizzle-orm';
+import { count, eq, gte } from 'drizzle-orm';
 import type { Db } from '../db/index.js';
 import { schema } from '../db/index.js';
 import { recomputeMany } from '../services/game-status.js';
@@ -8,6 +8,9 @@ import type { FeaturedGame } from '@markettrader/shared';
 
 const MAX_GAMES = 5;
 const TOP_N = 4;
+// A one-player public game is free to mint, so letting it qualify would let
+// anyone place a game on the logged-out login page.
+const MIN_PLAYERS = 2;
 const MS_PER_DAY = 86_400_000;
 
 /**
@@ -36,11 +39,12 @@ function dayCounter(startIso: string, endIso: string, now: Date): { dayCurrent: 
  * `visibility` is `public`: those intentionally expose usernames and
  * totals, the same fields the in-arena leaderboard already shows to
  * every joined participant. Private games are reachable only by ID or
- * invite code and must never appear here.
+ * invite code and must never appear here. Only games with at least two players qualify, ranked
+ * by the mean return of their top entries.
  */
 export function publicGamesRoutes(db: Db) {
   return async function (app: FastifyInstance): Promise<void> {
-    const { games } = schema;
+    const { games, gamePlayers } = schema;
 
     app.get('/public/featured-games', {
       schema: {
@@ -64,7 +68,10 @@ export function publicGamesRoutes(db: Db) {
           createdAt: games.createdAt,
         })
         .from(games)
-        .where(eq(games.visibility, 'public'));
+        .innerJoin(gamePlayers, eq(gamePlayers.gameId, games.id))
+        .where(eq(games.visibility, 'public'))
+        .groupBy(games.id)
+        .having(gte(count(gamePlayers.id), MIN_PLAYERS));
 
       const statusMap = await recomputeMany(db, rows);
       const active = rows
@@ -95,13 +102,11 @@ export function publicGamesRoutes(db: Db) {
         });
       }
 
-      // Stable secondary sort by total cap (sum of top totalValues) so
-      // the "hottest" tournaments float to the top.
-      featured.sort(
-        (a, b) =>
-          b.leaderboard.reduce((s, e) => s + e.totalValue, 0) -
-          a.leaderboard.reduce((s, e) => s + e.totalValue, 0),
-      );
+      // Ranked by % return so a game's starting balance cannot buy it the top
+      // slot. Array.prototype.sort is stable, so ties keep newest-first.
+      const meanReturn = (g: FeaturedGame): number =>
+        g.leaderboard.reduce((s, e) => s + e.pnlPct, 0) / g.leaderboard.length;
+      featured.sort((a, b) => meanReturn(b) - meanReturn(a));
 
       return reply.status(200).send(featured);
     });

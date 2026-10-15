@@ -9,8 +9,8 @@ import { useAdminResetConfig, useAdminSetConfig } from '@/api/admin/config';
 import { ConfigValueEditor } from './ConfigValueEditor';
 
 const SOURCE_STYLE: Record<ConfigValueSource, { label: string; className: string }> = {
-  default: { label: 'Default', className: 'bg-muted text-muted-foreground' },
-  env: { label: 'Environment', className: 'bg-secondary text-secondary-foreground' },
+  default: { label: 'Default', className: 'border border-hairline-strong text-text' },
+  env: { label: 'Environment', className: 'bg-accent-bg text-accent' },
   override: { label: 'Override', className: 'bg-amber-500/15 text-amber-700 dark:text-amber-400' },
 };
 

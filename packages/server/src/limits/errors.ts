@@ -1,4 +1,4 @@
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { LimitExceededBody, LimitKey, LimitKind } from '@markettrader/shared';
 import type { ConfigReader } from '../config/runtime-config.js';
 import { LIMIT_CATALOGUE } from './catalogue.js';
@@ -57,11 +57,20 @@ export function limitExceededBody(err: LimitExceededError, config: ConfigReader)
  * Root error handler for {@link LimitExceededError}. Must be registered before
  * any route plugin, because route contexts inherit the error handler at
  * registration. Any other error is rethrown, which hands it to Fastify's
- * default handler, so existing error bodies are unchanged.
+ * default handler, so existing error bodies are unchanged. `onUnrecorded`
+ * counts denials thrown outside the enforcer and the rate-limit plugin.
  */
-export function registerLimitErrorHandler(app: FastifyInstance, config: ConfigReader): void {
-  app.setErrorHandler((err: Error, _request, reply) => {
+export function registerLimitErrorHandler(
+  app: FastifyInstance,
+  config: ConfigReader,
+  onUnrecorded?: (request: FastifyRequest, err: LimitExceededError) => void,
+): void {
+  app.setErrorHandler((err: Error, request, reply) => {
     if (!(err instanceof LimitExceededError)) throw err;
+    if (!err.recorded) {
+      onUnrecorded?.(request, err);
+      err.recorded = true;
+    }
     if (err.retryAfterSeconds !== undefined) {
       void reply.header('retry-after', String(err.retryAfterSeconds));
     }

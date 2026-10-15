@@ -69,6 +69,10 @@ function buildInstruments() {
     eventsEmitted: meter.createCounter('markettrader.events.emitted', {
       description: 'Domain events published on the in-process bus, by type',
     }),
+
+    limitsDenied: meter.createCounter('markettrader.limits.denied', {
+      description: 'Requests, frames and connections refused by a usage limit, by limit key',
+    }),
   };
 }
 

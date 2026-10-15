@@ -11,6 +11,8 @@ import { registerSwagger } from './plugins/swagger.js';
 import { createLimits } from './limits/index.js';
 import { rateDenialLabel } from './limits/rate.js';
 import { registerLimitErrorHandler } from './limits/errors.js';
+import { UsageTracker } from './limits/usage-tracker.js';
+import { recordRateLimitDenial, recordUnrecordedDenial, registerUsageHooks } from './limits/usage-hooks.js';
 import { healthRoutes } from './routes/health.js';
 import { versionRoutes } from './routes/version.js';
 import { authRoutes } from './routes/auth.js';
@@ -72,6 +74,8 @@ export async function buildApp(
     analytics?: AnalyticsClient | null;
     /** Live options for this app instance. Defaults to the process environment. */
     runtimeConfig?: RuntimeConfig;
+    /** Request/denial counters for this app. Tests inject one to inspect it. */
+    usageTracker?: UsageTracker;
     /** Pass `{ disabled: true }` to lift every per-user limit. Tests only. */
     limits?: { disabled?: boolean };
   } = {},
@@ -86,6 +90,7 @@ export async function buildApp(
     leaderboardThrottleMs,
     analytics = getPostHog(),
     runtimeConfig = RuntimeConfig.fromEnvironment(),
+    usageTracker = new UsageTracker(),
     limits: limitOptions = {},
     ...fastifyOpts
   } = opts;
@@ -120,11 +125,12 @@ export async function buildApp(
         { limit: rateDenialLabel(request), ip: request.ip, userId: request.account?.id },
         'rate limit exceeded',
       );
+      recordRateLimitDenial(usageTracker, request);
     },
   });
   await registerSwagger(app);
   // Before any route plugin: route contexts inherit the error handler at registration.
-  registerLimitErrorHandler(app, runtimeConfig);
+  registerLimitErrorHandler(app, runtimeConfig, (request, err) => recordUnrecordedDenial(usageTracker, request, err));
 
   const registry = new GameClientRegistry();
   const globalRegistry = new GlobalClientRegistry();
@@ -147,9 +153,13 @@ export async function buildApp(
   const limits = createLimits({
     db,
     config: runtimeConfig,
+    tracker: usageTracker,
     ...(limitOptions.disabled !== undefined ? { disabled: limitOptions.disabled } : {}),
   });
   app.decorate('limits', limits);
+  // Root-level, before every route: the ceiling and the usage counters must
+  // cover each route registered below.
+  registerUsageHooks(app, limits);
 
   // In-process event bus + achievement engine. Construct before route
   // registration so route factories can capture the bus reference.

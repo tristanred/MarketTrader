@@ -12,6 +12,7 @@ import { MockMarketStatusProvider } from './mock-market-status.js';
 import { RuntimeConfig } from '../../src/config/runtime-config.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import type { UsageTracker } from '../../src/limits/usage-tracker.js';
 
 const __dir = path.dirname(fileURLToPath(import.meta.url));
 const migrationsFolder = path.join(__dir, '../../drizzle/sqlite');
@@ -40,6 +41,8 @@ export interface TestAppOptions {
    * reduced quotas.
    */
   limits?: { disabled?: boolean };
+  /** Inject to inspect what the app's usage hooks recorded. */
+  usageTracker?: UsageTracker;
 }
 
 export async function createTestApp(
@@ -81,6 +84,7 @@ export async function createTestAppWithDb(
     leaderboardThrottleMs: 0,
     runtimeConfig: config,
     limits: options.limits ?? { disabled: true },
+    ...(options.usageTracker ? { usageTracker: options.usageTracker } : {}),
   });
   return { app, db, config };
 }

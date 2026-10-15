@@ -80,6 +80,12 @@ describe('error surfaces', () => {
     );
   });
 
+  // apiFetch already builds the message as "<status> <statusText>".
+  it('extractApiMessage does not repeat the status of a body-less error', () => {
+    expect(extractApiMessage(new ApiError(502, null, '502 Bad Gateway'))).toBe('502 Bad Gateway');
+    expect(extractApiMessage(new ApiError(400, null, 'Bad Request'))).toBe('400 Bad Request');
+  });
+
   it('toastApiError titles a limit toast "Limit reached"', () => {
     toastApiError(new ApiError(429, body, '429'), 'Failed to create game');
     expect(useToastStore.getState().toasts.at(-1)).toMatchObject({

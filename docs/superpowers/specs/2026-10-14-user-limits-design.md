@@ -331,6 +331,7 @@ interface LimitExceededBody {
   limit: LimitKey;
   max: number;
   probation: boolean;            // true when the account's limit is reduced for being new
+  maturityDays?: number;         // LIMITS_MATURITY_DAYS; present only when probation is true
   retryAfterSeconds?: number;
 }
 ```

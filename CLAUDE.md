@@ -19,7 +19,8 @@ packages/
               workers (pending-orders settler, portfolio-snapshot, discover)
               achievements observability (OpenTelemetry)
   frontend/   ← React 19 + Vite SPA
-  shared/     ← TypeScript types only — API contracts shared between server and frontend
+  shared/     ← API contracts shared between server and frontend — types, plus the one
+              runtime export `LIMIT_KEYS` (the limit-key list both sides iterate)
 tools/
   seed-game-history/  ← fake game history generator (`pnpm seed:history`)
   logo-assets/
@@ -116,7 +117,9 @@ Every exported function, class, and interface must have a JSDoc comment unless t
   (holdings, open orders, watchlists) and drains the one shared `StockProvider`, so it fetches
   through the batch `getQuotes` path and never more than `PRICE_POLLER_MAX_SYMBOLS` per tick.
   Symbols rank holdings → open orders → watchlists; anything added to that set needs a ceiling
-  on its write path too.
+  on its write path too. Those write ceilings (`LIMIT_OPEN_ORDERS_PER_PLAYER`, the `WATCHLIST_MAX_*`
+  pair) are user limits, so admins and `LIMITS_ENABLED=false` have none — `PRICE_POLLER_MAX_SYMBOLS`
+  is what still bounds the fan-out then, so never remove it on the grounds that the limits exist.
 - **Clean up disconnected clients** — always remove sockets from broadcast lists on `close` and `error`
 - **Auth on upgrade** — validate the JWT offered in `Sec-WebSocket-Protocol` at connection time, not
   per-message. Never accept a credential in the query string: Fastify logs the request line and so
@@ -139,6 +142,15 @@ Every exported function, class, and interface must have a JSDoc comment unless t
   disjoint: 1008 means "your credential is no longer good", the client answers it by refreshing its
   token, and a malformed frame answered that way burns a refresh that cannot help. 4400 rather than
   1003/1007 because `ws` emits those itself and would re-create the overlap.
+- **Per-user socket limits** — a socket past `LIMIT_WS_CONNECTIONS_PER_USER` is closed at upgrade with
+  `WS_LIMIT_EXCEEDED_CLOSE_CODE` (4429, `ws/close-codes.ts`, mirrored in `frontend/src/lib/wsAuth.ts`).
+  Keep it disjoint from 1008 and 4400: the client treats 4429 as a plain backoff, never a refresh. A
+  `subscribe` past `LIMIT_WS_SUBSCRIBES_PER_MINUTE` (counted per user across sockets, by a
+  `SlidingWindowCounter` in the live route) is **dropped** and answered with the frame
+  `{ event: 'error', data: { code: 'LIMIT_EXCEEDED', limit: 'wsSubscribes' } }`, not with a close —
+  closing would hand the client a fresh socket and an immediate re-subscribe, which throttles nothing.
+  The WS upgrade rate limits are per IP and not admin-exempt (the socket authenticates after the
+  upgrade).
 - **Heartbeat** — `startWsHeartbeat` (`ws/heartbeat.ts`) pings every socket in both registries every
   `WS_HEARTBEAT_INTERVAL_MS` and terminates clients that missed the previous ping. Keep the interval
   under the shortest idle timeout on the deployed path (`proxy_read_timeout`), or intermediaries reap
@@ -156,6 +168,7 @@ Every exported function, class, and interface must have a JSDoc comment unless t
   changes nothing, so it takes the normal backoff and reaches `offline`. Keep the two apart:
   refreshing on the second spins forever. A 4400 (rejected frame) is never a credential case and
   always takes the backoff path — that is the whole reason it has its own code.
+  The same holds for a 4429 (connection cap).
 
 ---
 
@@ -193,6 +206,39 @@ Every exported function, class, and interface must have a JSDoc comment unless t
   under `NODE_ENV=test` and for `:memory:` URLs, so the suite stays deterministic — tests
   get an admin from `registerAdmin` in `tests/helpers/app.ts`. If a non-admin already owns
   the name `admin` it is never promoted; the seed falls back to `admin-<hex>`.
+
+## User Limits
+
+Abuse controls live in `packages/server/src/limits/` (ADR-017, `docs/design.md` → User limits).
+
+- **One resolver for every ceiling.** `LimitResolver.resolve(subject, key)`:
+  1. `LIMITS_ENABLED=false` → none
+  2. admin → none
+  3. per-user override → exactly that, and the chain stops (no probation, no multiplier)
+  4. global live option, at `LIMITS_PROBATION_PERCENT` while `isMatureUser` is false
+  5. ×`LIMITS_PRIVILEGED_MULTIPLIER` when `isPrivilegedConnection(request.ip)`
+
+  Never compare against a config value directly in a route; go through the resolver, or overrides and admin immunity silently stop applying.
+- **`request.account`** (`{ id, createdAt, isAdmin }`) comes from the same `users` read `verifyAccessToken` already does — no extra query, no cache — so a demoted admin loses immunity on the next request.
+- **Each kind has its own counter:**
+  - **rate:** `rateLimitFor(limits, key)` on the route's `config.rateLimit`, keyed per user.
+  - **quota and concurrent:** `limits.enforcer.enforce(request, key, count)` before the insert, counting the real rows (helpers in `limits/quota-counts.ts`) — inside the insert's transaction where one exists, but just before it when the insert path retries on constraint errors (game create and join), because a failed statement aborts a Postgres transaction.
+  - **open orders:** `assertOpenOrderCapacity` inside the order transaction, with the resolver's max.
+  - **sockets:** `admitConnection` (`ws/limits.ts`) against the live registries; **`subscribe` frames:** the live route's own per-user `SlidingWindowCounter`.
+  - **global per-user ceiling:** the `UsageTracker` `preHandler`.
+
+  Do not add a counter table for a quota — count the source rows.
+- **Adding a limit:**
+  1. Add the key to `LIMIT_KEYS` (shared).
+  2. Add a `LIMIT_*` live option (env.ts + registry, with `min`/`max`).
+  3. Add a catalogue entry in `limits/catalogue.ts`, including its `label` (used in denial messages). Its `satisfies` clause fails typecheck until you do.
+  4. Add a UI label to `LIMIT_LABELS` in `frontend/src/lib/limitLabels.ts`. Its `Record` fails typecheck until you do.
+  5. Add one enforcement point.
+
+  Tests opt in with `createTestAppWithDb(…, { limits: { disabled: false } })`; the fixture disables limits by default.
+- **The per-IP `@fastify/rate-limit` configs are a second layer, not a replacement.** Their `max` goes through `withPrivilegedIp` so the office allowlist lifts them too, and `LIMITS_ENABLED=false` leaves them on. Keep both layers, as with the login controls.
+- **Refusals** use `LimitExceededBody` (`code: 'LIMIT_EXCEEDED'`, plus `maturityDays` when `probation` is true): 429 + `Retry-After` for rates and windowed quotas, 409 for concurrent caps. A `LimitExceededError` thrown anywhere is turned into that body by `registerLimitErrorHandler(app, config, onUnrecorded?)`, which also records denials no enforcer saw.
+- **Personal data:** a change that stores or ships new personal data (an IP, an email, free text about a person) updates `docs/pii-inventory.md` in the same commit.
 
 ---
 
@@ -237,7 +283,9 @@ hours), the `STOCK_*_MS` resilience tunables (cache TTLs, rate-limit backoff,
 stale-trade policy), the `LOGIN_*` family (per-account login throttle),
 `PENDING_ORDERS_TICK_MS`, `PORTFOLIO_SNAPSHOT_INTERVAL_MS`, `DISCOVER_REFRESH_INTERVAL_MS`,
 `WS_HEARTBEAT_INTERVAL_MS`, `WS_REVALIDATE_INTERVAL_MS`, `PRICE_POLLER_MAX_SYMBOLS`,
-the `WATCHLIST_MAX_*` pair, `SQLITE_BUSY_TIMEOUT_MS`, and the `OTEL_*` family. `env.ts` is the source of truth
+the `WATCHLIST_MAX_*` pair, the `LIMITS_*` policy and `LIMIT_*` per-user limits (User Limits above),
+`USAGE_FLUSH_INTERVAL_MS` / `USAGE_RETENTION_DAYS`, the `GAME_MAX_*` game bounds,
+`SQLITE_BUSY_TIMEOUT_MS`, and the `OTEL_*` family. `env.ts` is the source of truth
 for the full set.
 
 **Live-editable options (`/admin/config`).** `env.ts` exports two objects: `env` (read once at
@@ -420,6 +468,7 @@ equivalent route to the collector.
 - `.changeset/README.md` — the release flow in short form
 - `docs/design.md` — before adding any new entity, endpoint, or feature
 - `docs/observability.md` — the metric catalogue and what is instrumented
+- `docs/pii-inventory.md` — every piece of personal data stored; update it when you add one
 - `docs/superpowers/specs/2026-05-08-markettrader-design.md` — the initial full spec
 
 ---
@@ -436,7 +485,7 @@ equivalent route to the collector.
 `docs/deployment.md` covers the Docker/Postgres path end to end.
 
 **Production deployment configuration is maintained outside this repo.** Nothing here
-provisions a host, installs a service manager, or configures a reverse proxy. Two consequences
+provisions a host, installs a service manager, or configures a reverse proxy. Three consequences
 worth remembering when changing code:
 
 - `nginx.conf` in this repo is the **container** config, baked into `Dockerfile.frontend`. It
@@ -444,3 +493,5 @@ worth remembering when changing code:
 - A change that needs a new proxy route, a new environment variable, or a different process
   launch does not ship by editing this repo alone. Call it out explicitly in your summary so
   the deployment side gets updated too.
+- `request.ip` drives the privileged-IP allowlist and every per-IP limit, so `TRUST_PROXY` on the host must
+  match the real proxy hop. Changing the proxy topology is a limits change too.

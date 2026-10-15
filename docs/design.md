@@ -157,6 +157,73 @@ lowering one takes effect within that window. Override bounds are
 tighter than environment parsing so a mis-click cannot, say, set a 1 ms cache TTL. Restart-only
 options are read-only and say why. The panel also shows the bundle's `VITE_*` build-time values.
 
+### User limits
+
+Every abuse control is a **limit** with a key (`LimitKey`, `packages/shared/src/types/limits.ts`), a catalogue entry (`packages/server/src/limits/catalogue.ts`), and a live option in the `limits` config category that holds its global value. The effective value for a request is resolved in this order (ADR-017):
+
+1. `LIMITS_ENABLED=false` → none
+2. admin → none
+3. per-user override → that value, and nothing below applies
+4. global value, reduced to `LIMITS_PROBATION_PERCENT` (rounded up, at least 1) while the account is younger than `LIMITS_MATURITY_DAYS`
+5. ×`LIMITS_PRIVILEGED_MULTIPLIER` when the request IP is in `LIMITS_PRIVILEGED_CIDRS`
+
+| Limit | Option | Kind | Default |
+|---|---|---|---|
+| API requests per user | `LIMIT_API_REQUESTS_PER_MINUTE` | rate | 600/min |
+| Trades | `LIMIT_TRADES_PER_MINUTE` | rate | 60/min |
+| Order cancels | `LIMIT_ORDER_CANCELS_PER_MINUTE` | rate | 60/min |
+| Invite-code lookups | `LIMIT_CODE_LOOKUPS_PER_MINUTE` | rate | 20/min |
+| Live `subscribe` frames | `LIMIT_WS_SUBSCRIBES_PER_MINUTE` | rate | 30/min |
+| Games created | `LIMIT_GAMES_CREATED_PER_WEEK` | quota | 10 / 7 days |
+| Active games owned | `LIMIT_ACTIVE_GAMES_OWNED` | concurrent | 5 |
+| Games joined | `LIMIT_GAMES_JOINED_PER_DAY` | quota | 20 / 24 h |
+| Active games joined | `LIMIT_ACTIVE_GAMES_JOINED` | concurrent | 30 |
+| Open orders per game-player (working + pending) | `LIMIT_OPEN_ORDERS_PER_PLAYER` | concurrent | 50 |
+| Watchlists / items per list | `WATCHLIST_MAX_PER_USER` / `WATCHLIST_MAX_ITEMS` | concurrent | 20 / 50 |
+| Open live sockets | `LIMIT_WS_CONNECTIONS_PER_USER` | concurrent | 10 |
+| Registrations per IP | `LIMIT_REGISTRATIONS_PER_IP_PER_DAY` | per IP | 5 / 24 h |
+
+**Where each kind is counted:**
+- Trades, cancels and code lookups: `@fastify/rate-limit`, keyed per user, sized by the resolver (`rateLimitFor`).
+- API requests: the in-memory `UsageTracker`, from a global `preHandler`.
+- `subscribe` frames: a per-user `SlidingWindowCounter` inside the `/games/:id/live` route, shared across that user's sockets.
+- Quotas and the game/watchlist caps: `limits.enforcer.enforce(...)`, counting the real rows (`limits/quota-counts.ts`).
+- Open orders: `assertOpenOrderCapacity` inside the order's transaction, with the resolver's max, on both the working and the pending path.
+- Sockets: `admitConnection` (`ws/limits.ts`) against both live registries at upgrade.
+
+**How a refusal looks:**
+- **HTTP body:** `LimitExceededBody` — `{ error, code: 'LIMIT_EXCEEDED', limit, max, probation, maturityDays?, retryAfterSeconds? }`. `maturityDays` is present only when `probation` is true, so the client can say how long probation lasts.
+- **Rates and windowed quotas:** 429 with `Retry-After`. For a quota, the wait is computed from the oldest row still in the window.
+- **Concurrent caps:** 409.
+- **WebSocket:** a socket past the connection cap is closed with `4429`. A `subscribe` past the frame rate is dropped and answered with the frame `{ event: 'error', data: { code: 'LIMIT_EXCEEDED', limit: 'wsSubscribes' } }`, and the previous subscription stays in force.
+- **The pre-existing per-IP route limits** (login, register, refresh, `/stocks/*`, the watchlist write caps, WS upgrades) keep their numbers and stay on when `LIMITS_ENABLED=false`. They gain the privileged multiplier (`withPrivilegedIp`). An admin is exempt only where the route authenticates before the limiter runs (the watchlist writes); the public routes and the WS upgrade caps are not admin-exempt, because the socket authenticates after the upgrade.
+
+**No ceiling for admins or with the off switch.** Admins, and everyone while `LIMITS_ENABLED=false`, have no open-order or watchlist write ceiling. The price poller's fan-out from those rows is still bounded by `PRICE_POLLER_MAX_SYMBOLS`.
+
+**Game bounds are global and not per-user:**
+- `GAME_MAX_STARTING_BALANCE`
+- `GAME_MAX_DURATION_DAYS`
+- `GAME_MAX_START_DELAY_DAYS`
+- `GAME_MAX_PLAYERS` (409 `GAME_FULL`)
+
+The first three are checked on `POST /games` (400 `{ error }`, an input error rather than `LIMIT_EXCEEDED`); the player cap is checked on join (409 `GAME_FULL`). Admin edits through `PATCH /admin/games/:id` and admin seating are not checked.
+
+`/games/browse` is paginated. `/public/featured-games` only considers public games with at least two players; it takes the newest qualifying active games, then orders them by the mean percentage return of their top entries, so a huge starting balance cannot buy the top slot on the login page.
+
+**Monitoring.**
+- Requests and denials are counted in memory per user (or per IP when logged out), per registered route or limit, per hour. Per-IP route-limit denials are labelled `ip:<METHOD /route>`.
+- The `usage-rollup` worker writes them to `api_usage_hourly` / `limit_denials_hourly` every `USAGE_FLUSH_INTERVAL_MS` and prunes after `USAGE_RETENTION_DAYS`. Deleting a user deletes their usage rows and drops their buffered counts (`UsageTracker.forgetUser`); a flush that races the delete can leave one interval behind until the prune.
+- `/admin/limits` shows:
+  - the policy, including the caller's IP as the server sees it and whether it is privileged (also shown above the Limits card on `/admin/config`)
+  - the top consumers over 24 h or 7 d, by requests or by denials
+  - every active override
+- Each user's admin page has a "Limits & usage" card:
+  - effective limit, basis, and usage. `used` is null where it cannot be attributed to the user: the plugin-backed rates (trades, cancels, code lookups), `wsSubscribes`, and the per-IP registration quota. `apiRequests` is the only rate with a value.
+  - the override editor
+  - the registration IP, with the other accounts registered from it
+  - 7-day request volume by route
+  - recent denials
+
 ---
 
 ## System Boundaries
@@ -246,7 +313,7 @@ These are candidates for future design cycles. None are committed.
 |---|---|
 | Should games be public (discoverable) or private (join by ID only)? | **Resolved 2026-08-13** — both. Public by default with a per-game private opt-out, plus invite links for either. Private games require the invite code to join (enforced server-side on `POST /games/:id/join`, not just at the `/games/by-code/:code` lookup) — raw ID alone is not sufficient once a game is private. |
 | What happens to stock price cache when market is closed? | Use last known price, mark as "stale" |
-| Should there be a rate limit on trades per player per game? | Not in MVP |
+| Should there be a rate limit on trades per player per game? | **Resolved 2026-10-14** — per user rather than per game: `LIMIT_TRADES_PER_MINUTE` (60/min, live, overridable per user). See User limits. |
 
 ---
 
@@ -254,18 +321,24 @@ These are candidates for future design cycles. None are committed.
 
 ### Open orders are capped per game-player
 
-`MAX_OPEN_ORDERS_PER_PLAYER` (`services/working-order.ts`) caps `working` +
-`pending` rows at 50 per game-player; a bracket counts as three. Placing past it
-is refused with `TOO_MANY_OPEN_ORDERS`. The cap exists because every resting
-order's symbol joins the price poller's 5-second fan-out, so an unbounded order
-book is an unbounded upstream load. It is a constant rather than an env var —
-promote it if a real game ever needs a different number.
+`LIMIT_OPEN_ORDERS_PER_PLAYER` (live, default 50, overridable per user) caps `working` + `pending` rows per
+game-player; a bracket counts as three. Placing past it is refused with `LIMIT_EXCEEDED` (409 — it was
+422 `TOO_MANY_OPEN_ORDERS` before 2026-10, and that error code is gone). Until
+2026-10 the cap was a constant and the pending path (`reservePendingTrade`) skipped it; both paths now count.
+The cap exists because every resting order's symbol joins the price poller's 5-second fan-out. Admins, and
+everyone while `LIMITS_ENABLED=false`, have no cap; `PRICE_POLLER_MAX_SYMBOLS` still bounds the fan-out.
 
-Two things it does not do. The count is a read inside the transaction followed by
-an insert, so concurrent placements can overshoot by roughly the number of
-in-flight requests — bounded and harmless now that it only backstops a load
-limit. And it is per *game-player*, so a player who creates N games gets N × 50;
-the load that permits is cacheable, since the poller de-duplicates symbols.
+The count is a read inside the transaction followed by an insert, so on Postgres concurrent placements can
+overshoot by roughly the number of in-flight requests. It is per *game-player*, so the per-user ceiling is
+this × `LIMIT_ACTIVE_GAMES_JOINED`.
+
+### Open orders can crowd watchlist symbols out of the price poller
+
+The poller's `openOrderSymbols` query covers every active game, not only games with a connected socket, and
+open-order symbols rank above watchlist symbols in the `PRICE_POLLER_MAX_SYMBOLS` cut. The user limits bound
+one account's contribution (active games joined × open orders per game), but enough accounts with resting
+orders on distinct symbols can still push watchlist symbols out of live pricing. The proper fix — weighting
+or scoping the open-order set — changes poller semantics and is left for its own change.
 
 ### Day orders are the default time-in-force
 
@@ -339,7 +412,9 @@ username in memory, so:
 
 Neither matters at the current single-process deployment. Moving to more than one
 server instance means moving this state to the database or a shared cache — the
-per-IP limiter (`@fastify/rate-limit`, also in-process) has the same constraint.
+per-IP limiter (`@fastify/rate-limit`, also in-process), the per-user rate windows,
+the limit-override cache, and the unflushed `UsageTracker` buffers have the same
+constraint (ADR-017).
 
 ### Discover's S&P 500 list is maintained by hand
 

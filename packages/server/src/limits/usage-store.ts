@@ -78,6 +78,8 @@ export async function pruneUsage(db: Db, olderThanIso: string): Promise<void> {
 /**
  * Removes a user's persisted usage history. Call inside the user-delete
  * transaction; the buffered counts are dropped separately with `UsageTracker.forgetUser`.
+ * A flush that swapped the buffer before `forgetUser` but commits after the delete can
+ * re-insert rows for the gone id; they age out with the retention prune.
  */
 export async function deleteUsageForUser(tx: Pick<Db, 'delete'>, userId: string): Promise<void> {
   await tx
@@ -175,6 +177,7 @@ async function storedContributions(
  * Subjects ranked by requests or denials since `sinceIso`, merging the tracker's
  * unflushed buffer so the panel is current to the request, not the last flush.
  * The database ranks and caps subjects; the buffer merge and final ordering run in memory.
+ * A `user` subject may name a deleted account (see {@link deleteUsageForUser}); callers resolve ids leniently.
  */
 export async function topConsumers(
   db: Db,

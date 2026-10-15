@@ -1,0 +1,7 @@
+name: markettrader/invariants-tests
+version: 0.0.1
+dependencies:
+  markettrader/invariants: "*"
+  codeql/javascript-all: "*"
+extractor: javascript
+tests: .

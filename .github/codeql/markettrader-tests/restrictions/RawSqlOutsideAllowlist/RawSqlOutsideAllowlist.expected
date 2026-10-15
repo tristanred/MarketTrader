@@ -1,0 +1,11 @@
+| packages/server/src/db/index.ts:11:9:11:46 | client. ... sions') | Raw SQL via driver client .execute(); use the Drizzle query builder (only the PRAGMAs in db/index.ts may bypass it). |
+| packages/server/src/services/trade.ts:25:3:25:32 | db.run( ... users`) | Raw SQL via db.run(); use the Drizzle query builder (only the PRAGMAs in db/index.ts may bypass it). |
+| packages/server/src/services/trade.ts:26:3:26:27 | db.exec ... ECT 1`) | Raw SQL via db.execute(); use the Drizzle query builder (only the PRAGMAs in db/index.ts may bypass it). |
+| packages/server/src/services/trade.ts:27:3:27:34 | db.all( ... users`) | Raw SQL via db.all(); use the Drizzle query builder (only the PRAGMAs in db/index.ts may bypass it). |
+| packages/server/src/services/trade.ts:28:3:28:51 | db.get( ... ${id}`) | Raw SQL via db.get(); use the Drizzle query builder (only the PRAGMAs in db/index.ts may bypass it). |
+| packages/server/src/services/trade.ts:29:3:29:55 | sql.raw ... ame}'`) | Raw SQL via sql.raw(); use the Drizzle query builder (only the PRAGMAs in db/index.ts may bypass it). |
+| packages/server/src/services/trade.ts:30:3:30:12 | db.$client | Raw SQL via $client; use the Drizzle query builder (only the PRAGMAs in db/index.ts may bypass it). |
+| packages/server/src/services/trade.ts:30:3:30:32 | db.$cli ... ECT 1') | Raw SQL via driver client .execute(); use the Drizzle query builder (only the PRAGMAs in db/index.ts may bypass it). |
+| packages/server/src/services/trade.ts:31:26:31:63 | tx.run( ... h = 0`) | Raw SQL via db.run(); use the Drizzle query builder (only the PRAGMAs in db/index.ts may bypass it). |
+| packages/server/src/services/trade.ts:32:3:32:72 | createC ...  = ON') | Raw SQL via driver client .execute(); use the Drizzle query builder (only the PRAGMAs in db/index.ts may bypass it). |
+| packages/server/src/services/trade.ts:34:3:34:44 | pg`DELE ... {name}` | Raw SQL via a driver-client tagged template; use the Drizzle query builder (only the PRAGMAs in db/index.ts may bypass it). |

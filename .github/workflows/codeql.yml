@@ -1,0 +1,78 @@
+name: CodeQL
+
+# GitHub's security-extended suite plus the project's own invariant queries
+# (.github/codeql/markettrader-queries). Results land in the Security tab and
+# as PR annotations; see docs/codeql.md for what each query enforces.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Weekly, so new upstream queries run against an otherwise quiet main.
+    - cron: '23 4 * * 1'
+
+jobs:
+  analyze:
+    name: Analyze (javascript-typescript)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        id: init
+        uses: github/codeql-action/init@v4
+        with:
+          languages: javascript-typescript
+          build-mode: none
+          config-file: ./.github/codeql/codeql-config.yml
+          # The query pack's lock file pins a recent codeql/javascript-all,
+          # which needs a CLI at least as new.
+          tools: latest
+
+      - name: Install the invariant query pack's dependencies
+        env:
+          CODEQL: ${{ steps.init.outputs.codeql-path }}
+        run: |
+          "$CODEQL" pack install .github/codeql/markettrader-queries
+          "$CODEQL" pack install .github/codeql/markettrader-tests
+
+      # The queries' own regression tests: each fixture pins what a query must
+      # and must not flag, so a query edit that goes vacuous fails here.
+      - name: Test the invariant queries
+        env:
+          CODEQL: ${{ steps.init.outputs.codeql-path }}
+        run: '"$CODEQL" test run --threads=0 .github/codeql/markettrader-tests'
+
+      - name: Analyze
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: '/language:javascript-typescript'
+
+  # The workflows themselves (injection via untrusted event fields, over-broad
+  # tokens). Kept so moving off default setup doesn't drop this coverage.
+  analyze-actions:
+    name: Analyze (actions)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: actions
+          queries: security-extended
+
+      - name: Analyze
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: '/language:actions'

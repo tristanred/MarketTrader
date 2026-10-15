@@ -1,0 +1,4 @@
+| packages/frontend/src/components/OrderForm.tsx:1:1:1:33 | import  ... og-js'; | posthog-js is only imported by lib/posthog.ts; import from '@/lib/posthog' instead. |
+| packages/frontend/src/components/OrderForm.tsx:2:1:2:45 | import  ... og-js'; | posthog-js is only imported by lib/posthog.ts; import from '@/lib/posthog' instead. |
+| packages/frontend/src/components/OrderForm.tsx:7:10:7:53 | import( ... ernal') | posthog-js is only imported by lib/posthog.ts; import from '@/lib/posthog' instead. |
+| packages/frontend/src/lib/posthog.ts:3:1:3:39 | import  ... og-js'; | Static value import of posthog-js puts the SDK in the entry bundle; load it with import('posthog-js') and keep static imports type-only. |

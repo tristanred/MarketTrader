@@ -1,0 +1,6 @@
+| packages/frontend/src/lib/posthogConfig.ts:5:24:5:61 | import. ... TER_URL | import.meta.env.VITE_OTEL_EXPORTER_URL is only read in packages/frontend/src/observability/otel.ts; import the value from that module. |
+| packages/frontend/src/main.tsx:1:20:1:51 | import. ... HOG_KEY | import.meta.env.VITE_POSTHOG_KEY is only read in packages/frontend/src/lib/posthogConfig.ts; import the value from that module. |
+| packages/frontend/src/main.tsx:3:21:3:41 | env.VIT ... OG_HOST | import.meta.env.VITE_POSTHOG_HOST is only read in packages/frontend/src/lib/posthogConfig.ts; import the value from that module. |
+| packages/frontend/src/main.tsx:4:9:4:25 | VITE_OTEL_SERVICE | import.meta.env.VITE_OTEL_SERVICE is only read in packages/frontend/src/observability/otel.ts; import the value from that module. |
+| packages/frontend/src/main.tsx:8:25:8:63 | import. ... _HOST'] | import.meta.env.VITE_POSTHOG_UI_HOST is only read in packages/frontend/src/lib/posthogConfig.ts; import the value from that module. |
+| packages/frontend/src/main.tsx:9:25:9:63 | import. ... TER_URL | import.meta.env.VITE_OTEL_EXPORTER_URL is only read in packages/frontend/src/observability/otel.ts; import the value from that module. |

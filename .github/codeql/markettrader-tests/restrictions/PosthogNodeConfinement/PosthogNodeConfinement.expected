@@ -1,0 +1,3 @@
+| packages/server/src/services/trade.ts:1:1:1:39 | import  ... -node'; | posthog-node is only imported by observability/posthog.ts; use getPostHog() / AnalyticsClient. |
+| packages/server/src/services/trade.ts:6:3:6:49 | ph.capt ... ade' }) | PostHog capture() outside observability/analytics.ts; emit a domain event on the EventBus and capture it in the analytics subscriber. |
+| packages/server/src/services/trade.ts:7:3:7:37 | ph.capt ... r('x')) | PostHog captureException() outside observability/error-capture.ts; let errors reach the error-capture hook instead. |

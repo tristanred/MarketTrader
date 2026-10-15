@@ -4178,6 +4178,8 @@ describe('game quotas', () => {
   // Review Focus #4: an override below current usage must deny new creates without touching
   // existing rows.
   it('denies the next create when an override is lowered below current usage', async () => {
+    // The suite boots with 2 creates/week; raise it so the 5 setup games are not refused by it.
+    config.set('LIMIT_GAMES_CREATED_PER_WEEK', 10);
     config.set('LIMIT_ACTIVE_GAMES_OWNED', 10);
     const admin = await registerAdmin(app, fresh('lower-admin'));
     const user = await registerUser(app, fresh('lowered'));
@@ -8582,21 +8584,23 @@ describe('/admin/limits and /admin/users/:id/limits', () => {
 
   // Review Focus #4: an override below current usage is reported as-is (used > max), not clamped.
   it('reports usage above an override that was lowered beneath it', async () => {
-    const second = await app.inject({ method: 'POST', url: '/games', headers: member, payload: gamePayload('lim g2') });
-    expect(second.statusCode).toBe(201);
+    // Its own user: the shared member's game count feeds the top-consumers test below.
+    const owner = await registerUser(app, 'lim-lowered');
+    for (const name of ['low g1', 'low g2']) {
+      const res = await app.inject({ method: 'POST', url: '/games', headers: owner.headers, payload: gamePayload(name) });
+      expect(res.statusCode).toBe(201);
+    }
     const put = await app.inject({
       method: 'PUT',
-      url: `/admin/users/${memberId}/limits/activeGamesOwned`,
+      url: `/admin/users/${owner.userId}/limits/activeGamesOwned`,
       headers: admin,
       payload: { value: 1, note: 'below usage' },
     });
     expect(put.statusCode).toBe(200);
 
-    const res = await app.inject({ method: 'GET', url: `/admin/users/${memberId}/limits`, headers: admin });
+    const res = await app.inject({ method: 'GET', url: `/admin/users/${owner.userId}/limits`, headers: admin });
     const row = res.json<AdminUserLimitsResponse>().rows.find((r) => r.key === 'activeGamesOwned')!;
     expect(row).toMatchObject({ basis: 'override', effectiveMax: 1, used: 2 });
-
-    await app.inject({ method: 'DELETE', url: `/admin/users/${memberId}/limits/activeGamesOwned`, headers: admin });
   });
 
   it('marks an admin as immune', async () => {

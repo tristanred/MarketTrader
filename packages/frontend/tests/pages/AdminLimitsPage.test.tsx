@@ -119,7 +119,7 @@ describe('AdminLimitsPage', () => {
   it('summarises the policy, shows the caller IP, and links to the config editor', () => {
     renderPage();
     expect(screen.getByText('203.0.113.0/24')).toBeInTheDocument();
-    expect(screen.getByText('25% of each limit')).toBeInTheDocument();
+    expect(screen.getByText('25% of each per-user limit, except live connections')).toBeInTheDocument();
     expect(screen.getByText(/privileged ✓/)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Edit in Configuration/ })).toHaveAttribute(
       'href',

@@ -107,7 +107,7 @@ describe('validateProductionEnv', () => {
   });
 
   it('accepts a bounded TRUST_PROXY', () => {
-    for (const trust of ['loopback', 'uniquelocal', '10.0.0.0/8', 1, false] as const) {
+    for (const trust of ['loopback', 'uniquelocal', '10.0.0.0/8', false] as const) {
       expect(() => validateProductionEnv({ ...valid, TRUST_PROXY: trust })).not.toThrow();
     }
   });
@@ -141,9 +141,11 @@ describe('parseTrustProxy', () => {
     expect(parseTrustProxy('true')).toBe(true);
   });
 
-  it('parses a hop count as a number', () => {
-    expect(parseTrustProxy('1')).toBe(1);
-    expect(parseTrustProxy('0')).toBe(0);
+  it('rejects a hop count', () => {
+    // Fastify >= 5.12.7 treats a numeric trustProxy as trusting nothing, so behind
+    // a proxy every client would share the proxy's rate-limit bucket.
+    expect(() => parseTrustProxy('1')).toThrow(/hop count/);
+    expect(() => parseTrustProxy('0')).toThrow(/hop count/);
   });
 
   it('accepts the proxy-addr presets', () => {

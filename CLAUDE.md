@@ -227,9 +227,11 @@ VITE_POSTHOG_HOST=     # build-time; normally /relay (same-origin proxy)
 
 `TRUST_PROXY` decides `request.ip`, which is the key every per-route rate limit is
 bucketed on. Trusting every hop (`true`) makes that value client-controlled and lifts
-every cap, so `validateProductionEnv` rejects it. Accepts `false`, a hop count, the
+every cap, so `validateProductionEnv` rejects it. Accepts `false`, the
 `loopback`/`linklocal`/`uniquelocal` presets, or a comma-separated IP/CIDR list; parsed
-and validated at boot by `parseTrustProxy` in `env.ts`.
+and validated at boot by `parseTrustProxy` in `env.ts`. A hop count is refused at boot:
+Fastify ≥ 5.12.7 treats a numeric `trustProxy` as trusting nothing, which would put
+every client behind the proxy in one rate-limit bucket.
 
 Additional vars rarely need touching (defined in `env.ts`, most also documented
 in `.env.example`): the `MARKET_*` family (hours mode, status provider, extended

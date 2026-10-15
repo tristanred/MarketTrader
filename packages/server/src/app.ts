@@ -9,6 +9,7 @@ import { registerRateLimit } from './plugins/rate-limit.js';
 import { registerWebsocket } from './plugins/websocket.js';
 import { registerSwagger } from './plugins/swagger.js';
 import { createLimits } from './limits/index.js';
+import { rateDenialLabel } from './limits/rate.js';
 import { registerLimitErrorHandler } from './limits/errors.js';
 import { healthRoutes } from './routes/health.js';
 import { versionRoutes } from './routes/version.js';
@@ -110,7 +111,17 @@ export async function buildApp(
   await registerSensible(app);
   await registerCookie(app);
   await registerJwt(app, db);
-  await registerRateLimit(app, { disabled: disableRateLimit });
+  await registerRateLimit(app, {
+    disabled: disableRateLimit,
+    // Info, not warn: warn ships to PostHog, which bills by volume, and a
+    // script hammering a limit would turn into a bill.
+    onExceeded: (request) => {
+      request.log.info(
+        { limit: rateDenialLabel(request), ip: request.ip, userId: request.account?.id },
+        'rate limit exceeded',
+      );
+    },
+  });
   await registerSwagger(app);
   // Before any route plugin: route contexts inherit the error handler at registration.
   registerLimitErrorHandler(app, runtimeConfig);
@@ -181,7 +192,7 @@ export async function buildApp(
 
   await app.register(healthRoutes);
   await app.register(versionRoutes);
-  await app.register(authRoutes(db, new FailedLoginTracker(runtimeConfig, loginThrottle)));
+  await app.register(authRoutes(db, new FailedLoginTracker(runtimeConfig, loginThrottle), limits));
   await app.register(gameRoutes(db, limits, bus));
   await app.register(publicGamesRoutes(db));
   await app.register(stockRoutes(db, provider, runtimeConfig));

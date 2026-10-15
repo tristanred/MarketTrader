@@ -34,6 +34,7 @@ import type { EventBus } from '../events/bus.js';
 import type { ConfigReader } from '../config/runtime-config.js';
 import type { Limits } from '../limits/index.js';
 import { subjectOf } from '../limits/resolver.js';
+import { rateLimitFor } from '../limits/rate.js';
 import { setRetryAfter } from './retry-after.js';
 import { meters } from '../observability/telemetry.js';
 
@@ -150,7 +151,7 @@ export function tradingRoutes(
       '/games/:id/trades',
       {
         onRequest: rawApp.authenticate,
-        config: { rateLimit: { max: 30, timeWindow: '1 minute' } },
+        config: { rateLimit: rateLimitFor(limits, 'trades') },
         schema: {
           tags: ['Trading'],
           summary: 'Execute a buy or sell at the live market price.',
@@ -574,6 +575,7 @@ export function tradingRoutes(
       '/games/:id/trades/:tradeId',
       {
         onRequest: rawApp.authenticate,
+        config: { rateLimit: rateLimitFor(limits, 'orderCancels') },
         schema: {
           tags: ['Trading'],
           summary: 'Cancel a resting working order (limit/stop/bracket).',
@@ -644,6 +646,7 @@ export function tradingRoutes(
       '/games/:id/trades/pending/:pendingId',
       {
         onRequest: rawApp.authenticate,
+        config: { rateLimit: rateLimitFor(limits, 'orderCancels') },
         schema: {
           tags: ['Trading'],
           summary: 'Cancel a pending trade.',

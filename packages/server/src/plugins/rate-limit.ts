@@ -1,4 +1,4 @@
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 import fastifyRateLimit from '@fastify/rate-limit';
 
 /**
@@ -7,11 +7,15 @@ import fastifyRateLimit from '@fastify/rate-limit';
  * When `disabled` is true, the plugin is registered with an effectively
  * infinite ceiling so per-route configs are honored but never trigger. Used
  * in tests, where shared fixtures would otherwise blow through the limits
- * (especially `/auth/register`, capped at 10/min).
+ * (especially `/auth/register`, capped at 10/min). Per-user configs from
+ * `limits/rate.ts` carry their own `allowList`, which replaces this one, so
+ * they honour the separate `limits.disabled` switch instead.
+ *
+ * `onExceeded` runs for every denial on every route; no route overrides it.
  */
 export async function registerRateLimit(
   app: FastifyInstance,
-  opts: { disabled?: boolean } = {},
+  opts: { disabled?: boolean; onExceeded?: (request: FastifyRequest) => void } = {},
 ): Promise<void> {
   // No keyGenerator on purpose. The default is `req.ip`, which is only as
   // trustworthy as Fastify's `trustProxy` — bounded by TRUST_PROXY (see env.ts).
@@ -23,5 +27,6 @@ export async function registerRateLimit(
     // per-route configs. Used in tests so shared-app fixtures don't hit caps
     // like /auth/register's 10/min.
     ...(opts.disabled ? { allowList: () => true } : {}),
+    ...(opts.onExceeded ? { onExceeded: (request: FastifyRequest) => opts.onExceeded?.(request) } : {}),
   });
 }

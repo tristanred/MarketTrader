@@ -6,6 +6,7 @@ import type { Db } from '../db/index.js';
 import { schema } from '../db/index.js';
 import type { Watchlist } from '@markettrader/shared';
 import type { Limits } from '../limits/index.js';
+import { withPrivilegedIp } from '../limits/rate.js';
 
 const nameSchema = z
   .string()
@@ -260,7 +261,7 @@ export function watchlistRoutes(db: Db, limits: Limits) {
         // Every row added here is fetched by the price poller on behalf of this
         // user whenever they hold a live socket, so the write path gets a cap of
         // its own on top of the per-list ceiling below.
-        config: { rateLimit: { max: 60, timeWindow: '1 minute' } },
+        config: { rateLimit: withPrivilegedIp(limits.config, { max: 60, timeWindow: '1 minute' }) },
         schema: {
           tags: ['Watchlists'],
           summary: 'Add a symbol to a watchlist (idempotent).',
@@ -296,7 +297,7 @@ export function watchlistRoutes(db: Db, limits: Limits) {
         onRequest: rawApp.authenticate,
         // Autosaved from a textarea as the user types, so the client debounces
         // and this bounds what a stuck debounce (or a script) can push through.
-        config: { rateLimit: { max: 120, timeWindow: '1 minute' } },
+        config: { rateLimit: withPrivilegedIp(limits.config, { max: 120, timeWindow: '1 minute' }) },
         schema: {
           tags: ['Watchlists'],
           summary: "Set or clear a symbol's note on a watchlist.",

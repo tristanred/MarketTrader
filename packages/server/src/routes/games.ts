@@ -13,6 +13,7 @@ import type { EventBus } from '../events/bus.js';
 import { checkGameBounds } from '../services/game-bounds.js';
 import type { Limits } from '../limits/index.js';
 import { LIMIT_CATALOGUE } from '../limits/catalogue.js';
+import { rateLimitFor } from '../limits/rate.js';
 import {
   countActiveGamesJoined,
   countActiveGamesOwned,
@@ -304,6 +305,9 @@ export function gameRoutes(db: Db, limits: Limits, bus?: EventBus) {
 
     app.get('/games/by-code/:code', {
       onRequest: rawApp.authenticate,
+      // Invite codes are the only secret on a private game; this bounds how
+      // fast one account can guess at them.
+      config: { rateLimit: rateLimitFor(limits, 'codeLookups') },
       schema: {
         tags: ['Games'],
         summary: 'Resolve an invite code to a join prompt.',

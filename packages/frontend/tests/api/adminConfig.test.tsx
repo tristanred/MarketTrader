@@ -21,9 +21,9 @@ function setup() {
 // A LIMIT_* or LIMITS_* edit changes the policy, the privileged-IP verdict and
 // every effective max the limits views show.
 describe('admin config API hooks', () => {
-  beforeEach(() =>
-    apiFetch.mockReset().mockResolvedValue({ key: 'LIMITS_PRIVILEGED_CIDRS', value: '203.0.113.0/24' }),
-  );
+  beforeEach(() => {
+    apiFetch.mockReset().mockResolvedValue({ key: 'LIMITS_PRIVILEGED_CIDRS', value: '203.0.113.0/24' });
+  });
 
   it('refreshes the limits views after saving an option', async () => {
     const { wrapper, invalidate } = setup();

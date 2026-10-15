@@ -116,4 +116,13 @@ describe('GameClientRegistry', () => {
     registry.add('game-2', 'p2', b);
     expect([...registry.sockets()]).toEqual([a, b]);
   });
+
+  it('counts a user’s sockets across every game', () => {
+    registry.add('game-1', 'user-1', makeMockSocket());
+    registry.add('game-2', 'user-1', makeMockSocket());
+    registry.add('game-1', 'user-2', makeMockSocket());
+    expect(registry.countForUser('user-1')).toBe(2);
+    expect(registry.countForUser('user-2')).toBe(1);
+    expect(registry.countForUser('nobody')).toBe(0);
+  });
 });

@@ -20,3 +20,13 @@ export const WS_POLICY_CLOSE_CODE = 1008;
  * the overloading this code exists to remove.
  */
 export const WS_INVALID_FRAME_CLOSE_CODE = 4400;
+
+/**
+ * Close code for a connection refused because the account already holds its
+ * maximum number of live sockets (`wsConnections`).
+ *
+ * Disjoint from {@link WS_POLICY_CLOSE_CODE} on purpose: the credential is fine,
+ * so the client must back off rather than spend a refresh. Mirrored in
+ * `packages/frontend/src/lib/wsAuth.ts`.
+ */
+export const WS_LIMIT_EXCEEDED_CLOSE_CODE = 4429;

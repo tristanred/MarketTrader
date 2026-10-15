@@ -58,3 +58,12 @@ export function isStaleCredentialClose(code: number | undefined, openedAt: numbe
   if (code !== WS_POLICY_CLOSE_CODE || openedAt === 0) return false;
   return Date.now() - openedAt >= WS_CREDENTIAL_STALE_AFTER_MS;
 }
+
+/**
+ * Close code for a socket refused because the account already holds its
+ * maximum number of live connections. The credential is fine, so this takes
+ * the ordinary backoff path — {@link isStaleCredentialClose} only ever matches
+ * {@link WS_POLICY_CLOSE_CODE}. Keep in step with `WS_LIMIT_EXCEEDED_CLOSE_CODE`
+ * in `packages/server/src/ws/close-codes.ts`.
+ */
+export const WS_LIMIT_EXCEEDED_CLOSE_CODE = 4429;

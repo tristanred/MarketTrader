@@ -45,4 +45,15 @@ describe('GlobalClientRegistry', () => {
     registry.add('u2', b);
     expect([...registry.sockets()]).toEqual([a, b]);
   });
+
+  it('counts a user’s sockets', () => {
+    const a = { readyState: 1, send: () => {} } as unknown as WebSocket;
+    const b = { readyState: 1, send: () => {} } as unknown as WebSocket;
+    const c = { readyState: 1, send: () => {} } as unknown as WebSocket;
+    registry.add('u1', a);
+    registry.add('u1', b);
+    registry.add('u2', c);
+    expect(registry.countForUser('u1')).toBe(2);
+    expect(registry.countForUser('u3')).toBe(0);
+  });
 });

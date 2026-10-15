@@ -22,8 +22,15 @@ function buildWsUrl(gameId: string): string {
 }
 
 /**
+ * Quiet period before a changed symbol set is pushed. The server caps
+ * `subscribe` frames per minute, and a user flicking between watchlists would
+ * otherwise send one per click.
+ */
+const SUBSCRIBE_DEBOUNCE_MS = 250;
+
+/**
  * Opens a per-game WebSocket connection, dispatches inbound events into the
- * live store, sends a `subscribe` message whenever the symbol list changes,
+ * live store, sends a `subscribe` message once a changed symbol list settles,
  * and reconnects under {@link ReconnectController}'s backoff policy. Publishes
  * its health on the `game` channel of {@link useConnectionStore}. Returns
  * nothing; tear-down happens on unmount.
@@ -195,20 +202,26 @@ export function useGameSocket(gameId: string, symbols: string[], myGamePlayerId:
     };
   }, [gameId, token]);
 
-  // When the parent's symbol list changes, push a fresh subscribe — but only
-  // when the sorted set actually differs from what was last sent.
+  // When the parent's symbol list changes, push a fresh subscribe once the set
+  // has been stable for SUBSCRIBE_DEBOUNCE_MS — but only when the sorted set
+  // actually differs from what was last sent. Keyed on the sorted set rather
+  // than the array, so a parent that rebuilds an equal array every render
+  // cannot keep resetting the timer.
+  const symbolsKey = [...symbols].sort().join(',');
   useEffect(() => {
-    const ws = wsRef.current;
-    if (!ws || ws.readyState !== WebSocket.OPEN) return;
-    if (symbols.length === 0) return;
-    const key = [...symbols].sort().join(',');
-    if (lastSentKeyRef.current === key) return;
-    const msg: WsClientEvent = { event: 'subscribe', data: { symbols } };
-    try {
-      ws.send(JSON.stringify(msg));
-      lastSentKeyRef.current = key;
-    } catch {
-      // ignore
-    }
-  }, [symbols]);
+    if (symbolsKey === '') return;
+    const handle = setTimeout(() => {
+      const ws = wsRef.current;
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      if (lastSentKeyRef.current === symbolsKey) return;
+      const msg: WsClientEvent = { event: 'subscribe', data: { symbols: symbolsRef.current } };
+      try {
+        ws.send(JSON.stringify(msg));
+        lastSentKeyRef.current = symbolsKey;
+      } catch {
+        // ignore
+      }
+    }, SUBSCRIBE_DEBOUNCE_MS);
+    return () => clearTimeout(handle);
+  }, [symbolsKey]);
 }

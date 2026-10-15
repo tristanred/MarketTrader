@@ -3,6 +3,7 @@ import {
   WS_AUTH_SUBPROTOCOL,
   WS_CREDENTIAL_STALE_AFTER_MS,
   WS_INVALID_FRAME_CLOSE_CODE,
+  WS_LIMIT_EXCEEDED_CLOSE_CODE,
   WS_POLICY_CLOSE_CODE,
   isStaleCredentialClose,
   wsAuthProtocols,
@@ -15,6 +16,14 @@ import {
  * one-sided change fail loudly instead of silently breaking reconnects.
  */
 describe('the WebSocket wire contract', () => {
+  it('pins the limit-exceeded close code', () => {
+    expect(WS_LIMIT_EXCEEDED_CLOSE_CODE).toBe(4429);
+  });
+
+  it('keeps all three codes distinct', () => {
+    expect(new Set([WS_POLICY_CLOSE_CODE, WS_INVALID_FRAME_CLOSE_CODE, WS_LIMIT_EXCEEDED_CLOSE_CODE]).size).toBe(3);
+  });
+
   it('pins the auth subprotocol', () => {
     expect(WS_AUTH_SUBPROTOCOL).toBe('markettrader.auth.v1');
   });
@@ -38,6 +47,11 @@ describe('the WebSocket wire contract', () => {
 
 describe('isStaleCredentialClose', () => {
   const longAgo = () => Date.now() - WS_CREDENTIAL_STALE_AFTER_MS - 1;
+
+  it('never spends a refresh on a connection-limit close', () => {
+    // 4429 means "too many sockets"; the token is fine, so the hook must back off.
+    expect(isStaleCredentialClose(WS_LIMIT_EXCEEDED_CLOSE_CODE, longAgo())).toBe(false);
+  });
 
   it('reads a policy close on a long-open socket as an expired token', () => {
     expect(isStaleCredentialClose(WS_POLICY_CLOSE_CODE, longAgo())).toBe(true);

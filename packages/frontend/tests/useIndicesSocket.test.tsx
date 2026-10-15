@@ -167,6 +167,22 @@ describe('useIndicesSocket', () => {
     expect(MockSocket.instances).toHaveLength(1);
   });
 
+  it('backs off instead of refreshing on a connection-limit close', async () => {
+    const qc = new QueryClient();
+    renderHook(() => useIndicesSocket(), { wrapper: wrapper(qc) });
+    await tick(0);
+    const socket = MockSocket.instances[0]!;
+
+    // 4429 means the account holds too many sockets; the token is fine, so a
+    // refresh cannot help — this must take the ordinary backoff path.
+    await tick(10_000);
+    await act(async () => socket.closeWith(4429));
+
+    expect(vi.mocked(tryRefresh)).not.toHaveBeenCalled();
+    await tick(30_001);
+    expect(MockSocket.instances).toHaveLength(2);
+  });
+
   it('does not open a socket when there is no auth token', () => {
     useAuthStore.setState({ token: null, user: null });
     const qc = new QueryClient();

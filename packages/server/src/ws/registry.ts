@@ -50,6 +50,15 @@ export class GameClientRegistry {
     return [...this.games.keys()];
   }
 
+  /** Live sockets `userId` holds across every game — read by the `wsConnections` limit. */
+  countForUser(userId: string): number {
+    let count = 0;
+    for (const clients of this.games.values()) {
+      for (const entry of clients.values()) if (entry.playerId === userId) count += 1;
+    }
+    return count;
+  }
+
   /** Every registered socket across all games — walked by the heartbeat. */
   *sockets(): Iterable<WebSocket> {
     for (const clients of this.games.values()) yield* clients.keys();

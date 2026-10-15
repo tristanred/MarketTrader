@@ -6,9 +6,11 @@ import { schema } from '../db/index.js';
 import type { GlobalClientRegistry } from './global-registry.js';
 import { ACCESS_TOKEN_TYPE } from '../plugins/jwt.js';
 import { extractSubprotocolToken } from './subprotocol.js';
-import { WS_POLICY_CLOSE_CODE } from './close-codes.js';
+import { WS_LIMIT_EXCEEDED_CLOSE_CODE, WS_POLICY_CLOSE_CODE } from './close-codes.js';
 import { env } from '../env.js';
 import { loadAccount } from '../limits/account.js';
+import { withPrivilegedIp } from '../limits/rate.js';
+import { admitConnection, type WsLimitDeps } from './limits.js';
 
 /** Claims read off the upgrade credential. `exp` is seconds since the epoch. */
 interface AccessClaims {
@@ -27,8 +29,10 @@ interface SocketIdentity {
 
 function closeSocket(socket: WebSocket, reason: string): void {
   try {
-    // Every close on this route is a credential decision — it accepts no
-    // client frames, so it has no frame-validation code to distinguish.
+    // Every close made through here is a credential decision. The route accepts
+    // no client frames, so it has no frame-validation code to distinguish; the
+    // one non-credential close, the connection-limit refusal at upgrade, uses
+    // its own code and must never be routed through this helper.
     socket.close(WS_POLICY_CLOSE_CODE, reason);
   } catch {
     // Already closing or closed — nothing to revoke.
@@ -88,11 +92,13 @@ async function revalidateSockets(
  *
  * @param revalidateIntervalMs - Overrides `WS_REVALIDATE_INTERVAL_MS`; tests
  *   pass a small value to observe a sweep without waiting.
+ * @param wsLimits - Per-user socket limits; omitted only by tests that mount the bare route.
  */
 export function globalLiveRoute(
   db: Db,
   registry: GlobalClientRegistry,
   revalidateIntervalMs: number = env.WS_REVALIDATE_INTERVAL_MS,
+  wsLimits?: WsLimitDeps,
 ) {
   return async function (app: FastifyInstance): Promise<void> {
     // WeakMap rather than a plain Map: a socket that vanishes without firing
@@ -118,7 +124,12 @@ export function globalLiveRoute(
       // otel:false — see the note in live-route.ts; the upgrade is long-lived.
       {
         websocket: true,
-        config: { rateLimit: { max: 20, timeWindow: '1 minute' }, otel: false },
+        config: {
+          rateLimit: wsLimits
+            ? withPrivilegedIp(wsLimits.config, { max: 20, timeWindow: '1 minute' })
+            : { max: 20, timeWindow: '1 minute' },
+          otel: false,
+        },
       },
       async (socket, request: FastifyRequest) => {
         const token = extractSubprotocolToken(request.headers['sec-websocket-protocol']);
@@ -147,6 +158,11 @@ export function globalLiveRoute(
 
         if (!account || account.disabled) {
           socket.close(WS_POLICY_CLOSE_CODE, 'Invalid token');
+          return;
+        }
+
+        if (wsLimits && !(await admitConnection(wsLimits, { account, ip: request.ip }))) {
+          socket.close(WS_LIMIT_EXCEEDED_CLOSE_CODE, 'Connection limit reached');
           return;
         }
 

@@ -207,8 +207,16 @@ export async function buildApp(
   await registerAdminGuard(app, db);
   await app.register(adminRoutes(db, provider, systemSettings, configOverrides, bus, registry));
   await app.register(adminAchievementsRoutes(db, achievementEngine, systemSettings));
-  await app.register(liveRoute(db, registry, achievementEngine));
-  await app.register(globalLiveRoute(db, globalRegistry));
+  const wsLimits = {
+    limits,
+    config: runtimeConfig,
+    countUserSockets: (userId: string) =>
+      registry.countForUser(userId) + globalRegistry.countForUser(userId),
+  };
+  await app.register(
+    liveRoute(db, registry, achievementEngine, env.WS_REVALIDATE_INTERVAL_MS, wsLimits),
+  );
+  await app.register(globalLiveRoute(db, globalRegistry, env.WS_REVALIDATE_INTERVAL_MS, wsLimits));
 
   if (!disablePoller) {
     // Keeps idle sockets from being reaped by an intermediary, and reaps peers

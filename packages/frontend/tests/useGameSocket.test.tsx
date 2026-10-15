@@ -157,6 +157,58 @@ describe('useGameSocket', () => {
     expect(MockWebSocket.instances).toHaveLength(2);
   });
 
+  it('backs off instead of refreshing on a connection-limit close', async () => {
+    render(withQueryClient(<Harness symbols={['AAPL']} />));
+    await tick(0);
+    await tick(6_000); // well past the credential-stale threshold
+    const ws = MockWebSocket.instances[0]!;
+    await act(async () => ws.closeWith(4429));
+    expect(vi.mocked(tryRefresh)).not.toHaveBeenCalled();
+    await tick(30_001);
+    expect(MockWebSocket.instances).toHaveLength(2);
+  });
+
+  it('debounces subscribe sends while the symbol set is changing', async () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const wrap = (symbols: string[]) => (
+      <QueryClientProvider client={qc}>
+        <Harness symbols={symbols} />
+      </QueryClientProvider>
+    );
+    const view = render(wrap(['AAPL']));
+    await tick(0);
+    const ws = MockWebSocket.instances[0]!;
+    expect(ws.sent).toHaveLength(1); // the on-open subscribe is immediate
+
+    view.rerender(wrap(['AAPL', 'TSLA']));
+    await tick(100);
+    view.rerender(wrap(['AAPL', 'TSLA', 'MSFT']));
+    await tick(100);
+    expect(ws.sent).toHaveLength(1);
+
+    await tick(250);
+    expect(ws.sent).toHaveLength(2);
+    expect(JSON.parse(ws.sent[1]!)).toEqual({
+      event: 'subscribe',
+      data: { symbols: ['AAPL', 'TSLA', 'MSFT'] },
+    });
+  });
+
+  it('does not re-send when a re-render passes an equal symbol set', async () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const wrap = (symbols: string[]) => (
+      <QueryClientProvider client={qc}>
+        <Harness symbols={symbols} />
+      </QueryClientProvider>
+    );
+    const view = render(wrap(['AAPL', 'TSLA']));
+    await tick(0);
+    const ws = MockWebSocket.instances[0]!;
+    view.rerender(wrap(['TSLA', 'AAPL']));
+    await tick(500);
+    expect(ws.sent).toHaveLength(1);
+  });
+
   it('dispatches price_update events into the live store', async () => {
     render(withQueryClient(<Harness symbols={['AAPL']} />));
     await act(async () => {

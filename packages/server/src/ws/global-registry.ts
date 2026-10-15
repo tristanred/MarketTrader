@@ -14,6 +14,13 @@ export class GlobalClientRegistry {
     return this.clients.size;
   }
 
+  /** Live `/ws/live` sockets `userId` holds — read by the `wsConnections` limit. */
+  countForUser(userId: string): number {
+    let count = 0;
+    for (const entry of this.clients.values()) if (entry.userId === userId) count += 1;
+    return count;
+  }
+
   add(userId: string, socket: WebSocket): void {
     // See the note in registry.ts: only a socket that is actually new moves the
     // gauge, otherwise a reconnect double-counts.

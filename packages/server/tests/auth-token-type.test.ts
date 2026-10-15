@@ -57,6 +57,17 @@ describe('REST bearer tokens — only a live access token authenticates', () => 
     expect((await getGames(untyped)).statusCode).toBe(401);
     expect((await getAdminUsers(untyped)).statusCode).toBe(401);
   });
+
+  it('rejects an expired access token, with or without iat', async () => {
+    const past = Math.floor(Date.now() / 1000) - 60;
+    const claims = { id: adminId, username: 'tokentype-admin', type: 'access', exp: past };
+    const claimsWithIat = { ...claims, iat: past - 900 };
+    const withIat = app.jwt.sign(claimsWithIat);
+    // GHSA-x937-hj6v-793p: the verifier cache accepted expired tokens lacking iat.
+    const withoutIat = app.jwt.sign(claims, { noTimestamp: true });
+    expect((await getGames(withIat)).statusCode).toBe(401);
+    expect((await getGames(withoutIat)).statusCode).toBe(401);
+  });
 });
 
 describe('REST bearer tokens — account kill-switch takes effect immediately', () => {

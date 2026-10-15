@@ -26,7 +26,7 @@ test.describe('Player trading', () => {
 
     await playerPage.goto(`/games/${game.id}`);
     await expect(
-      playerPage.locator('table').getByText('AAPL').first(),
+      playerPage.getByRole('button', { name: /^AAPL, \d+% of holdings/ }),
     ).toBeVisible({ timeout: 15_000 });
   });
 

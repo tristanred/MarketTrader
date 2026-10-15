@@ -58,9 +58,9 @@ test('happy path: register → create game → buy AAPL → portfolio reflects h
   // 4. Navigate to the game arena via the UI.
   await page.goto(`/games/${game.id}`);
 
-  // 5. AAPL row appears in the HoldingsPanel table.
+  // 5. AAPL appears in the HoldingsPanel rail.
   await expect(
-    page.locator('table').getByText('AAPL').first(),
+    page.getByRole('button', { name: /^AAPL, \d+% of holdings/ }),
   ).toBeVisible({ timeout: 15_000 });
 
   // 6. PortfolioPanel renders the deterministic post-trade cash:

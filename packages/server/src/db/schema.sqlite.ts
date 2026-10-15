@@ -2,18 +2,28 @@ import { sqliteTable, text, real, integer, unique, primaryKey, index } from 'dri
 import { sql } from 'drizzle-orm';
 
 /** Registered platform accounts. One user can participate in many games. */
-export const users = sqliteTable('users', {
-  id: text('id')
-    .primaryKey()
-    .$defaultFn(() => crypto.randomUUID()),
-  username: text('username').notNull().unique(),
-  passwordHash: text('password_hash').notNull(),
-  /** When true, login is rejected with 403. Set by admins via PATCH /admin/users/:id. */
-  disabled: integer('disabled', { mode: 'boolean' }).notNull().default(false),
-  createdAt: text('created_at')
-    .default(sql`(datetime('now'))`)
-    .notNull(),
-});
+export const users = sqliteTable(
+  'users',
+  {
+    id: text('id')
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    username: text('username').notNull().unique(),
+    passwordHash: text('password_hash').notNull(),
+    /** When true, login is rejected with 403. Set by admins via PATCH /admin/users/:id. */
+    disabled: integer('disabled', { mode: 'boolean' }).notNull().default(false),
+    createdAt: text('created_at')
+      .default(sql`(datetime('now'))`)
+      .notNull(),
+    /**
+     * `request.ip` at `POST /auth/register`. Counts registrations per network and
+     * links sibling accounts on the admin page. Null for accounts created before
+     * it was recorded. Personal data — listed in docs/pii-inventory.md.
+     */
+    registrationIp: text('registration_ip'),
+  },
+  (t) => [index('users_registration_ip_created_idx').on(t.registrationIp, t.createdAt)],
+);
 
 /**
  * Authorization groups. Currently a single seeded row: `admin`. Membership is
@@ -134,7 +144,7 @@ export const games = sqliteTable('games', {
    * games keeps the per-tick scan bounded.
    */
   snapshotsCompactedAt: text('snapshots_compacted_at'),
-});
+}, (t) => [index('games_created_by_created_at_idx').on(t.createdBy, t.createdAt)]);
 
 /**
  * Join table between users and games. Each row represents one player in one game.
@@ -165,7 +175,10 @@ export const gamePlayers = sqliteTable(
      */
     lastSeenUnlockAt: text('last_seen_unlock_at'),
   },
-  (t) => [unique().on(t.gameId, t.userId)],
+  (t) => [
+    unique().on(t.gameId, t.userId),
+    index('game_players_user_joined_idx').on(t.userId, t.joinedAt),
+  ],
 );
 
 /**
@@ -568,4 +581,29 @@ export const gameDiscoverPicks = sqliteTable(
       .notNull(),
   },
   (t) => [unique().on(t.gameId, t.sessionDate)],
+);
+
+/**
+ * Per-user exceptions to the global limits, set from the admin user page. The
+ * value replaces the resolved limit outright: probation and the privileged
+ * multiplier do not apply on top of it. Keys are `LimitKey`s; rows for keys
+ * since removed from the catalogue are ignored on read.
+ */
+export const userLimitOverrides = sqliteTable(
+  'user_limit_overrides',
+  {
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    limitKey: text('limit_key').notNull(),
+    value: integer('value').notNull(),
+    /** Why the override exists, shown in the admin overrides list. */
+    note: text('note'),
+    /** Admin who last wrote the row. No FK, like `system_settings.updated_by`. */
+    updatedBy: text('updated_by'),
+    updatedAt: text('updated_at')
+      .default(sql`(datetime('now'))`)
+      .notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.limitKey] })],
 );

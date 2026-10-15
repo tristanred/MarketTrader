@@ -1,8 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import fastifyJwt from '@fastify/jwt';
-import { eq } from 'drizzle-orm';
 import type { Db } from '../db/index.js';
-import { schema } from '../db/index.js';
+import { loadAccount } from '../limits/account.js';
 import { env } from '../env.js';
 
 /**
@@ -49,7 +48,8 @@ export function signRefreshToken(
  * Verifies the bearer JWT and returns false — having already sent the 401 —
  * for anything that is not a live access token: a bad signature, a refresh
  * token, a token with no `type` claim at all, or one naming a user since
- * disabled or deleted.
+ * disabled or deleted. On success it sets `request.account` (id, ISO `createdAt`,
+ * `isAdmin`) from the same read, which is what per-user limits and admin immunity key on.
  *
  * Requiring `type === 'access'` rather than rejecting `'refresh'` is what makes
  * an unstamped token fail closed. The live `users` read is what makes
@@ -79,16 +79,12 @@ export async function verifyAccessToken(
     return unauthorized();
   }
 
-  const [current] = await db
-    .select({ disabled: schema.users.disabled })
-    .from(schema.users)
-    .where(eq(schema.users.id, request.user.id))
-    .limit(1);
-
-  if (!current || current.disabled) {
+  const account = await loadAccount(db, request.user.id);
+  if (!account || account.disabled) {
     return unauthorized();
   }
 
+  request.account = { id: account.id, createdAt: account.createdAt, isAdmin: account.isAdmin };
   return true;
 }
 
@@ -99,6 +95,7 @@ export async function verifyAccessToken(
  */
 export async function registerJwt(app: FastifyInstance, db: Db): Promise<void> {
   await app.register(fastifyJwt, { secret: env.JWT_SECRET });
+  app.decorateRequest('account', undefined);
 
   app.decorate(
     'authenticate',

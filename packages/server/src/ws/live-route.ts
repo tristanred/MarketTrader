@@ -10,6 +10,7 @@ import { ACCESS_TOKEN_TYPE } from '../plugins/jwt.js';
 import { extractSubprotocolToken } from './subprotocol.js';
 import { WS_INVALID_FRAME_CLOSE_CODE, WS_POLICY_CLOSE_CODE } from './close-codes.js';
 import { env } from '../env.js';
+import { loadAccount } from '../limits/account.js';
 
 /** Claims read off the upgrade credential. `exp` is seconds since the epoch. */
 interface AccessClaims {
@@ -187,11 +188,7 @@ export function liveRoute(
 
         // Same live account read the REST guard does, so a disabled or deleted
         // account cannot open a socket with a token minted before the change.
-        const [account] = await db
-          .select({ disabled: schema.users.disabled })
-          .from(schema.users)
-          .where(eq(schema.users.id, payload.id))
-          .limit(1);
+        const account = await loadAccount(db, payload.id);
 
         if (!account || account.disabled) {
           socket.close(WS_POLICY_CLOSE_CODE, 'Invalid token');

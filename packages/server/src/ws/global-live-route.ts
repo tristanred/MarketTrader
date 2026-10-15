@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
-import { eq, inArray } from 'drizzle-orm';
+import { inArray } from 'drizzle-orm';
 import type { WebSocket } from 'ws';
 import type { Db } from '../db/index.js';
 import { schema } from '../db/index.js';
@@ -8,6 +8,7 @@ import { ACCESS_TOKEN_TYPE } from '../plugins/jwt.js';
 import { extractSubprotocolToken } from './subprotocol.js';
 import { WS_POLICY_CLOSE_CODE } from './close-codes.js';
 import { env } from '../env.js';
+import { loadAccount } from '../limits/account.js';
 
 /** Claims read off the upgrade credential. `exp` is seconds since the epoch. */
 interface AccessClaims {
@@ -142,11 +143,7 @@ export function globalLiveRoute(
 
         // Same live account read the REST guard does, so a disabled or deleted
         // account cannot open a socket with a token minted before the change.
-        const [account] = await db
-          .select({ disabled: schema.users.disabled })
-          .from(schema.users)
-          .where(eq(schema.users.id, payload.id))
-          .limit(1);
+        const account = await loadAccount(db, payload.id);
 
         if (!account || account.disabled) {
           socket.close(WS_POLICY_CLOSE_CODE, 'Invalid token');

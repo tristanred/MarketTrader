@@ -24,7 +24,7 @@
 | Alerts | Package (installed → fixed) | Reached via | Exposure | Fixed in |
 |---|---|---|---|---|
 | #103–107, #83, #84 | fastify 5.12.0 → 5.12.7 | direct (server) | **Real.** On every request path: auth bypass through not-found handlers, validation bypass, X-Forwarded-* spoofing under a hop-count `trustProxy` | Task 1 |
-| #126 | fast-jwt 6.3.2 → 6.3.5 | `@fastify/jwt` 10.2.1 → 10.2.4 | Low. Only affects the verifier cache, which `plugins/jwt.ts` doesn't turn on, and our tokens always carry `iat` | Task 1 |
+| #126 | fast-jwt 6.3.2 → 6.3.4 | `@fastify/jwt` 10.2.1 → 10.2.4 | Low. Only affects the verifier cache, which `plugins/jwt.ts` doesn't turn on, and our tokens always carry `iat` | Task 1 |
 | #79–82, #85–86, #88–89, #97, #99, #110, #117 | fast-uri 3.1.5 / 4.1.2 → 3.1.8 / 4.2.x | ajv (fastify, swagger, json-schema-resolver) | Medium. Used by ajv's `uri` format checks | Task 1 |
 | #125, #122, #90, #87, #91–93, #108, #98, #101, #109, #116 | @modelcontextprotocol/sdk, proxy-addr, qs, hono, ip-address | `yahoo-finance2` 4.0.2 → 4.0.3 (pulls SDK `^1.32`) | Low. These sit inside the MCP SDK, which yahoo-finance2 bundles; we never start its express/hono server | Task 1 |
 | #100, #118 | @grpc/grpc-js 1.14.4 → 1.14.6 | `@opentelemetry/sdk-node`, `pino-opentelemetry-transport` | Low. We use the `-http` OTLP exporters; gRPC only runs if `OTEL_EXPORTER_OTLP_PROTOCOL=grpc` is set | Task 1 |
@@ -315,7 +315,7 @@ gh api -X PATCH repos/tristanred/MarketTrader/dependabot/alerts/119 \
 
 ### Task 4: Ship and confirm
 
-- [ ] **Step 1: Push and open the PR.** In the description, include the alert map table above and the fact that no deployment configuration changes. Nothing changes in env vars, proxy routes, or how the process is launched.
+- [ ] **Step 1: Push and open the PR.** In the description, include the alert map table above. Call out that `TRUST_PROXY` no longer accepts a hop count and the server refuses one at boot. Production (`provision.sh`: `loopback`) and docker-compose (`uniquelocal`) are unaffected. Nothing changes in proxy routes or how the process is launched.
 - [ ] **Step 2: After merge, confirm that Dependabot has closed the alerts:**
 
 ```bash

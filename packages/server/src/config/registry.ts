@@ -229,6 +229,10 @@ export const CONFIG_REGISTRY = {
     category: 'limits', kind: 'integer', mutability: 'live', min: 0, max: 3_650,
     description: 'How far ahead a new game may be scheduled to start, in days.',
   },
+  GAME_MAX_PLAYERS: {
+    category: 'limits', kind: 'integer', mutability: 'live', min: 2, max: 10_000,
+    description: 'Most players one game may hold. A property of the game, so it has no per-user override. Admin seating is not checked.',
+  },
 
   // ── websocket ───────────────────────────────────────────────────────────
   WS_HEARTBEAT_INTERVAL_MS: {

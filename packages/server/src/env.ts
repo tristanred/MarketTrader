@@ -367,6 +367,8 @@ export const liveBootConfig = {
     'GAME_MAX_START_DELAY_DAYS',
     optional('GAME_MAX_START_DELAY_DAYS', '90'),
   ),
+  /** Most players one game may hold. Joins past it are refused with 409 GAME_FULL. */
+  GAME_MAX_PLAYERS: parsePositiveInt('GAME_MAX_PLAYERS', optional('GAME_MAX_PLAYERS', '100')),
 
   /**
    * Hard cap on how many distinct symbols one price-poller tick may fetch.

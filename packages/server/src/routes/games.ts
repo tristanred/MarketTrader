@@ -51,7 +51,7 @@ const createGameSchema = z
  * Registers game lifecycle routes (all require authentication):
  * - `GET  /games`        — list every game the caller has joined.
  * - `POST /games`        — create a new game; creator is automatically enrolled.
- * - `POST /games/:id/join` — join an existing game (rejected if already ended).
+ * - `POST /games/:id/join` — join an existing game (rejected if ended, or full per `GAME_MAX_PLAYERS`).
  * - `GET  /games/:id`    — fetch game details + leaderboard (membership required).
  *
  * All routes recompute game status on the fly so `pending`/`active`/`ended`
@@ -330,6 +330,16 @@ export function gameRoutes(db: Db, config: ConfigReader, bus?: EventBus) {
 
       const status = await recomputeGameStatus(db, game, new Date().toISOString(), bus);
       if (status === 'ended') return reply.status(409).send({ error: 'Game has ended' });
+
+      // Count-then-insert can overshoot by one under concurrent joins; the cap
+      // exists to stop leaderboard flooding, which one extra seat does not enable.
+      const [{ players } = { players: 0 }] = await db
+        .select({ players: count() })
+        .from(gamePlayers)
+        .where(eq(gamePlayers.gameId, gameId));
+      if (Number(players) >= config.get('GAME_MAX_PLAYERS')) {
+        return reply.status(409).send({ error: 'Game is full', code: 'GAME_FULL' });
+      }
 
       let player: typeof gamePlayers.$inferSelect | undefined;
       try {

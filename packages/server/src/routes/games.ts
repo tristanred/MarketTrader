@@ -13,6 +13,11 @@ import type { EventBus } from '../events/bus.js';
 import type { ConfigReader } from '../config/runtime-config.js';
 import { checkGameBounds } from '../services/game-bounds.js';
 
+const browseQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(50).optional().default(20),
+  offset: z.coerce.number().int().min(0).optional().default(0),
+});
+
 const gameIdParamsSchema = z.object({ id: z.string() });
 
 const updateGameSchema = z.object({
@@ -194,8 +199,9 @@ export function gameRoutes(db: Db, config: ConfigReader, bus?: EventBus) {
       onRequest: rawApp.authenticate,
       schema: {
         tags: ['Games'],
-        summary: 'List public games the caller has not joined and can still join.',
+        summary: 'List public games the caller has not joined and can still join, one page at a time.',
         security: [{ bearerAuth: [] }],
+        querystring: browseQuerySchema,
       },
     }, async (request, reply) => {
       const userId = request.user.id;
@@ -235,15 +241,17 @@ export function gameRoutes(db: Db, config: ConfigReader, bus?: EventBus) {
 
       const open = candidates
         .filter(g => (statusMap.get(g.id) ?? g.status) !== 'ended')
-        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-        .map(g => ({
-          ...g,
-          startingBalance: Number(g.startingBalance),
-          status: statusMap.get(g.id) ?? g.status,
-          playerCount: countMap.get(g.id) ?? 0,
-        }));
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id));
 
-      return reply.status(200).send(open);
+      const { limit, offset } = request.query;
+      const page = open.slice(offset, offset + limit).map(g => ({
+        ...g,
+        startingBalance: Number(g.startingBalance),
+        status: statusMap.get(g.id) ?? g.status,
+        playerCount: countMap.get(g.id) ?? 0,
+      }));
+
+      return reply.status(200).send({ games: page, total: open.length });
     });
 
     app.get('/games/by-code/:code', {

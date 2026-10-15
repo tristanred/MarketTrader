@@ -1,7 +1,8 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMemo } from 'react';
 import { ApiError, apiFetch } from '@/lib/api';
 import type {
-  BrowsableGame,
+  BrowseGamesResponse,
   CreateGameRequest,
   Game,
   GameByCodeResponse,
@@ -71,12 +72,36 @@ export function useJoinGame() {
   });
 }
 
-/** Public games the current user has not joined and can still join. */
+/** Page size `useBrowsableGames` asks the server for. */
+export const BROWSE_PAGE_SIZE = 20;
+
+/**
+ * Public games the current user has not joined and can still join, fetched a
+ * page at a time. `games` is every loaded page flattened, and `total` is the
+ * server's count of all browsable games.
+ */
 export function useBrowsableGames() {
-  return useQuery({
+  const query = useInfiniteQuery({
     queryKey: gameKeys.browse(),
-    queryFn: () => apiFetch<BrowsableGame[]>('/games/browse'),
+    queryFn: ({ pageParam }) =>
+      apiFetch<BrowseGamesResponse>(
+        `/games/browse?limit=${BROWSE_PAGE_SIZE}&offset=${pageParam}`,
+      ),
+    initialPageParam: 0,
+    getNextPageParam: (last, _all, lastOffset) => {
+      const next = lastOffset + last.games.length;
+      return last.games.length > 0 && next < last.total ? next : undefined;
+    },
   });
+  // A game created between two page fetches shifts every offset by one, so the
+  // same row can arrive on two pages.
+  const games = useMemo(() => {
+    const seen = new Set<string>();
+    return (query.data?.pages ?? [])
+      .flatMap((p) => p.games)
+      .filter((g) => (seen.has(g.id) ? false : (seen.add(g.id), true)));
+  }, [query.data]);
+  return { ...query, games, total: query.data?.pages[0]?.total ?? 0 };
 }
 
 /** Resolves an invite code to a join prompt. */

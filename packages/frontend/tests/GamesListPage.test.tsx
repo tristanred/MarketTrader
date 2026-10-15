@@ -29,11 +29,15 @@ const browsableData: Array<{
 vi.mock('@/api/games', () => ({
   useGames: () => ({ data: gamesData, isLoading: false, isError: false }),
   useBrowsableGames: () => ({
-    data: browsableData,
+    games: browsableData,
+    total: browsableData.length,
     isLoading: false,
     isError: false,
     isSuccess: true,
     refetch: vi.fn(),
+    hasNextPage: false,
+    isFetchingNextPage: false,
+    fetchNextPage: vi.fn(),
   }),
   useJoinGame: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));

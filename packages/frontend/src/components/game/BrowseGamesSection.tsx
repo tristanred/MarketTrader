@@ -46,7 +46,7 @@ export function BrowseGamesSection() {
 
   const handleFilled = useCallback(
     (gameId: string) => {
-      setFrozen((prev) => prev ?? browsable.data ?? null);
+      setFrozen((prev) => prev ?? browsable.games);
       setFilled((prev) => new Set(prev).add(gameId));
       window.clearTimeout(holdTimer.current);
       holdTimer.current = window.setTimeout(() => {
@@ -54,10 +54,10 @@ export function BrowseGamesSection() {
         setFilled(new Set());
       }, FILL_HOLD_MS);
     },
-    [browsable.data],
+    [browsable.games],
   );
 
-  const rows = frozen ?? browsable.data ?? [];
+  const rows = frozen ?? browsable.games;
 
   return (
     <section className="space-y-3" data-testid="browse-games">
@@ -66,9 +66,9 @@ export function BrowseGamesSection() {
           <h2 className="text-lg font-bold tracking-[-0.025em] text-text-strong">Open games</h2>
           <p className="text-xs text-muted">Public tournaments anyone can join.</p>
         </div>
-        {rows.length > 0 && (
+        {browsable.total > 0 && (
           <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted">
-            {rows.length} listed
+            {browsable.total} listed
           </span>
         )}
       </div>
@@ -131,6 +131,19 @@ export function BrowseGamesSection() {
               />
             ))}
           </ul>
+          {browsable.hasNextPage && (
+            <div className="flex justify-center pt-1">
+              <Button
+                size="sm"
+                variant="outline"
+                className="font-mono uppercase tracking-[0.1em]"
+                onClick={() => void browsable.fetchNextPage()}
+                disabled={browsable.isFetchingNextPage}
+              >
+                {browsable.isFetchingNextPage ? 'Loading…' : 'Load more'}
+              </Button>
+            </div>
+          )}
         </div>
       )}
     </section>

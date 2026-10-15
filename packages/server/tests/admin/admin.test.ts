@@ -203,7 +203,7 @@ describe('admin game visibility', () => {
       url: '/games/browse',
       headers: { Authorization: `Bearer ${outsider.token}` },
     });
-    expect(browseBefore.json<{ id: string }[]>().some((g) => g.id === gameId)).toBe(true);
+    expect(browseBefore.json<{ games: { id: string }[] }>().games.some((g) => g.id === gameId)).toBe(true);
 
     const patch = await app.inject({
       method: 'PATCH',
@@ -218,7 +218,7 @@ describe('admin game visibility', () => {
       url: '/games/browse',
       headers: { Authorization: `Bearer ${outsider.token}` },
     });
-    expect(browseAfter.json<{ id: string }[]>().some((g) => g.id === gameId)).toBe(false);
+    expect(browseAfter.json<{ games: { id: string }[] }>().games.some((g) => g.id === gameId)).toBe(false);
 
     const list = await app.inject({
       method: 'GET',

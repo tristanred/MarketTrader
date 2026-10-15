@@ -43,8 +43,6 @@ export interface LimitExceededBody {
   max: number;
   /** True when the max is reduced because the account is still new. */
   probation: boolean;
-  /** Days the account stays on probation ("first N days"); present when `probation` is true. */
-  maturityDays?: number;
   /** Seconds until one more request would be admitted; also sent as `Retry-After`. */
   retryAfterSeconds?: number;
 }

@@ -103,13 +103,16 @@ export async function countActiveGamesJoined(
   return Number(row?.n ?? 0);
 }
 
-/** `working` + `pending` rows one game-player holds — both are re-quoted every tick. */
+/** Trade statuses that count as open orders — both are re-quoted every tick. */
+export const OPEN_ORDER_STATUSES = ['working', 'pending'] as const;
+
+/** {@link OPEN_ORDER_STATUSES} rows one game-player holds. */
 export async function countOpenOrders(db: Reader, gamePlayerId: string): Promise<number> {
   const { trades } = schema;
   const [row] = await db
     .select({ n: count() })
     .from(trades)
-    .where(and(eq(trades.gamePlayerId, gamePlayerId), inArray(trades.status, ['working', 'pending'])));
+    .where(and(eq(trades.gamePlayerId, gamePlayerId), inArray(trades.status, [...OPEN_ORDER_STATUSES])));
   return Number(row?.n ?? 0);
 }
 

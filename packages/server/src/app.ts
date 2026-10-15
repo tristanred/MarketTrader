@@ -216,15 +216,15 @@ export async function buildApp(
   await app.register(discoverRoutes(db));
   await app.register(systemSettingsRoutes(systemSettings));
   await app.register(achievementsRoutes(db, achievementEngine));
+  // One count for both the WS upgrade cap and the admin usage view, so they cannot disagree.
+  const countUserSockets = (userId: string): number =>
+    registry.countForUser(userId) + globalRegistry.countForUser(userId);
   await registerAdminGuard(app, db);
-  await app.register(adminRoutes(db, provider, systemSettings, configOverrides, bus, registry));
+  await app.register(
+    adminRoutes(db, provider, systemSettings, configOverrides, limits, countUserSockets, bus, registry),
+  );
   await app.register(adminAchievementsRoutes(db, achievementEngine, systemSettings));
-  const wsLimits = {
-    limits,
-    config: runtimeConfig,
-    countUserSockets: (userId: string) =>
-      registry.countForUser(userId) + globalRegistry.countForUser(userId),
-  };
+  const wsLimits = { limits, config: runtimeConfig, countUserSockets };
   await app.register(
     liveRoute(db, registry, achievementEngine, env.WS_REVALIDATE_INTERVAL_MS, wsLimits),
   );

@@ -1,5 +1,12 @@
 import type { Limits } from '../limits/index.js';
 import { withPrivilegedIp } from '../limits/rate.js';
+import { LIMIT_CATALOGUE } from '../limits/catalogue.js';
+import {
+  countRegistrationsSince,
+  oldestRegistrationSince,
+  windowStart,
+} from '../limits/quota-counts.js';
+import { secondsUntilWindowFrees } from '../limits/enforce.js';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
@@ -48,6 +55,7 @@ const loginSchema = z.object({
 /**
  * Registers all authentication routes on the Fastify instance:
  * - `POST /auth/register` — create a new account; sets the refresh cookie and returns a 15-minute access token.
+ *   Also refused once an address has registered `LIMIT_REGISTRATIONS_PER_IP_PER_DAY` accounts in 24 h.
  * - `POST /auth/login`    — verify credentials; sets the refresh cookie and returns a 15-minute access token.
  * - `POST /auth/refresh`  — exchange the refresh-token cookie for a new access token.
  * - `POST /auth/logout`   — clear the refresh-token cookie (idempotent, no auth required).
@@ -96,6 +104,26 @@ export function authRoutes(db: Db, loginThrottle: FailedLoginTracker, limits: Li
       },
     }, async (request, reply) => {
       const { username, password } = request.body;
+      const ip = request.ip;
+
+      // Before hashing: argon2 is the expensive step, and a refused address
+      // should not get to spend it. Counted from `users.registration_ip`, so a
+      // restart does not hand out a fresh day.
+      const now = Date.now();
+      const since = windowStart('registrationsPerIp', now);
+      await limits.enforcer.enforceFor(
+        { ip },
+        'registrationsPerIp',
+        () => countRegistrationsSince(db, ip, since),
+        {
+          retryAfter: async () =>
+            secondsUntilWindowFrees(
+              await oldestRegistrationSince(db, ip, since),
+              LIMIT_CATALOGUE.registrationsPerIp.windowMs!,
+              now,
+            ),
+        },
+      );
 
       const passwordHash = await hash(password);
       let user: { id: string; username: string } | undefined;
@@ -105,7 +133,7 @@ export function authRoutes(db: Db, loginThrottle: FailedLoginTracker, limits: Li
         // go through an existing admin.
         [user] = await db
           .insert(users)
-          .values({ username, passwordHash })
+          .values({ username, passwordHash, registrationIp: ip })
           .returning({ id: users.id, username: users.username });
       } catch (err: unknown) {
         if (isUniqueConstraintError(err)) {

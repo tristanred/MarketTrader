@@ -13,18 +13,11 @@ import type { StockProvider } from '../providers/index.js';
 import { TradeError } from '../providers/index.js';
 import { executeTrade, type ExecuteTradeResult } from './trade.js';
 import { assertTradableSymbol } from './symbol.js';
+import { assertOpenOrderCapacity } from './open-orders.js';
 
 type TradeRow = typeof schema.trades.$inferSelect;
 
-/**
- * Ceiling on `working` + `pending` rows one game-player may hold open.
- *
- * Resting rows are re-quoted by the trigger worker and the price poller on
- * every tick, so an unbounded pile of them is an unbounded outbound-request
- * amplifier against the shared upstream provider. Nothing expires them today:
- * `expireDayOrders` needs `expiresAt`, which the trade route never sets.
- */
-export const MAX_OPEN_ORDERS_PER_PLAYER = 50;
+export { MAX_OPEN_ORDERS_PER_PLAYER } from './open-orders.js';
 
 /**
  * Maps a `trades` row in the `working` or `pending` (resting-order) lifecycle
@@ -277,22 +270,7 @@ export async function placeWorkingOrder(
   }
 
   return db.transaction(async (tx) => {
-    const rowsToInsert = orderType === 'bracket' ? 3 : 1;
-    const open = await tx
-      .select({ id: trades.id })
-      .from(trades)
-      .where(
-        and(
-          eq(trades.gamePlayerId, gamePlayerId),
-          or(eq(trades.status, 'working'), eq(trades.status, 'pending')),
-        ),
-      );
-    if (open.length + rowsToInsert > MAX_OPEN_ORDERS_PER_PLAYER) {
-      throw new TradeError(
-        'TOO_MANY_OPEN_ORDERS',
-        `Too many open orders (limit ${MAX_OPEN_ORDERS_PER_PLAYER}); cancel one first`,
-      );
-    }
+    await assertOpenOrderCapacity(tx, gamePlayerId, orderType === 'bracket' ? 3 : 1);
 
     const reservedCash =
       direction === 'buy' && orderType !== 'bracket' ? computeBuyReservation(input) : null;

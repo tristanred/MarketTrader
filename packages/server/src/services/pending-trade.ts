@@ -7,6 +7,7 @@ import { TradeError } from '../providers/index.js';
 import { validateBuy, validateSell } from './trade.js';
 import { assertTradableSymbol } from './symbol.js';
 import { applyTradeStats } from './game-player-stats.js';
+import { assertOpenOrderCapacity } from './open-orders.js';
 import { onPositionOpened } from './position-high-water.js';
 
 /** Parameters for queueing a trade that will settle at next market open. */
@@ -58,7 +59,8 @@ function rowToExecuted(row: typeof schema.trades.$inferSelect): Trade {
  * {@link cancelPendingTrade} or {@link settlePendingTrades}.
  *
  * @throws {TradeError} `INSUFFICIENT_FUNDS` / `INSUFFICIENT_SHARES` /
- *   `INVALID_QUANTITY` / `INVALID_SYMBOL` on validation failure.
+ *   `INVALID_QUANTITY` / `INVALID_SYMBOL` on validation failure, and
+ *   `TOO_MANY_OPEN_ORDERS` when the player already holds the open-order cap.
  */
 export async function reservePendingTrade(
   db: Db,
@@ -77,6 +79,8 @@ export async function reservePendingTrade(
   // concurrent order for the same player can neither be validated against a
   // stale balance nor have its reservation overwritten by this one.
   return db.transaction(async (tx) => {
+    await assertOpenOrderCapacity(tx, gamePlayerId, 1);
+
     const [player] = await tx
       .select({ cashBalance: gamePlayers.cashBalance })
       .from(gamePlayers)

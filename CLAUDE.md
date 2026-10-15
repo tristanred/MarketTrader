@@ -222,7 +222,10 @@ Abuse controls live in `packages/server/src/limits/` (ADR-017, `docs/design.md` 
   Never compare against a config value directly in a route; go through the resolver, or overrides and admin immunity silently stop applying.
 - **`request.account`** (`{ id, createdAt, isAdmin }`) comes from the same `users` read `verifyAccessToken` already does — no extra query, no cache — so a demoted admin loses immunity on the next request.
 - **Each kind has its own counter:**
-  - **rate:** `rateLimitFor(limits, key)` on the route's `config.rateLimit`, keyed per user.
+  - **rate:** `rateLimitFor(limits, key)` on the route's `config.rateLimit`, keyed per user. A key
+    enforced on several routes (`orderCancels`) goes through one `app.rateLimit(rateLimitFor(...))`
+    handler in each route's `onRequest`, after `authenticate`: every `config.rateLimit` gets its own
+    counter store, so per-route configs would hand out one budget per route.
   - **quota and concurrent:** `limits.enforcer.enforce(request, key, count)` before the insert, counting the real rows (helpers in `limits/quota-counts.ts`) — inside the insert's transaction where one exists, but just before it when the insert path retries on constraint errors (game create and join), because a failed statement aborts a Postgres transaction.
   - **open orders:** `assertOpenOrderCapacity` inside the order transaction, with the resolver's max.
   - **sockets:** `admitConnection` (`ws/limits.ts`) against the live registries; **`subscribe` frames:** the live route's own per-user `SlidingWindowCounter`.

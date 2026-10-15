@@ -184,7 +184,7 @@ Every abuse control is a **limit** with a key (`LimitKey`, `packages/shared/src/
 | Registrations per IP | `LIMIT_REGISTRATIONS_PER_IP_PER_DAY` | per IP | 5 / 24 h |
 
 **Where each kind is counted:**
-- Trades, cancels and code lookups: `@fastify/rate-limit`, keyed per user, sized by the resolver (`rateLimitFor`).
+- Trades, cancels and code lookups: `@fastify/rate-limit`, keyed per user, sized by the resolver (`rateLimitFor`). The two cancel routes share one `app.rateLimit` handler, so they draw on one budget.
 - API requests: the in-memory `UsageTracker`, from a global `preHandler`.
 - `subscribe` frames: a per-user `SlidingWindowCounter` inside the `/games/:id/live` route, shared across that user's sockets.
 - Quotas and the game/watchlist caps: `limits.enforcer.enforce(...)`, counting the real rows (`limits/quota-counts.ts`).

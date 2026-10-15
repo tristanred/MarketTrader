@@ -87,6 +87,7 @@ describe('WebSocket frames are bounded and validated (F21)', () => {
       provider: new MockStockProvider(),
       marketStatusProvider: new MockMarketStatusProvider(),
       disablePoller: true,
+      limits: { disabled: true },
       disableRateLimit: true,
       leaderboardThrottleMs: 0,
     });

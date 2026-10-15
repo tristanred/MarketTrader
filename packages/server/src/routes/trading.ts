@@ -32,6 +32,8 @@ import type { TradeDirection } from '@markettrader/shared';
 import type { GameClientRegistry } from '../ws/registry.js';
 import type { EventBus } from '../events/bus.js';
 import type { ConfigReader } from '../config/runtime-config.js';
+import type { Limits } from '../limits/index.js';
+import { subjectOf } from '../limits/resolver.js';
 import { setRetryAfter } from './retry-after.js';
 import { meters } from '../observability/telemetry.js';
 
@@ -100,12 +102,14 @@ const tradesQuerySchema = z.object({
  * events are broadcast to all connected clients in the game. The leaderboard broadcast
  * is throttled to at most once per second per game (map lives in this closure).
  * `config` supplies the live stale-trade and rate-limit-backoff settings.
+ * `limits` supplies the caller's open-order cap.
  */
 export function tradingRoutes(
   db: Db,
   provider: StockProvider,
   marketStatusProvider: MarketStatusProvider,
   config: ConfigReader,
+  limits: Limits,
   registry?: GameClientRegistry,
   leaderboardThrottleMs = LEADERBOARD_THROTTLE_MS,
   bus?: EventBus,
@@ -230,6 +234,10 @@ export function tradingRoutes(
           return reply.status(409).send({ error: 'GAME_NOT_ACTIVE', message: `Game is ${status}` });
         }
 
+        // Resolved once for both resting branches; the services count and
+        // compare inside the transaction that inserts.
+        const openOrderLimit = await limits.resolver.resolve(subjectOf(request), 'openOrders');
+
         // ── Working-order branch ─────────────────────────────────────────────
         // Non-market orders are placed as resting working orders. The trigger
         // worker fills them when the price condition is met.
@@ -281,6 +289,7 @@ export function tradingRoutes(
               ...(takeProfitPrice != null && { takeProfitPrice }),
               ...(stopLossPrice != null && { stopLossPrice }),
               ...(referencePrice != null && { referencePrice }),
+              openOrderLimit,
             });
             if (registry) {
               for (const order of orders) {
@@ -346,6 +355,7 @@ export function tradingRoutes(
                 direction: direction as TradeDirection,
                 quantity,
                 reservedPrice: reservedQuote.price,
+                openOrderLimit,
               });
               return reply.status(202).send({ pending });
             } catch (err) {

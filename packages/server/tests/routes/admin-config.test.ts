@@ -7,7 +7,7 @@ import { env } from '../../src/env.js';
 import { CONFIG_REGISTRY, descriptorFor, type EnvKey } from '../../src/config/registry.js';
 import { CONFIG_OVERRIDE_PREFIX } from '../../src/services/config-overrides.js';
 import * as schema from '../../src/db/schema.sqlite.js';
-import type { RuntimeConfig } from '../../src/config/runtime-config.js';
+import { RuntimeConfig } from '../../src/config/runtime-config.js';
 
 describe('/admin/config', () => {
   let app: FastifyInstance;
@@ -17,7 +17,12 @@ describe('/admin/config', () => {
   let member: { authorization: string };
 
   beforeAll(async () => {
-    ({ app, config, db } = await createTestAppWithDb());
+    // Limits on, so the watchlist-cap override below reaches its per-user limit;
+    // probation at 100% keeps the fresh member on the configured value.
+    ({ app, config, db } = await createTestAppWithDb(undefined, undefined, {
+      limits: { disabled: false },
+      runtimeConfig: RuntimeConfig.fromEnvironment({ LIMITS_PROBATION_PERCENT: 100 }),
+    }));
     admin = { authorization: `Bearer ${(await registerAdmin(app, 'cfg-admin')).token}` };
     const reg = await app.inject({
       method: 'POST',
@@ -122,8 +127,9 @@ describe('/admin/config', () => {
 
   it('an override reaches the feature it controls', async () => {
     await put('WATCHLIST_MAX_PER_USER', 1);
+    // A member, not the admin: admins are immune to every per-user limit.
     const create = (name: string) =>
-      app.inject({ method: 'POST', url: '/watchlists', headers: admin, payload: { name } });
+      app.inject({ method: 'POST', url: '/watchlists', headers: member, payload: { name } });
     expect((await create('cfg-a')).statusCode).toBe(201);
     expect((await create('cfg-b')).statusCode).toBe(409);
   });

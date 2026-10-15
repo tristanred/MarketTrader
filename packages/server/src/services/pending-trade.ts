@@ -7,7 +7,8 @@ import { TradeError } from '../providers/index.js';
 import { validateBuy, validateSell } from './trade.js';
 import { assertTradableSymbol } from './symbol.js';
 import { applyTradeStats } from './game-player-stats.js';
-import { assertOpenOrderCapacity } from './open-orders.js';
+import type { ResolvedLimit } from '../limits/resolver.js';
+import { assertOpenOrderCapacity } from '../limits/quota-counts.js';
 import { onPositionOpened } from './position-high-water.js';
 
 /** Parameters for queueing a trade that will settle at next market open. */
@@ -18,6 +19,8 @@ export interface ReservePendingParams {
   quantity: number;
   /** Reference price used to lock cash for buys. Should be the last-known price. */
   reservedPrice: number;
+  /** The caller's resolved `openOrders` limit — see `PlaceWorkingOrderInput.openOrderLimit`. */
+  openOrderLimit?: ResolvedLimit;
 }
 
 function rowToPending(row: typeof schema.trades.$inferSelect): PendingTrade {
@@ -60,13 +63,13 @@ function rowToExecuted(row: typeof schema.trades.$inferSelect): Trade {
  *
  * @throws {TradeError} `INSUFFICIENT_FUNDS` / `INSUFFICIENT_SHARES` /
  *   `INVALID_QUANTITY` / `INVALID_SYMBOL` on validation failure, and
- *   `TOO_MANY_OPEN_ORDERS` when the player already holds the open-order cap.
+ *   {@link LimitExceededError} when the open-order cap is reached.
  */
 export async function reservePendingTrade(
   db: Db,
   params: ReservePendingParams,
 ): Promise<PendingTrade> {
-  const { gamePlayerId, symbol, direction, quantity, reservedPrice } = params;
+  const { gamePlayerId, symbol, direction, quantity, reservedPrice, openOrderLimit } = params;
   const { gamePlayers, portfolios, trades } = schema;
 
   assertTradableSymbol(symbol);
@@ -79,7 +82,7 @@ export async function reservePendingTrade(
   // concurrent order for the same player can neither be validated against a
   // stale balance nor have its reservation overwritten by this one.
   return db.transaction(async (tx) => {
-    await assertOpenOrderCapacity(tx, gamePlayerId, 1);
+    await assertOpenOrderCapacity(tx, gamePlayerId, 1, openOrderLimit);
 
     const [player] = await tx
       .select({ cashBalance: gamePlayers.cashBalance })

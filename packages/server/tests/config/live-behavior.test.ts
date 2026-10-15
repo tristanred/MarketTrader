@@ -11,7 +11,12 @@ describe('live options reach their consumers', () => {
   let token: string;
 
   beforeAll(async () => {
-    ({ app, config } = await createTestAppWithDb());
+    // The watchlist cap is a per-user limit now, so it only applies with limits on;
+    // probation at 100% keeps a fresh account on the configured value.
+    ({ app, config } = await createTestAppWithDb(undefined, undefined, {
+      limits: { disabled: false },
+      runtimeConfig: RuntimeConfig.fromEnvironment({ LIMITS_PROBATION_PERCENT: 100 }),
+    }));
     const res = await app.inject({
       method: 'POST',
       url: '/auth/register',

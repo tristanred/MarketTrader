@@ -146,6 +146,7 @@ describe('the connect-time replay window', () => {
       provider: new MockStockProvider(),
       marketStatusProvider: new MockMarketStatusProvider(),
       disablePoller: true,
+      limits: { disabled: true },
       disableRateLimit: true,
       leaderboardThrottleMs: 0,
     });

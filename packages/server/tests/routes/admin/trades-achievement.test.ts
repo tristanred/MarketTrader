@@ -49,6 +49,7 @@ describe('POST /admin/trades/:id/force-execute — bus + WS integration', () => 
       provider,
       logger: false,
       disablePoller: true,
+      limits: { disabled: true },
       leaderboardThrottleMs: 0,
     });
     await app.listen({ port: 0, host: '127.0.0.1' });

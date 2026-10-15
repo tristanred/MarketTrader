@@ -24,6 +24,7 @@ describe('buildApp background workers', () => {
       marketStatusProvider: new MockMarketStatusProvider(),
       runtimeConfig: cfg,
       disablePoller: false,
+      limits: { disabled: true },
       disableRateLimit: true,
       loginThrottle: { disabled: true },
     });

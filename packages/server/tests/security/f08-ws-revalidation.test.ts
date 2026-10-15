@@ -77,6 +77,7 @@ describe('live sockets are re-authorized after upgrade (F8)', () => {
       provider: new MockStockProvider(),
       marketStatusProvider: new MockMarketStatusProvider(),
       disablePoller: true,
+      limits: { disabled: true },
       disableRateLimit: true,
       leaderboardThrottleMs: 0,
     });

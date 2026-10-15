@@ -2,8 +2,18 @@ import { describe, it, expect } from 'vitest';
 import { eq, and } from 'drizzle-orm';
 import { createTestDb } from '../helpers/app.js';
 import { reservePendingTrade } from '../../src/services/pending-trade.js';
-import { MAX_OPEN_ORDERS_PER_PLAYER } from '../../src/services/working-order.js';
+import { LimitExceededError } from '../../src/limits/errors.js';
+import type { ResolvedLimit } from '../../src/limits/resolver.js';
 import { schema } from '../../src/db/index.js';
+
+const MAX_OPEN_ORDERS = 50;
+const OPEN_ORDER_LIMIT: ResolvedLimit = {
+  key: 'openOrders',
+  max: MAX_OPEN_ORDERS,
+  basis: 'base',
+  privileged: false,
+  probation: false,
+};
 
 async function seed() {
   const db = await createTestDb();
@@ -32,42 +42,44 @@ async function seed() {
   return { db, gamePlayerId: gp.id };
 }
 
+function isOpenOrderDenial(err: unknown): boolean {
+  return err instanceof LimitExceededError && err.resolved.key === 'openOrders';
+}
+
 function pendingBuy(gamePlayerId: string) {
-  return { gamePlayerId, symbol: 'AAPL', direction: 'buy' as const, quantity: 1, reservedPrice: 1 };
+  return { gamePlayerId, symbol: 'AAPL', direction: 'buy' as const, quantity: 1, reservedPrice: 1, openOrderLimit: OPEN_ORDER_LIMIT };
 }
 
 describe('reservePendingTrade open-order cap', () => {
   it('refuses a pending order once the player holds the maximum open rows', async () => {
     const { db, gamePlayerId } = await seed();
-    for (let i = 0; i < MAX_OPEN_ORDERS_PER_PLAYER; i++) {
+    for (let i = 0; i < MAX_OPEN_ORDERS; i++) {
       await reservePendingTrade(db, pendingBuy(gamePlayerId));
     }
 
-    await expect(reservePendingTrade(db, pendingBuy(gamePlayerId))).rejects.toMatchObject({
-      code: 'TOO_MANY_OPEN_ORDERS',
-    });
+    await expect(reservePendingTrade(db, pendingBuy(gamePlayerId))).rejects.toSatisfy(isOpenOrderDenial);
 
     const pending = await db
       .select({ id: schema.trades.id })
       .from(schema.trades)
       .where(and(eq(schema.trades.gamePlayerId, gamePlayerId), eq(schema.trades.status, 'pending')));
-    expect(pending).toHaveLength(MAX_OPEN_ORDERS_PER_PLAYER);
+    expect(pending).toHaveLength(MAX_OPEN_ORDERS);
   });
 
   it('does not deduct cash for a refused pending buy', async () => {
     const { db, gamePlayerId } = await seed();
-    for (let i = 0; i < MAX_OPEN_ORDERS_PER_PLAYER; i++) {
+    for (let i = 0; i < MAX_OPEN_ORDERS; i++) {
       await reservePendingTrade(db, pendingBuy(gamePlayerId));
     }
     const cashBefore = await cashOf(db, gamePlayerId);
-    await expect(reservePendingTrade(db, pendingBuy(gamePlayerId))).rejects.toMatchObject({ code: 'TOO_MANY_OPEN_ORDERS' });
+    await expect(reservePendingTrade(db, pendingBuy(gamePlayerId))).rejects.toSatisfy(isOpenOrderDenial);
     expect(await cashOf(db, gamePlayerId)).toBe(cashBefore);
   });
 
   it('counts working rows toward the same cap', async () => {
     const { db, gamePlayerId } = await seed();
     await db.insert(schema.trades).values(
-      Array.from({ length: MAX_OPEN_ORDERS_PER_PLAYER }, () => ({
+      Array.from({ length: MAX_OPEN_ORDERS }, () => ({
         gamePlayerId,
         symbol: 'MSFT',
         direction: 'buy' as const,
@@ -77,9 +89,7 @@ describe('reservePendingTrade open-order cap', () => {
         limitPrice: 0.01,
       })),
     );
-    await expect(reservePendingTrade(db, pendingBuy(gamePlayerId))).rejects.toMatchObject({
-      code: 'TOO_MANY_OPEN_ORDERS',
-    });
+    await expect(reservePendingTrade(db, pendingBuy(gamePlayerId))).rejects.toSatisfy(isOpenOrderDenial);
   });
 });
 

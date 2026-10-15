@@ -182,14 +182,14 @@ export async function buildApp(
   await app.register(healthRoutes);
   await app.register(versionRoutes);
   await app.register(authRoutes(db, new FailedLoginTracker(runtimeConfig, loginThrottle)));
-  await app.register(gameRoutes(db, runtimeConfig, bus));
+  await app.register(gameRoutes(db, limits, bus));
   await app.register(publicGamesRoutes(db));
   await app.register(stockRoutes(db, provider, runtimeConfig));
   await app.register(
-    tradingRoutes(db, provider, marketStatusProvider, runtimeConfig, registry, leaderboardThrottleMs, bus),
+    tradingRoutes(db, provider, marketStatusProvider, runtimeConfig, limits, registry, leaderboardThrottleMs, bus),
   );
   await app.register(marketStatusRoutes(marketStatusProvider, runtimeConfig));
-  await app.register(watchlistRoutes(db, runtimeConfig));
+  await app.register(watchlistRoutes(db, limits));
   await app.register(discoverRoutes(db));
   await app.register(systemSettingsRoutes(systemSettings));
   await app.register(achievementsRoutes(db, achievementEngine));

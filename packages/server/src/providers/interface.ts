@@ -89,7 +89,6 @@ export class StockProviderError extends Error {
  * - `INVALID_QUANTITY`          — quantity is not a positive integer
  * - `INVALID_ORDER`             — required price field missing or logically inconsistent
  * - `INVALID_SYMBOL`            — ticker is not well-formed enough to store on a resting order
- * - `TOO_MANY_OPEN_ORDERS`      — player already holds the maximum working/pending rows
  * - `ORDER_NOT_WORKING`         — attempted to fill an order that was already cancelled/filled
  * - `INSUFFICIENT_FUNDS_AT_FILL`— resting buy could not be funded when its trigger fired
  */
@@ -99,7 +98,6 @@ export type TradeErrorCode =
   | 'INVALID_QUANTITY'
   | 'INVALID_ORDER'
   | 'INVALID_SYMBOL'
-  | 'TOO_MANY_OPEN_ORDERS'
   | 'ORDER_NOT_WORKING'
   | 'INSUFFICIENT_FUNDS_AT_FILL';
 

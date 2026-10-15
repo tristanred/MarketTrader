@@ -111,7 +111,7 @@ describe('WS connect-time achievement replay', () => {
     const provider = new MockStockProvider();
     provider.setQuote('AAPL', { price: 150 });
     db = await createTestDb();
-    app = await buildApp({ db, provider, logger: false, disablePoller: true, leaderboardThrottleMs: 0 });
+    app = await buildApp({ db, provider, logger: false, disablePoller: true, limits: { disabled: true }, leaderboardThrottleMs: 0 });
     await app.listen({ port: 0, host: '127.0.0.1' });
     port = (app.server.address() as AddressInfo).port;
 

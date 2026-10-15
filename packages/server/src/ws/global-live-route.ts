@@ -166,6 +166,10 @@ export function globalLiveRoute(
           return;
         }
 
+        // The peer may have left during the awaits above; its one `close` has
+        // then already fired, so a registered entry would never be removed.
+        if (socket.readyState !== 1 /* OPEN */) return;
+
         identityOf.set(socket, { userId: payload.id, expiresAt: payload.exp });
         registry.add(payload.id, socket);
         const cleanup = () => registry.remove(socket);

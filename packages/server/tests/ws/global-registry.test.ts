@@ -56,4 +56,11 @@ describe('GlobalClientRegistry', () => {
     expect(registry.countForUser('u1')).toBe(2);
     expect(registry.countForUser('u3')).toBe(0);
   });
+
+  it('does not count a socket that is no longer live toward the user’s connections', () => {
+    registry.add('u1', { readyState: 1, send: () => {} } as unknown as WebSocket);
+    registry.add('u1', { readyState: 3, send: () => {} } as unknown as WebSocket); // CLOSED
+    registry.add('u1', { readyState: 2, send: () => {} } as unknown as WebSocket); // CLOSING
+    expect(registry.countForUser('u1')).toBe(1);
+  });
 });

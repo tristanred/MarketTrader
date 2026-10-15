@@ -125,4 +125,12 @@ describe('GameClientRegistry', () => {
     expect(registry.countForUser('user-2')).toBe(1);
     expect(registry.countForUser('nobody')).toBe(0);
   });
+
+  it('does not count a socket that is no longer live toward the user’s connections', () => {
+    registry.add('game-1', 'user-1', makeMockSocket(1));
+    registry.add('game-1', 'user-1', makeMockSocket(0)); // CONNECTING
+    registry.add('game-2', 'user-1', makeMockSocket(3)); // CLOSED
+    registry.add('game-2', 'user-1', makeMockSocket(2)); // CLOSING
+    expect(registry.countForUser('user-1')).toBe(2);
+  });
 });

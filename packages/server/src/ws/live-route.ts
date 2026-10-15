@@ -234,6 +234,10 @@ export function liveRoute(
           return;
         }
 
+        // The peer may have left during the awaits above; its one `close` has
+        // then already fired, so a registered entry would never be removed.
+        if (socket.readyState !== 1 /* OPEN */) return;
+
         // Capture the time before registering the socket so the replay SELECT
         // uses it as an upper bound. Any unlock with unlockedAt > connectTime
         // will be broadcast live by the engine (the socket is already in the

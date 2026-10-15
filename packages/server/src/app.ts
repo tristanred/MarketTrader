@@ -65,6 +65,8 @@ export async function buildApp(
     leaderboardThrottleMs?: number;
     /** PostHog client for analytics and error tracking. Defaults to {@link getPostHog}. */
     analytics?: AnalyticsClient | null;
+    /** Mount the Swagger UI and OpenAPI spec at `/docs`. Defaults to off in production. */
+    exposeDocs?: boolean;
   } = {},
 ): Promise<FastifyInstance> {
   const {
@@ -76,6 +78,7 @@ export async function buildApp(
     loginThrottle,
     leaderboardThrottleMs,
     analytics = getPostHog(),
+    exposeDocs = env.NODE_ENV !== 'production',
     ...fastifyOpts
   } = opts;
   const provider = injectedProvider ?? new CachedProvider(db, createProvider());
@@ -101,7 +104,7 @@ export async function buildApp(
   await registerCookie(app);
   await registerJwt(app, db);
   await registerRateLimit(app, { disabled: disableRateLimit });
-  await registerSwagger(app);
+  await registerSwagger(app, { exposeDocs });
 
   const registry = new GameClientRegistry();
   const globalRegistry = new GlobalClientRegistry();

@@ -143,7 +143,9 @@ export const LIMIT_CATALOGUE = {
     kind: 'concurrent',
     configKey: 'LIMIT_WS_CONNECTIONS_PER_USER',
     windowMs: null,
-    probation: true,
+    // A game page holds two sockets, so 25% of the cap would lock a new
+    // player's phone out while their laptop is open.
+    probation: false,
     overridable: true,
     label: 'Live connection',
     per: 'at once',

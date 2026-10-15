@@ -164,7 +164,7 @@ Every abuse control is a **limit** with a key (`LimitKey`, `packages/shared/src/
 1. `LIMITS_ENABLED=false` → none
 2. admin → none
 3. per-user override → that value, and nothing below applies
-4. global value, reduced to `LIMITS_PROBATION_PERCENT` (rounded up, at least 1) while the account is younger than `LIMITS_MATURITY_DAYS`
+4. global value, reduced to `LIMITS_PROBATION_PERCENT` (rounded up, at least 1) while the account is younger than `LIMITS_MATURITY_DAYS`. The socket cap (`wsConnections`) is exempt: one game page holds two sockets, so a reduced cap would lock a new player's second device out
 5. ×`LIMITS_PRIVILEGED_MULTIPLIER` when the request IP is in `LIMITS_PRIVILEGED_CIDRS`
 
 | Limit | Option | Kind | Default |

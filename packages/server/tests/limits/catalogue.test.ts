@@ -36,10 +36,16 @@ describe('LIMIT_CATALOGUE', () => {
         expect(d.probation, key).toBe(false);
         expect(d.overridable, key).toBe(false);
       } else {
-        expect(d.probation, key).toBe(true);
+        expect(d.probation, key).toBe(key !== 'wsConnections');
         expect(d.overridable, key).toBe(true);
       }
     }
+  });
+
+  // One game page holds two sockets (/ws/live and /games/:id/live), so a
+  // probation share of the cap would lock a new player's second device out.
+  it('keeps the full socket cap for accounts on probation', () => {
+    expect(LIMIT_CATALOGUE.wsConnections.probation).toBe(false);
   });
 
   it('isLimitKey rejects prototype names and unknown keys', () => {

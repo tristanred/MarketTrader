@@ -30,6 +30,7 @@ function makeConfig(extra: Partial<Parameters<typeof RuntimeConfig.fromEnvironme
     LIMITS_PRIVILEGED_MULTIPLIER: 10,
     LIMIT_GAMES_CREATED_PER_WEEK: 10,
     LIMIT_REGISTRATIONS_PER_IP_PER_DAY: 5,
+    LIMIT_WS_CONNECTIONS_PER_USER: 10,
     ...extra,
   });
 }
@@ -137,6 +138,15 @@ const MATRIX: Row[] = [
     max: 100,
     basis: 'base',
     privileged: true,
+    probation: false,
+  },
+  {
+    name: 'socket cap: no probation for a fresh account',
+    subject: { account: FRESH, ip: HOME },
+    key: 'wsConnections',
+    max: 10,
+    basis: 'base',
+    privileged: false,
     probation: false,
   },
   {

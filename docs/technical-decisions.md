@@ -344,7 +344,7 @@ The cost is nil: `instrumentation-http` would only have added a lower-level span
 1. `LIMITS_ENABLED=false` → unlimited
 2. admin → unlimited
 3. per-user override → exactly that value, and the chain stops here (no probation, no multiplier)
-4. otherwise the global live option, cut to `LIMITS_PROBATION_PERCENT` (rounded up, at least 1) for accounts younger than `LIMITS_MATURITY_DAYS`
+4. otherwise the global live option, cut to `LIMITS_PROBATION_PERCENT` (rounded up, at least 1) for accounts younger than `LIMITS_MATURITY_DAYS` — on every per-user limit except the socket cap, where one game page already holds two sockets
 5. ×`LIMITS_PRIVILEGED_MULTIPLIER` when `request.ip` is in `LIMITS_PRIVILEGED_CIDRS`
 
 `LIMITS_ENABLED=false` lifts every per-user limit and the per-IP registration quota. It does **not** lift the pre-existing per-IP route limits (login, register, refresh, `/stocks/*`, WS upgrades): those are a separate layer with fixed numbers, wrapped by `withPrivilegedIp` so they gain only the privileged multiplier. Global values are live options in the `limits` config category. Overrides are rows in `user_limit_overrides`, audited like every admin write.

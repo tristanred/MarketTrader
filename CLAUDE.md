@@ -215,7 +215,8 @@ Abuse controls live in `packages/server/src/limits/` (ADR-017, `docs/design.md` 
   1. `LIMITS_ENABLED=false` → none
   2. admin → none
   3. per-user override → exactly that, and the chain stops (no probation, no multiplier)
-  4. global live option, at `LIMITS_PROBATION_PERCENT` while `isMatureUser` is false
+  4. global live option, at `LIMITS_PROBATION_PERCENT` while `isMatureUser` is false — except the
+     socket cap, which is not probation-eligible (a game page holds two sockets)
   5. ×`LIMITS_PRIVILEGED_MULTIPLIER` when `isPrivilegedConnection(request.ip)`
 
   Never compare against a config value directly in a route; go through the resolver, or overrides and admin immunity silently stop applying.

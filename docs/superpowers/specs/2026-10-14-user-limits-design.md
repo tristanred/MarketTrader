@@ -156,7 +156,7 @@ route can only carry one `config.rateLimit`.
 | `openOrders` | `LIMIT_OPEN_ORDERS_PER_PLAYER` (replaces the `MAX_OPEN_ORDERS_PER_PLAYER` constant) | `trades` with status `working` **or `pending`** for this game-player | concurrent | 50 | 13 |
 | `watchlists` | `WATCHLIST_MAX_PER_USER` (existing) | watchlists owned | concurrent | 20 | 5 |
 | `watchlistItems` | `WATCHLIST_MAX_ITEMS` (existing) | items in the target list | concurrent | 50 | 13 |
-| `wsConnections` | `LIMIT_WS_CONNECTIONS_PER_USER` | open sockets for the user across both registries | concurrent | 10 | 3 |
+| `wsConnections` | `LIMIT_WS_CONNECTIONS_PER_USER` | open sockets for the user across both registries | concurrent | 10 | 10 (not probation-eligible: one game page holds two sockets, so 3 would lock out a second device) |
 
 Creating a game checks both `gamesCreated` and `activeGamesOwned`, and — because the creator joins
 their own game — `gamesJoined` and `activeGamesJoined`. Joining checks the two join limits.

@@ -12,6 +12,10 @@ export default defineConfig({
     env: {
       DATABASE_URL: ':memory:',
       JWT_SECRET: 'test-secret-not-used-in-production',
+      // Fixtures across the suite create games on fixed windows like
+      // 2020 → 2099. Tests of the bounds pass strict values explicitly.
+      GAME_MAX_DURATION_DAYS: '100000',
+      GAME_MAX_START_DELAY_DAYS: '100000',
     },
   },
 });

@@ -217,6 +217,18 @@ export const CONFIG_REGISTRY = {
     category: 'limits', kind: 'integer', mutability: 'live', min: 1, max: 200,
     description: 'Watchlists one user may own. Lowering it does not delete existing lists.',
   },
+  GAME_MAX_STARTING_BALANCE: {
+    category: 'limits', kind: 'integer', mutability: 'live', min: 1_000, max: 1_000_000_000,
+    description: 'Largest starting balance a player may give a new game. Admin edits are not checked.',
+  },
+  GAME_MAX_DURATION_DAYS: {
+    category: 'limits', kind: 'integer', mutability: 'live', min: 1, max: 3_650,
+    description: 'Longest a new game may run, in days.',
+  },
+  GAME_MAX_START_DELAY_DAYS: {
+    category: 'limits', kind: 'integer', mutability: 'live', min: 0, max: 3_650,
+    description: 'How far ahead a new game may be scheduled to start, in days.',
+  },
 
   // ── websocket ───────────────────────────────────────────────────────────
   WS_HEARTBEAT_INTERVAL_MS: {

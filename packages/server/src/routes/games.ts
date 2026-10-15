@@ -10,6 +10,8 @@ import { generateInviteCode } from '../services/invite-code.js';
 import { computeLeaderboard } from '../services/leaderboard.js';
 import { getLeaderboardHistory } from '../services/leaderboard-history.js';
 import type { EventBus } from '../events/bus.js';
+import type { ConfigReader } from '../config/runtime-config.js';
+import { checkGameBounds } from '../services/game-bounds.js';
 
 const gameIdParamsSchema = z.object({ id: z.string() });
 
@@ -53,9 +55,10 @@ const createGameSchema = z
  * - `GET  /games/:id`    — fetch game details + leaderboard (membership required).
  *
  * All routes recompute game status on the fly so `pending`/`active`/`ended`
- * reflects real time rather than the stored snapshot.
+ * reflects real time rather than the stored snapshot. `config` supplies the
+ * live game bounds checked on create.
  */
-export function gameRoutes(db: Db, bus?: EventBus) {
+export function gameRoutes(db: Db, config: ConfigReader, bus?: EventBus) {
   return async function (rawApp: FastifyInstance): Promise<void> {
     const app = rawApp.withTypeProvider<ZodTypeProvider>();
     const { games, gamePlayers, users } = schema;
@@ -123,6 +126,8 @@ export function gameRoutes(db: Db, bus?: EventBus) {
         visibility,
       } = request.body;
       const userId = request.user.id;
+      const boundsError = checkGameBounds({ startDate, endDate, startingBalance }, config);
+      if (boundsError) return reply.status(400).send({ error: boundsError });
 
       // The unique index on invite_code makes a collision a hard failure
       // rather than silent data corruption, so retry on the astronomically

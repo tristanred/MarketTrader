@@ -167,7 +167,7 @@ export async function buildApp(
   await app.register(healthRoutes);
   await app.register(versionRoutes);
   await app.register(authRoutes(db, new FailedLoginTracker(runtimeConfig, loginThrottle)));
-  await app.register(gameRoutes(db, bus));
+  await app.register(gameRoutes(db, runtimeConfig, bus));
   await app.register(publicGamesRoutes(db));
   await app.register(stockRoutes(db, provider, runtimeConfig));
   await app.register(

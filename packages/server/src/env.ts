@@ -47,6 +47,14 @@ function parsePositiveInt(name: string, raw: string): number {
   return n;
 }
 
+function parseNonNegativeInt(name: string, raw: string): number {
+  const n = parseInt(raw, 10);
+  if (isNaN(n) || n < 0) {
+    throw new Error(`Invalid ${name}: "${raw}". Must be a non-negative integer.`);
+  }
+  return n;
+}
+
 function parseBool(raw: string): boolean {
   return raw.trim().toLowerCase() === 'true';
 }
@@ -343,6 +351,21 @@ export const liveBootConfig = {
   WATCHLIST_MAX_PER_USER: parsePositiveInt(
     'WATCHLIST_MAX_PER_USER',
     optional('WATCHLIST_MAX_PER_USER', '20'),
+  ),
+  /** Largest `startingBalance` a player may give a new game. Bounds the featured-games ranking input. */
+  GAME_MAX_STARTING_BALANCE: parsePositiveInt(
+    'GAME_MAX_STARTING_BALANCE',
+    optional('GAME_MAX_STARTING_BALANCE', '10000000'),
+  ),
+  /** Longest a new game may run, in days. Workers write rows for every live game, so open-ended games are unbounded cost. */
+  GAME_MAX_DURATION_DAYS: parsePositiveInt(
+    'GAME_MAX_DURATION_DAYS',
+    optional('GAME_MAX_DURATION_DAYS', '365'),
+  ),
+  /** How far in the future a new game's start date may be, in days. */
+  GAME_MAX_START_DELAY_DAYS: parseNonNegativeInt(
+    'GAME_MAX_START_DELAY_DAYS',
+    optional('GAME_MAX_START_DELAY_DAYS', '90'),
   ),
 
   /**

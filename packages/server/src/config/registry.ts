@@ -220,6 +220,14 @@ export const CONFIG_REGISTRY = {
     category: 'limits', kind: 'integer', mutability: 'live', min: 1, max: 200,
     description: 'Watchlists one user may own. Lowering it does not delete existing lists.',
   },
+  USAGE_FLUSH_INTERVAL_MS: {
+    category: 'limits', kind: 'integer', unit: 'ms', mutability: 'live', min: 5 * SECOND, max: 10 * MINUTE,
+    description: 'How often per-user request and denial counts are written to the usage tables.',
+  },
+  USAGE_RETENTION_DAYS: {
+    category: 'limits', kind: 'integer', mutability: 'live', min: 1, max: 365,
+    description: 'Days of hourly usage history kept for the admin limits panel.',
+  },
   GAME_MAX_STARTING_BALANCE: {
     category: 'limits', kind: 'integer', mutability: 'live', min: 1_000, max: 1_000_000_000,
     description: 'Largest starting balance a player may give a new game. Admin edits are not checked.',

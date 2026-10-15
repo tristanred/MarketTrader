@@ -466,6 +466,20 @@ export const liveBootConfig = {
     'PRICE_POLLER_MAX_SYMBOLS',
     optional('PRICE_POLLER_MAX_SYMBOLS', '500'),
   ),
+  /**
+   * How often the usage-rollup worker writes the in-memory request and denial
+   * counts to `api_usage_hourly` / `limit_denials_hourly`. A crash loses at most
+   * one interval of counts — monitoring data, never enforcement state.
+   */
+  USAGE_FLUSH_INTERVAL_MS: parsePositiveInt(
+    'USAGE_FLUSH_INTERVAL_MS',
+    optional('USAGE_FLUSH_INTERVAL_MS', '60000'),
+  ),
+  /** Days of hourly usage and denial rows kept for the admin panel. */
+  USAGE_RETENTION_DAYS: parsePositiveInt(
+    'USAGE_RETENTION_DAYS',
+    optional('USAGE_RETENTION_DAYS', '30'),
+  ),
   /** How long the market open/closed state is cached, in ms. */
   MARKET_STATUS_CACHE_TTL_MS: parsePositiveInt(
     'MARKET_STATUS_CACHE_TTL_MS',

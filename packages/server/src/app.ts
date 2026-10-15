@@ -12,6 +12,7 @@ import { createLimits } from './limits/index.js';
 import { rateDenialLabel } from './limits/rate.js';
 import { registerLimitErrorHandler } from './limits/errors.js';
 import { UsageTracker } from './limits/usage-tracker.js';
+import { flushUsage } from './limits/usage-store.js';
 import { recordRateLimitDenial, recordUnrecordedDenial, registerUsageHooks } from './limits/usage-hooks.js';
 import { healthRoutes } from './routes/health.js';
 import { versionRoutes } from './routes/version.js';
@@ -46,6 +47,7 @@ import { startPricePoller } from './ws/price-poller.js';
 import { startPendingOrdersWorker } from './workers/pending-orders.js';
 import { startPortfolioSnapshotWorker } from './workers/portfolio-snapshot.js';
 import { startDiscoverWorker } from './workers/discover.js';
+import { startUsageRollupWorker } from './workers/usage-rollup.js';
 import { attachErrorCapture } from './observability/error-capture.js';
 import { registerOtel } from './plugins/otel.js';
 import { EventBus } from './events/bus.js';
@@ -276,6 +278,14 @@ export async function buildApp(
     const discoverWorker = startDiscoverWorker({ db, provider, config: runtimeConfig, logger: app.log });
     app.addHook('onClose', async () => {
       await discoverWorker.stop();
+    });
+
+    const tracker = limits.tracker;
+    const usageWorker = startUsageRollupWorker({ db, tracker, config: runtimeConfig, logger: app.log });
+    app.addHook('onClose', async () => {
+      await usageWorker.stop();
+      // Counts gathered since the last tick; a graceful shutdown loses nothing.
+      await flushUsage(db, tracker.swap());
     });
 
     // Engine tick: feeds time-based achievements without external triggers.

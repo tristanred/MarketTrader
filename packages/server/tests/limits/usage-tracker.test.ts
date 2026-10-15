@@ -88,6 +88,18 @@ describe('UsageTracker', () => {
     expect(t.snapshotView().requests[0]!.count).toBe(1);
   });
 
+  it('forgetUser drops only that user’s buffered rows', () => {
+    const t = new UsageTracker({ now: clock().now });
+    t.recordRequest({ type: 'user', id: 'gone' }, 'GET /games');
+    t.recordDenial({ type: 'user', id: 'gone' }, 'trades');
+    t.recordRequest({ type: 'ip', id: 'gone' }, 'GET /games');
+    t.recordRequest({ type: 'user', id: 'kept' }, 'GET /games');
+    t.forgetUser('gone');
+    const view = t.snapshotView();
+    expect(view.requests.map((r) => `${r.subjectType}:${r.subjectId}`).sort()).toEqual(['ip:gone', 'user:kept']);
+    expect(view.denials).toEqual([]);
+  });
+
   it('counts a user’s requests over a sliding minute', () => {
     const c = clock();
     const t = new UsageTracker({ now: c.now });

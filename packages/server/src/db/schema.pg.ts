@@ -551,3 +551,40 @@ export const userLimitOverrides = pgTable(
   },
   (t) => [primaryKey({ columns: [t.userId, t.limitKey] })],
 );
+
+/**
+ * Hourly request counts per subject per route. Mirrors the SQLite variant;
+ * timestamps are deliberately ISO text here too so window filters are identical.
+ */
+export const apiUsageHourly = pgTable(
+  'api_usage_hourly',
+  {
+    subjectType: text('subject_type', { enum: ['user', 'ip'] }).notNull(),
+    subjectId: text('subject_id').notNull(),
+    route: text('route').notNull(),
+    hourStart: text('hour_start').notNull(),
+    count: integer('count').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.subjectType, t.subjectId, t.route, t.hourStart] }),
+    index('api_usage_hourly_hour_idx').on(t.hourStart),
+  ],
+);
+
+/** Hourly limit denials per subject per limit key. Mirrors the SQLite variant. */
+export const limitDenialsHourly = pgTable(
+  'limit_denials_hourly',
+  {
+    subjectType: text('subject_type', { enum: ['user', 'ip'] }).notNull(),
+    subjectId: text('subject_id').notNull(),
+    limitKey: text('limit_key').notNull(),
+    hourStart: text('hour_start').notNull(),
+    count: integer('count').notNull(),
+    firstAt: text('first_at').notNull(),
+    lastAt: text('last_at').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.subjectType, t.subjectId, t.limitKey, t.hourStart] }),
+    index('limit_denials_hourly_hour_idx').on(t.hourStart),
+  ],
+);

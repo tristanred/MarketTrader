@@ -131,6 +131,19 @@ export class UsageTracker {
     }
   }
 
+  /**
+   * Drops every buffered row attributed to `userId`, so a flush after the
+   * account is deleted cannot write its usage back. IP-subject rows are kept.
+   */
+  forgetUser(userId: string): void {
+    for (const [key, row] of this.requests) {
+      if (row.subjectType === 'user' && row.subjectId === userId) this.requests.delete(key);
+    }
+    for (const [key, row] of this.denials) {
+      if (row.subjectType === 'user' && row.subjectId === userId) this.denials.delete(key);
+    }
+  }
+
   /** Counts one request toward `userId`'s sliding minute and returns the total including it. */
   hitMinute(userId: string): number {
     return this.minute.hit(userId);

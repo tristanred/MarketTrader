@@ -607,3 +607,47 @@ export const userLimitOverrides = sqliteTable(
   },
   (t) => [primaryKey({ columns: [t.userId, t.limitKey] })],
 );
+
+/**
+ * Hourly request counts per subject (a user, or an IP for unauthenticated calls)
+ * per registered route pattern, flushed from the in-memory `UsageTracker` by the
+ * usage-rollup worker. Monitoring only; no limit reads it. Timestamps are
+ * ISO-8601 UTC text on both dialects so window filters are the same string
+ * comparison everywhere. No FK to users: a subject may be an IP.
+ */
+export const apiUsageHourly = sqliteTable(
+  'api_usage_hourly',
+  {
+    subjectType: text('subject_type', { enum: ['user', 'ip'] }).notNull(),
+    subjectId: text('subject_id').notNull(),
+    route: text('route').notNull(),
+    hourStart: text('hour_start').notNull(),
+    count: integer('count').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.subjectType, t.subjectId, t.route, t.hourStart] }),
+    index('api_usage_hourly_hour_idx').on(t.hourStart),
+  ],
+);
+
+/**
+ * Hourly count of limit denials per subject per limit key, with the first and
+ * last denial in the hour. Aggregated in memory before writing, so a script
+ * hammering a limit costs one row update per flush, not one insert per denial.
+ */
+export const limitDenialsHourly = sqliteTable(
+  'limit_denials_hourly',
+  {
+    subjectType: text('subject_type', { enum: ['user', 'ip'] }).notNull(),
+    subjectId: text('subject_id').notNull(),
+    limitKey: text('limit_key').notNull(),
+    hourStart: text('hour_start').notNull(),
+    count: integer('count').notNull(),
+    firstAt: text('first_at').notNull(),
+    lastAt: text('last_at').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.subjectType, t.subjectId, t.limitKey, t.hourStart] }),
+    index('limit_denials_hourly_hour_idx').on(t.hourStart),
+  ],
+);

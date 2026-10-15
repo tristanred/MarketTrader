@@ -8,6 +8,7 @@ import { schema } from '../../db/index.js';
 import { isUniqueConstraintError } from '../../db/errors.js';
 import { ADMIN_GROUP_NAME } from '../../constants/groups.js';
 import { recordAdminAction } from '../../services/admin-audit.js';
+import { deleteUsageForUser } from '../../limits/usage-store.js';
 
 const idParams = z.object({ id: z.string() });
 const userGroupParams = z.object({ id: z.string(), groupName: z.string() });
@@ -281,6 +282,8 @@ export function adminUsersRoutes(db: Db) {
       }
 
       await db.transaction(async (tx) => {
+        // Usage rows have no FK (a subject may be an IP), so they don't cascade.
+        await deleteUsageForUser(tx, id);
         await tx.delete(users).where(eq(users.id, id));
         await recordAdminAction(tx, {
           adminUserId: adminId,
@@ -291,6 +294,8 @@ export function adminUsersRoutes(db: Db) {
           metadata: { players, force },
         });
       });
+      // After commit: a rolled-back delete must keep the user's buffered counts.
+      app.limits.tracker.forgetUser(id);
 
       return reply.status(204).send();
     });

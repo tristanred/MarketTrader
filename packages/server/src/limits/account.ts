@@ -23,7 +23,8 @@ const HAS_ZONE = /(?:[zZ]|[+-]\d\d(?::?\d\d)?)$/;
 /**
  * Normalises a stored timestamp to ISO-8601 UTC. SQLite's `datetime('now')` and
  * postgres-js's zone-less timestamps both come back as `YYYY-MM-DD HH:MM:SS[.f]`
- * in UTC with no zone, which `Date.parse` would read as local time.
+ * with no zone, which `Date.parse` would read as local time. On Postgres they are
+ * UTC only while the session `TimeZone` is UTC (docs/deployment.md).
  */
 export function toIsoUtc(value: string): string {
   const parsed = new Date(HAS_ZONE.test(value) ? value : `${value.replace(' ', 'T')}Z`);

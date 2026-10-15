@@ -11,10 +11,9 @@ import { LimitExceededError } from './errors.js';
 export type Reader = Pick<Db, 'select'>;
 
 /**
- * Formats `d` the way the `created_at`/`joined_at` defaults store it.
- * SQLite's `datetime('now')` writes `YYYY-MM-DD HH:MM:SS`, and comparison there
- * is textual — an ISO string's `T` sorts after the space and would skew every
- * window. Postgres parses the same format into its timestamp column.
+ * Formats `d` as `YYYY-MM-DD HH:MM:SS`, the form the timestamp defaults store. SQLite
+ * compares textually, so an ISO `T` would skew every window. Postgres's zone-less column
+ * matches only while the session `TimeZone` is UTC (docs/deployment.md).
  */
 export function toSqlTimestamp(d: Date): string {
   return d.toISOString().slice(0, 19).replace('T', ' ');

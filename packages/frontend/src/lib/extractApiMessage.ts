@@ -1,4 +1,5 @@
 import { ApiError } from '@/lib/api';
+import { formatLimitMessage, isLimitExceeded } from '@/lib/limits';
 
 /**
  * Extracts the most useful human-readable message from a thrown value.
@@ -7,8 +8,10 @@ import { ApiError } from '@/lib/api';
  * `error` (routes return one or the other: trade errors send `{ code, message }`,
  * admin 409s send `{ error }`), falling back to `"<status> <statusText>"`.
  * For any other thrown value, returns its `Error.message` or `"Unknown error"`.
+ * A {@link isLimitExceeded} body is rendered with {@link formatLimitMessage}.
  */
 export function extractApiMessage(err: unknown): string {
+  if (isLimitExceeded(err)) return formatLimitMessage(err.body);
   if (err instanceof ApiError) {
     const body = err.body;
     if (body && typeof body === 'object') {

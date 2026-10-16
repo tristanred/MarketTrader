@@ -1,0 +1,6 @@
+| packages/server/src/services/spans.ts:46:10:46:53 | tracer. ... dNamed) | startActiveSpan callback must use try { ... } catch { s.recordException(...); s.setStatus(ERROR); throw } finally { s.end() }. |
+| packages/server/src/services/spans.ts:51:10:55:4 | tracer. ... r;\\n  }) | startActiveSpan callback must use try { ... } catch { span.recordException(...); span.setStatus(ERROR); throw } finally { span.end() }. |
+| packages/server/src/services/spans.ts:60:10:66:4 | tracer. ...  }\\n  }) | startActiveSpan callback must use try { ... } catch { span.recordException(...); span.setStatus(ERROR); throw } finally { span.end() }. |
+| packages/server/src/services/spans.ts:71:10:80:4 | tracer. ...  }\\n  }) | startActiveSpan callback must use try { ... } catch { span.recordException(...); span.setStatus(ERROR); throw } finally { span.end() }. |
+| packages/server/src/services/spans.ts:85:10:85:62 | tracer. ... work()) | startActiveSpan callback takes no span parameter, so it cannot end the span; accept `span` and end it in a finally block. |
+| packages/server/src/services/spans.ts:100:16:100:39 | tracer. ... 'leak') | Span from startSpan(...) is never ended in this function; call .end() in a finally block. |

@@ -1,0 +1,5 @@
+| packages/server/src/ws/live-route.ts:24:3:26:4 | socket. ... );\\n  }) | The 'message' listener body is not wrapped in try/catch; wrap it so a malformed frame cannot throw out of the socket callback. |
+| packages/server/src/ws/live-route.ts:29:3:36:4 | socket. ...  }\\n  }) | The 'message' listener body is not wrapped in try/catch; wrap it so a malformed frame cannot throw out of the socket callback. |
+| packages/server/src/ws/live-route.ts:39:3:46:4 | socket. ... );\\n  }) | The 'message' listener body is not wrapped in try/catch; wrap it so a malformed frame cannot throw out of the socket callback. |
+| packages/server/src/ws/live-route.ts:49:3:55:4 | socket. ...  }\\n  }) | The 'message' listener body is not wrapped in try/catch; wrap it so a malformed frame cannot throw out of the socket callback. |
+| packages/server/src/ws/live-route.ts:58:3:58:58 | socket. ... e(raw)) | The 'message' listener body is not wrapped in try/catch; wrap it so a malformed frame cannot throw out of the socket callback. |

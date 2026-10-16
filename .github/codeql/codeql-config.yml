@@ -1,0 +1,14 @@
+name: MarketTrader CodeQL config
+
+queries:
+  - uses: security-extended
+  - uses: ./.github/codeql/markettrader-queries
+
+paths:
+  - packages/server/src
+  - packages/frontend/src
+  - packages/shared/src
+
+paths-ignore:
+  - "**/node_modules"
+  - "**/dist"

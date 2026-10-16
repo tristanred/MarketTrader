@@ -1,0 +1,4 @@
+| packages/server/src/ws/registry.ts:14:34:14:53 | socket.send(payload) | This socket send is not inside a try block; wrap it in try/catch so a socket closing mid-broadcast cannot throw out of the loop. |
+| packages/server/src/ws/registry.ts:18:5:18:25 | this.ws ... ayload) | This socket send is not inside a try block; wrap it in try/catch so a socket closing mid-broadcast cannot throw out of the loop. |
+| packages/server/src/ws/registry.ts:25:7:25:26 | socket.send(payload) | This socket send is not inside a try block; wrap it in try/catch so a socket closing mid-broadcast cannot throw out of the loop. |
+| packages/server/src/ws/registry.ts:32:24:32:43 | socket.send(payload) | This socket send is not inside a try block; wrap it in try/catch so a socket closing mid-broadcast cannot throw out of the loop. |

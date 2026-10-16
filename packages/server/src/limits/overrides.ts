@@ -21,7 +21,7 @@ const CACHE_MAX_USERS = 5_000;
 /**
  * Reads and writes per-user limit overrides. Writes are audited in the same
  * transaction and invalidate the in-process cache; safe because the app runs
- * as a single process (ADR-017).
+ * as a single process (ADR-018).
  */
 export class LimitOverridesService {
   private readonly cache = new Map<string, Map<LimitKey, number>>();

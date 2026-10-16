@@ -159,7 +159,7 @@ options are read-only and say why. The panel also shows the bundle's `VITE_*` bu
 
 ### User limits
 
-Every abuse control is a **limit** with a key (`LimitKey`, `packages/shared/src/types/limits.ts`), a catalogue entry (`packages/server/src/limits/catalogue.ts`), and a live option in the `limits` config category that holds its global value. The effective value for a request is resolved in this order (ADR-017):
+Every abuse control is a **limit** with a key (`LimitKey`, `packages/shared/src/types/limits.ts`), a catalogue entry (`packages/server/src/limits/catalogue.ts`), and a live option in the `limits` config category that holds its global value. The effective value for a request is resolved in this order (ADR-018):
 
 1. `LIMITS_ENABLED=false` → none
 2. admin → none
@@ -414,7 +414,7 @@ Neither matters at the current single-process deployment. Moving to more than on
 server instance means moving this state to the database or a shared cache — the
 per-IP limiter (`@fastify/rate-limit`, also in-process), the per-user rate windows,
 the limit-override cache, and the unflushed `UsageTracker` buffers have the same
-constraint (ADR-017).
+constraint (ADR-018).
 
 ### Discover's S&P 500 list is maintained by hand
 

@@ -242,7 +242,7 @@ stateless-JWT rationale above is unchanged; only the transport moved.
 - Three `CHANGELOG.md` files are generated, one per fixed package. Accepted as the cost of a lockstep version.
 - The version reaches production only by being committed and pushed: deployment builds from a fresh fetch of `origin`. A version bump that isn't pushed simply doesn't ship.
 - `src/build-info.ts` needs a `typeof` guard on the injected globals. Dev runs under `tsx watch`, which has no define step, so a bare reference would throw a `ReferenceError` — dev reports `0.0.0-dev`. `vitest.config.ts` duplicates the tsup `define` block so tests exercise the real values instead of that fallback.
-- `/version` is public, matching `/health`. It exposes a version and a commit SHA to anyone; `/health` and the Swagger UI at `/docs` are already public, so this adds little, and being able to check a deploy with one curl is the point.
+- `/version` is public, matching `/health`. It exposes a version and a commit SHA to anyone; `/health` is already public, so this adds little, and being able to check a deploy with one curl is the point. (The Swagger UI at `/docs` was public too when this was written; it is now mounted only outside production.)
 
 **See also:** the "Versioning and Releases" section of `CLAUDE.md` for the operator flow.
 
@@ -334,7 +334,29 @@ The cost is nil: `instrumentation-http` would only have added a lower-level span
 
 ---
 
-## ADR-017: Per-User Limits on `@fastify/rate-limit`, Quotas Counted From Source Rows
+## ADR-017: CodeQL Code Scanning with Project Invariant Queries
+
+**Date:** 2026-10-15
+**Status:** Accepted
+
+**Decision:** Run GitHub CodeQL (`security-extended`) on every push and PR to `main` and weekly, plus a custom query pack, `markettrader/invariants` (`.github/codeql/`), that turns the project's written rules into checks: credential and PII flows, Postgres decimal handling, route auth, WebSocket lifecycle, transactional money writes, and "X only in file Y" boundaries. Each query has fixture tests, and CI runs them before analysis. `docs/codeql.md` is the catalogue.
+
+**Why CodeQL rather than ESLint for these:** most of the rules are about how values move ("this token never reaches a logger", "a decimal read reaches a response without `Number()`") or about ordering and enclosure ("listeners before the first await", "audit row in the mutation's transaction"). Those need interprocedural data flow and control flow that lint rules don't have. The pure import/location restrictions could have been ESLint rules, but they live in CodeQL too. That way a known violation surfaces as an alert instead of failing `pnpm lint`, and all invariants are in one place.
+
+**Severity policy:** `error` with a `@security-severity` is only for credential leaks, auth bypasses and DOM-injection sinks, all of which hold today, so a new one fails the check. Every business-rule or structural invariant is a `warning`, including the ones with known violations, so they annotate PRs without blocking them.
+
+**Alternatives considered:**
+- **Semgrep** — its patterns are easier to write, but they are mostly syntactic. They can't follow a value from a Drizzle result through destructuring and spreads into a reply, and it would add a second scanning service next to GitHub's built-in one.
+- **Tests only** — tests cover behaviour on the paths they exercise. These are properties that must hold on every path, including code that hasn't been written yet.
+
+**Consequences:**
+- The query pack pins `codeql/javascript-all` through its lock file. The workflow uses `tools: latest` so the CLI is never older than that library.
+- Queries scope files by path suffix (`packages/server/src/...`), so test fixtures must mirror the repo layout. Code-scanning `paths` exclude `tests/`, `tools/` and `e2e/`.
+- Known violations are left open as alerts. They are tracked in `docs/codeql.md`, not suppressed.
+
+---
+
+## ADR-018: Per-User Limits on `@fastify/rate-limit`, Quotas Counted From Source Rows
 
 **Date:** 2026-10-14
 **Status:** Accepted

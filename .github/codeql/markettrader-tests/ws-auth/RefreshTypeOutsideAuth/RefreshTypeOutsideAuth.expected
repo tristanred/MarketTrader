@@ -1,0 +1,2 @@
+| packages/server/src/ws/live-route.ts:8:10:8:44 | payload ... EN_TYPE | A token `type` is compared with the refresh type outside routes/auth.ts and plugins/jwt.ts; only POST /auth/refresh may accept a refresh token \u2014 require `type === ACCESS_TOKEN_TYPE` instead. |
+| packages/server/src/ws/live-route.ts:14:10:14:34 | payload ... efresh' | A token `type` is compared with the refresh type outside routes/auth.ts and plugins/jwt.ts; only POST /auth/refresh may accept a refresh token \u2014 require `type === ACCESS_TOKEN_TYPE` instead. |

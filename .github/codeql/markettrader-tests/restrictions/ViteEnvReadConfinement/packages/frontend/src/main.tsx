@@ -1,0 +1,9 @@
+export const key = import.meta.env.VITE_POSTHOG_KEY; // BAD: read posthogEnabled from lib/posthogConfig
+const env = import.meta.env;
+export const host = env.VITE_POSTHOG_HOST; // BAD: via an alias
+const { VITE_OTEL_SERVICE } = import.meta.env; // BAD: destructured
+export const svc = VITE_OTEL_SERVICE;
+export const mode = import.meta.env.MODE; // OK: not an owned prefix
+export const api = import.meta.env.VITE_API_URL; // OK: not an owned prefix
+export const computed = import.meta.env['VITE_POSTHOG_UI_HOST']; // BAD: computed key
+export const optional = import.meta.env?.VITE_OTEL_EXPORTER_URL; // BAD: optional chaining

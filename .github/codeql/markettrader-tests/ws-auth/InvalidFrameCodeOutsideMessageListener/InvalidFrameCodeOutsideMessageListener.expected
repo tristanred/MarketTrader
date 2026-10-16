@@ -1,0 +1,2 @@
+| packages/server/src/ws/live-route.ts:15:5:15:69 | closeSo ... token') | WS_INVALID_FRAME_CLOSE_CODE is passed here outside a socket 'message' listener; it is reserved for rejecting an inbound frame \u2014 use WS_POLICY_CLOSE_CODE for credential decisions. |
+| packages/server/src/ws/live-route.ts:30:5:30:45 | socket. ... E_CODE) | WS_INVALID_FRAME_CLOSE_CODE is passed here outside a socket 'message' listener; it is reserved for rejecting an inbound frame \u2014 use WS_POLICY_CLOSE_CODE for credential decisions. |

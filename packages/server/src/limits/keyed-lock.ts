@@ -2,7 +2,7 @@
  * In-process mutex per key: `run(key, fn)` waits for every earlier `run` on the
  * same key to settle before calling `fn`. Holds a check-then-insert together
  * when the path awaits between the two. Only exact within one process, which
- * the single-host deployment (ADR-013, ADR-017) provides.
+ * the single-host deployment (ADR-013, ADR-018) provides.
  */
 export class KeyedLock {
   private readonly tails = new Map<string, Promise<void>>();

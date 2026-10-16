@@ -80,6 +80,8 @@ export async function buildApp(
     usageTracker?: UsageTracker;
     /** Pass `{ disabled: true }` to lift every per-user limit. Tests only. */
     limits?: { disabled?: boolean };
+    /** Mount the Swagger UI and OpenAPI spec at `/docs`. Defaults to off in production. */
+    exposeDocs?: boolean;
   } = {},
 ): Promise<FastifyInstance> {
   const {
@@ -94,6 +96,7 @@ export async function buildApp(
     runtimeConfig = RuntimeConfig.fromEnvironment(),
     usageTracker = new UsageTracker(),
     limits: limitOptions = {},
+    exposeDocs = env.NODE_ENV !== 'production',
     ...fastifyOpts
   } = opts;
   const provider = injectedProvider ?? new CachedProvider(db, createProvider(runtimeConfig), runtimeConfig);
@@ -130,7 +133,7 @@ export async function buildApp(
       recordRateLimitDenial(usageTracker, request);
     },
   });
-  await registerSwagger(app);
+  await registerSwagger(app, { exposeDocs });
   // Before any route plugin: route contexts inherit the error handler at registration.
   registerLimitErrorHandler(app, runtimeConfig, (request, err) => recordUnrecordedDenial(usageTracker, request, err));
 

@@ -353,3 +353,54 @@ The cost is nil: `instrumentation-http` would only have added a lower-level span
 - The query pack pins `codeql/javascript-all` through its lock file. The workflow uses `tools: latest` so the CLI is never older than that library.
 - Queries scope files by path suffix (`packages/server/src/...`), so test fixtures must mirror the repo layout. Code-scanning `paths` exclude `tests/`, `tools/` and `e2e/`.
 - Known violations are left open as alerts. They are tracked in `docs/codeql.md`, not suppressed.
+
+---
+
+## ADR-018: Per-User Limits on `@fastify/rate-limit`, Quotas Counted From Source Rows
+
+**Date:** 2026-10-14
+**Status:** Accepted
+**Amends:** ADR-002 (rate limiting stays a Fastify plugin; it gains a per-user key and a resolver)
+
+**Decision:** Every per-user abuse control resolves its ceiling through one `LimitResolver` (`packages/server/src/limits/`), in this order:
+1. `LIMITS_ENABLED=false` → unlimited
+2. admin → unlimited
+3. per-user override → exactly that value, and the chain stops here (no probation, no multiplier)
+4. otherwise the global live option, cut to `LIMITS_PROBATION_PERCENT` (rounded up, at least 1) for accounts younger than `LIMITS_MATURITY_DAYS` — on every per-user limit except the socket cap, where one game page already holds two sockets
+5. ×`LIMITS_PRIVILEGED_MULTIPLIER` when `request.ip` is in `LIMITS_PRIVILEGED_CIDRS`
+
+`LIMITS_ENABLED=false` lifts every per-user limit and the per-IP registration quota. It does **not** lift the pre-existing per-IP route limits (login, register, refresh, `/stocks/*`, WS upgrades): those are a separate layer with fixed numbers, wrapped by `withPrivilegedIp` so they gain only the privileged multiplier. Global values are live options in the `limits` config category. Overrides are rows in `user_limit_overrides`, audited like every admin write.
+
+**Three kinds of limit share the resolver but not the counter:**
+
+| Kind | Counted by | Why |
+|---|---|---|
+| Request rate (trades/min, cancels/min, invite-code lookups/min) | `@fastify/rate-limit`, keyed `u:<userId>`, with an async `max` that calls the resolver (`rateLimitFor`) | The plugin already does windows, headers, and eviction; per-request `max` makes overrides apply on the next request |
+| Quota over a window (games created/week, joins/day, registrations per IP/day) | `COUNT(*)` over the real rows (`games.created_by`, `game_players.joined_at`, `users.registration_ip`) | Durable across restarts, and cannot drift from the truth: a deleted game stops counting |
+| Concurrent cap (active games, open orders, watchlists, sockets) | `COUNT(*)` of current rows, or the live socket registries | Same |
+
+Two rates are not on the plugin:
+- The global per-user request ceiling (`LIMIT_API_REQUESTS_PER_MINUTE`). A route carries only one `config.rateLimit`, so the ceiling is enforced by the in-memory `UsageTracker` from a global `preHandler`.
+- Live `subscribe` frames (`LIMIT_WS_SUBSCRIBES_PER_MINUTE`). A frame is not an HTTP request, so the `/games/:id/live` route keeps its own per-user `SlidingWindowCounter`, shared across that user's sockets.
+
+**Write ceilings are not unconditional.** Admins and the off switch get no open-order or watchlist write ceiling: limits apply to players, not operators. Every resting order's and watched symbol's fan-out into the price poller is still bounded by `PRICE_POLLER_MAX_SYMBOLS`, which stays the backstop.
+
+**Monitoring is aggregated in memory and rolled up hourly.**
+- `UsageTracker` counts requests per subject (user, or IP when logged out) × registered route × hour, and denials per subject × limit × hour.
+- The `usage-rollup` worker adds the counts into `api_usage_hourly` and `limit_denials_hourly` every `USAGE_FLUSH_INTERVAL_MS`, and prunes rows past `USAGE_RETENTION_DAYS`.
+- OTel gets only `markettrader.limits.denied{limit}`. A user id on a metric attribute is unbounded cardinality (ADR-015).
+
+**Alternatives considered:**
+- **A custom limiter for everything** — rejected. It reimplements a working plugin, plus its store and eviction, to gain uniformity.
+- **A usage-counter table driving every limit** — rejected. That is a database write per request (a poor fit for SQLite under load), and the counters drift from the rows they claim to count.
+- **Per-user OTel metrics** — rejected on cardinality.
+- **Separate probation values per limit** — rejected for one percentage knob. Per-user overrides already cover the exceptions.
+
+**Consequences:**
+- **Single-host assumption.** Rate windows, the subscribe window, the override cache, and unflushed usage are per process. A restart resets rate windows (quotas are unaffected). A crash loses at most one flush interval of usage. Moving to several instances means a shared store, as already noted for the login throttle.
+- **Quota overshoot.** A count-then-insert check is not atomic on either database: the count is a plain read, so SQLite's single writer does not help, and every request in flight between the count and the write can read the same total and be admitted. The overshoot is bounded by that number of in-flight requests, not by one. Registration, the sybil control, awaits argon2 in that gap, so it is serialised per IP from count to insert by an in-process `KeyedLock` (`limits/keyed-lock.ts`); that relies on the single-process deployment above. The other quota and concurrent checks stay soft, bounded by one user's own concurrent requests.
+- **`request.ip` is load-bearing.** The privileged allowlist and every per-IP limit depend on `TRUST_PROXY` matching the proxy hop. `/admin/config` and `/admin/limits` show the caller's IP as the server sees it, so this can be checked.
+- **New close code.** `4429` (`WS_LIMIT_EXCEEDED_CLOSE_CODE`) refuses a socket past the per-user connection cap. It is disjoint from 1008 and 4400, and clients treat it as a plain backoff.
+- **Registration IPs are stored.** `users.registration_ip` is personal data; `docs/pii-inventory.md` lists it with everything else the system keeps about people.
+
+**See also:** `docs/design.md` → User limits; `docs/pii-inventory.md`.

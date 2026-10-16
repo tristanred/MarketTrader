@@ -141,6 +141,20 @@
       "when": 1791421271023,
       "tag": "0019_discover",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1792101445194,
+      "tag": "0020_user_limits",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1792103969072,
+      "tag": "0021_usage_rollup",
+      "breakpoints": true
     }
   ]
 }

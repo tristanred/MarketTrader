@@ -32,6 +32,9 @@ import type { TradeDirection } from '@markettrader/shared';
 import type { GameClientRegistry } from '../ws/registry.js';
 import type { EventBus } from '../events/bus.js';
 import type { ConfigReader } from '../config/runtime-config.js';
+import type { Limits } from '../limits/index.js';
+import { subjectOf } from '../limits/resolver.js';
+import { rateLimitFor } from '../limits/rate.js';
 import { setRetryAfter } from './retry-after.js';
 import { meters } from '../observability/telemetry.js';
 
@@ -100,12 +103,14 @@ const tradesQuerySchema = z.object({
  * events are broadcast to all connected clients in the game. The leaderboard broadcast
  * is throttled to at most once per second per game (map lives in this closure).
  * `config` supplies the live stale-trade and rate-limit-backoff settings.
+ * `limits` supplies the caller's open-order cap.
  */
 export function tradingRoutes(
   db: Db,
   provider: StockProvider,
   marketStatusProvider: MarketStatusProvider,
   config: ConfigReader,
+  limits: Limits,
   registry?: GameClientRegistry,
   leaderboardThrottleMs = LEADERBOARD_THROTTLE_MS,
   bus?: EventBus,
@@ -115,6 +120,12 @@ export function tradingRoutes(
 
   return async function (rawApp: FastifyInstance): Promise<void> {
     const app = rawApp.withTypeProvider<ZodTypeProvider>();
+
+    // One handler for both cancel routes. A route's `config.rateLimit` gets its
+    // own store from the plugin, so attaching the config to each would give a
+    // user one `orderCancels` budget per route instead of one in total.
+    // After `authenticate` in each `onRequest`, so the key is the user, not the IP.
+    const cancelLimiter = rawApp.rateLimit(rateLimitFor(limits, 'orderCancels'));
 
     // Counts refused orders by reason. Deliberately a hook rather than a call at
     // each of the dozen `reply.status(4xx)` sites: those branches are added and
@@ -146,7 +157,7 @@ export function tradingRoutes(
       '/games/:id/trades',
       {
         onRequest: rawApp.authenticate,
-        config: { rateLimit: { max: 30, timeWindow: '1 minute' } },
+        config: { rateLimit: rateLimitFor(limits, 'trades') },
         schema: {
           tags: ['Trading'],
           summary: 'Execute a buy or sell at the live market price.',
@@ -230,6 +241,10 @@ export function tradingRoutes(
           return reply.status(409).send({ error: 'GAME_NOT_ACTIVE', message: `Game is ${status}` });
         }
 
+        // Resolved once for both resting branches; the services count and
+        // compare inside the transaction that inserts.
+        const openOrderLimit = await limits.resolver.resolve(subjectOf(request), 'openOrders');
+
         // ── Working-order branch ─────────────────────────────────────────────
         // Non-market orders are placed as resting working orders. The trigger
         // worker fills them when the price condition is met.
@@ -281,6 +296,7 @@ export function tradingRoutes(
               ...(takeProfitPrice != null && { takeProfitPrice }),
               ...(stopLossPrice != null && { stopLossPrice }),
               ...(referencePrice != null && { referencePrice }),
+              openOrderLimit,
             });
             if (registry) {
               for (const order of orders) {
@@ -346,6 +362,7 @@ export function tradingRoutes(
                 direction: direction as TradeDirection,
                 quantity,
                 reservedPrice: reservedQuote.price,
+                openOrderLimit,
               });
               return reply.status(202).send({ pending });
             } catch (err) {
@@ -563,7 +580,7 @@ export function tradingRoutes(
     app.delete(
       '/games/:id/trades/:tradeId',
       {
-        onRequest: rawApp.authenticate,
+        onRequest: [rawApp.authenticate, cancelLimiter],
         schema: {
           tags: ['Trading'],
           summary: 'Cancel a resting working order (limit/stop/bracket).',
@@ -633,7 +650,7 @@ export function tradingRoutes(
     app.delete(
       '/games/:id/trades/pending/:pendingId',
       {
-        onRequest: rawApp.authenticate,
+        onRequest: [rawApp.authenticate, cancelLimiter],
         schema: {
           tags: ['Trading'],
           summary: 'Cancel a pending trade.',

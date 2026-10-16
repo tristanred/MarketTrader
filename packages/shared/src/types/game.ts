@@ -135,6 +135,16 @@ export interface BrowsableGame {
 }
 
 /**
+ * `GET /games/browse` response: one page of {@link BrowsableGame}s, newest first.
+ * `total` counts every browsable game, not just this page, so a client knows
+ * whether another page exists.
+ */
+export interface BrowseGamesResponse {
+  games: BrowsableGame[];
+  total: number;
+}
+
+/**
  * `GET /games/by-code/:code` response — enough to render a join prompt
  * without disclosing game internals to someone who only holds a code.
  */

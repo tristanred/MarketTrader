@@ -6,7 +6,9 @@ test.describe('Player games', () => {
     // a fresh UI-registered user would become the admin.
     void adminUser;
     await playerPage.goto('/games');
-    await playerPage.getByRole('button', { name: /new game/i }).click();
+    // The new-game action lives behind the games list's overflow menu.
+    await playerPage.getByRole('button', { name: /games menu/i }).click();
+    await playerPage.getByRole('menuitem', { name: /new game/i }).click();
     const dialog = playerPage.getByRole('dialog');
     const name = `g_${Date.now()}`;
     await dialog.getByLabel(/^name$/i).fill(name);

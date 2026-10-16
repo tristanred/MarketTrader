@@ -1,4 +1,4 @@
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { eq, and, count } from 'drizzle-orm';
@@ -10,6 +10,25 @@ import { generateInviteCode } from '../services/invite-code.js';
 import { computeLeaderboard } from '../services/leaderboard.js';
 import { getLeaderboardHistory } from '../services/leaderboard-history.js';
 import type { EventBus } from '../events/bus.js';
+import { checkGameBounds } from '../services/game-bounds.js';
+import type { Limits } from '../limits/index.js';
+import { LIMIT_CATALOGUE } from '../limits/catalogue.js';
+import { rateLimitFor } from '../limits/rate.js';
+import {
+  countActiveGamesJoined,
+  countActiveGamesOwned,
+  countGamesCreatedSince,
+  countGamesJoinedSince,
+  oldestGameCreatedSince,
+  oldestJoinSince,
+  windowStart,
+} from '../limits/quota-counts.js';
+import { secondsUntilWindowFrees } from '../limits/enforce.js';
+
+const browseQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(50).optional().default(20),
+  offset: z.coerce.number().int().min(0).optional().default(0),
+});
 
 const gameIdParamsSchema = z.object({ id: z.string() });
 
@@ -46,16 +65,32 @@ const createGameSchema = z
   });
 
 /**
+ * Both limits a new seat counts against. Creating a game seats its creator,
+ * so `POST /games` runs these too.
+ */
+async function enforceSeatLimits(db: Db, limits: Limits, request: FastifyRequest, userId: string): Promise<void> {
+  const now = Date.now();
+  await limits.enforcer.enforce(request, 'activeGamesJoined', () => countActiveGamesJoined(db, userId));
+  const since = windowStart('gamesJoined', now);
+  await limits.enforcer.enforce(request, 'gamesJoined', () => countGamesJoinedSince(db, userId, since), {
+    retryAfter: async () =>
+      secondsUntilWindowFrees(await oldestJoinSince(db, userId, since), LIMIT_CATALOGUE.gamesJoined.windowMs!, now),
+  });
+}
+
+/**
  * Registers game lifecycle routes (all require authentication):
  * - `GET  /games`        — list every game the caller has joined.
  * - `POST /games`        — create a new game; creator is automatically enrolled.
- * - `POST /games/:id/join` — join an existing game (rejected if already ended).
+ * - `POST /games/:id/join` — join an existing game (rejected if ended, or full per `GAME_MAX_PLAYERS`).
  * - `GET  /games/:id`    — fetch game details + leaderboard (membership required).
  *
  * All routes recompute game status on the fly so `pending`/`active`/`ended`
  * reflects real time rather than the stored snapshot.
+ * `limits` enforces the per-user game creation and join caps; `limits.config`
+ * supplies the live game bounds.
  */
-export function gameRoutes(db: Db, bus?: EventBus) {
+export function gameRoutes(db: Db, limits: Limits, bus?: EventBus) {
   return async function (rawApp: FastifyInstance): Promise<void> {
     const app = rawApp.withTypeProvider<ZodTypeProvider>();
     const { games, gamePlayers, users } = schema;
@@ -123,6 +158,30 @@ export function gameRoutes(db: Db, bus?: EventBus) {
         visibility,
       } = request.body;
       const userId = request.user.id;
+      const boundsError = checkGameBounds({ startDate, endDate, startingBalance }, limits.config);
+      if (boundsError) return reply.status(400).send({ error: boundsError });
+
+      // Checked before any insert, outside a transaction: the insert loop below
+      // retries on a unique-constraint error, which would abort a Postgres
+      // transaction. The only overshoot this allows is one user racing
+      // their own concurrent creates.
+      const now = Date.now();
+      await limits.enforcer.enforce(request, 'activeGamesOwned', () => countActiveGamesOwned(db, userId));
+      const createdSince = windowStart('gamesCreated', now);
+      await limits.enforcer.enforce(
+        request,
+        'gamesCreated',
+        () => countGamesCreatedSince(db, userId, createdSince),
+        {
+          retryAfter: async () =>
+            secondsUntilWindowFrees(
+              await oldestGameCreatedSince(db, userId, createdSince),
+              LIMIT_CATALOGUE.gamesCreated.windowMs!,
+              now,
+            ),
+        },
+      );
+      await enforceSeatLimits(db, limits, request, userId);
 
       // The unique index on invite_code makes a collision a hard failure
       // rather than silent data corruption, so retry on the astronomically
@@ -189,8 +248,9 @@ export function gameRoutes(db: Db, bus?: EventBus) {
       onRequest: rawApp.authenticate,
       schema: {
         tags: ['Games'],
-        summary: 'List public games the caller has not joined and can still join.',
+        summary: 'List public games the caller has not joined and can still join, one page at a time.',
         security: [{ bearerAuth: [] }],
+        querystring: browseQuerySchema,
       },
     }, async (request, reply) => {
       const userId = request.user.id;
@@ -230,19 +290,24 @@ export function gameRoutes(db: Db, bus?: EventBus) {
 
       const open = candidates
         .filter(g => (statusMap.get(g.id) ?? g.status) !== 'ended')
-        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-        .map(g => ({
-          ...g,
-          startingBalance: Number(g.startingBalance),
-          status: statusMap.get(g.id) ?? g.status,
-          playerCount: countMap.get(g.id) ?? 0,
-        }));
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id));
 
-      return reply.status(200).send(open);
+      const { limit, offset } = request.query;
+      const page = open.slice(offset, offset + limit).map(g => ({
+        ...g,
+        startingBalance: Number(g.startingBalance),
+        status: statusMap.get(g.id) ?? g.status,
+        playerCount: countMap.get(g.id) ?? 0,
+      }));
+
+      return reply.status(200).send({ games: page, total: open.length });
     });
 
     app.get('/games/by-code/:code', {
       onRequest: rawApp.authenticate,
+      // Invite codes are the only secret on a private game; this bounds how
+      // fast one account can guess at them.
+      config: { rateLimit: rateLimitFor(limits, 'codeLookups') },
       schema: {
         tags: ['Games'],
         summary: 'Resolve an invite code to a join prompt.',
@@ -325,6 +390,27 @@ export function gameRoutes(db: Db, bus?: EventBus) {
 
       const status = await recomputeGameStatus(db, game, new Date().toISOString(), bus);
       if (status === 'ended') return reply.status(409).send({ error: 'Game has ended' });
+
+      // Answered before the caps so a member at their limit still hears the
+      // accurate reason rather than a quota error for a seat they already hold.
+      const [already] = await db
+        .select({ id: gamePlayers.id })
+        .from(gamePlayers)
+        .where(and(eq(gamePlayers.gameId, gameId), eq(gamePlayers.userId, userId)))
+        .limit(1);
+      if (already) return reply.status(409).send({ error: 'Already joined this game' });
+
+      // Count-then-insert can overshoot by one under concurrent joins; the cap
+      // exists to stop leaderboard flooding, which one extra seat does not enable.
+      const [{ players } = { players: 0 }] = await db
+        .select({ players: count() })
+        .from(gamePlayers)
+        .where(eq(gamePlayers.gameId, gameId));
+      if (Number(players) >= limits.config.get('GAME_MAX_PLAYERS')) {
+        return reply.status(409).send({ error: 'Game is full', code: 'GAME_FULL' });
+      }
+
+      await enforceSeatLimits(db, limits, request, userId);
 
       let player: typeof gamePlayers.$inferSelect | undefined;
       try {

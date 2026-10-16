@@ -96,4 +96,18 @@ describe('telemetry instruments', () => {
     const byResult = Object.fromEntries(points.map((p) => [p.attributes.result, p.value]));
     expect(byResult).toMatchObject({ hit: 3, miss: 1, stale: 2 });
   });
+
+  // Exercises the instrument only; that call sites pass just `limit` is the
+  // recorder's job (limits/usage-hooks.ts), not something this test can see.
+  it('exports limitsDenied points keyed by the limit attribute', async () => {
+    meters.limitsDenied.add(2, { limit: 'trades' });
+    meters.limitsDenied.add(1, { limit: 'ip:POST /auth/login' });
+
+    await provider.forceFlush();
+
+    const points = pointsFor(exporter.getMetrics(), 'markettrader.limits.denied');
+    const byLimit = Object.fromEntries(points.map((p) => [p.attributes.limit, p.value]));
+    expect(byLimit).toMatchObject({ trades: 2, 'ip:POST /auth/login': 1 });
+    expect(points.every((p) => Object.keys(p.attributes).join() === 'limit')).toBe(true);
+  });
 });

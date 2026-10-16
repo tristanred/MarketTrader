@@ -2,18 +2,28 @@ import { sqliteTable, text, real, integer, unique, primaryKey, index } from 'dri
 import { sql } from 'drizzle-orm';
 
 /** Registered platform accounts. One user can participate in many games. */
-export const users = sqliteTable('users', {
-  id: text('id')
-    .primaryKey()
-    .$defaultFn(() => crypto.randomUUID()),
-  username: text('username').notNull().unique(),
-  passwordHash: text('password_hash').notNull(),
-  /** When true, login is rejected with 403. Set by admins via PATCH /admin/users/:id. */
-  disabled: integer('disabled', { mode: 'boolean' }).notNull().default(false),
-  createdAt: text('created_at')
-    .default(sql`(datetime('now'))`)
-    .notNull(),
-});
+export const users = sqliteTable(
+  'users',
+  {
+    id: text('id')
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    username: text('username').notNull().unique(),
+    passwordHash: text('password_hash').notNull(),
+    /** When true, login is rejected with 403. Set by admins via PATCH /admin/users/:id. */
+    disabled: integer('disabled', { mode: 'boolean' }).notNull().default(false),
+    createdAt: text('created_at')
+      .default(sql`(datetime('now'))`)
+      .notNull(),
+    /**
+     * `request.ip` at `POST /auth/register`. Counts registrations per network and
+     * links sibling accounts on the admin page. Null for accounts created before
+     * it was recorded. Personal data — listed in docs/pii-inventory.md.
+     */
+    registrationIp: text('registration_ip'),
+  },
+  (t) => [index('users_registration_ip_created_idx').on(t.registrationIp, t.createdAt)],
+);
 
 /**
  * Authorization groups. Currently a single seeded row: `admin`. Membership is
@@ -134,7 +144,7 @@ export const games = sqliteTable('games', {
    * games keeps the per-tick scan bounded.
    */
   snapshotsCompactedAt: text('snapshots_compacted_at'),
-});
+}, (t) => [index('games_created_by_created_at_idx').on(t.createdBy, t.createdAt)]);
 
 /**
  * Join table between users and games. Each row represents one player in one game.
@@ -165,7 +175,10 @@ export const gamePlayers = sqliteTable(
      */
     lastSeenUnlockAt: text('last_seen_unlock_at'),
   },
-  (t) => [unique().on(t.gameId, t.userId)],
+  (t) => [
+    unique().on(t.gameId, t.userId),
+    index('game_players_user_joined_idx').on(t.userId, t.joinedAt),
+  ],
 );
 
 /**
@@ -568,4 +581,73 @@ export const gameDiscoverPicks = sqliteTable(
       .notNull(),
   },
   (t) => [unique().on(t.gameId, t.sessionDate)],
+);
+
+/**
+ * Per-user exceptions to the global limits, set from the admin user page. The
+ * value replaces the resolved limit outright: probation and the privileged
+ * multiplier do not apply on top of it. Keys are `LimitKey`s; rows for keys
+ * since removed from the catalogue are ignored on read.
+ */
+export const userLimitOverrides = sqliteTable(
+  'user_limit_overrides',
+  {
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    limitKey: text('limit_key').notNull(),
+    value: integer('value').notNull(),
+    /** Why the override exists, shown in the admin overrides list. */
+    note: text('note'),
+    /** Admin who last wrote the row. No FK, like `system_settings.updated_by`. */
+    updatedBy: text('updated_by'),
+    updatedAt: text('updated_at')
+      .default(sql`(datetime('now'))`)
+      .notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.limitKey] })],
+);
+
+/**
+ * Hourly request counts per subject (a user, or an IP for unauthenticated calls)
+ * per registered route pattern, flushed from the in-memory `UsageTracker` by the
+ * usage-rollup worker. Monitoring only; no limit reads it. Timestamps are
+ * ISO-8601 UTC text on both dialects so window filters are the same string
+ * comparison everywhere. No FK to users: a subject may be an IP.
+ */
+export const apiUsageHourly = sqliteTable(
+  'api_usage_hourly',
+  {
+    subjectType: text('subject_type', { enum: ['user', 'ip'] }).notNull(),
+    subjectId: text('subject_id').notNull(),
+    route: text('route').notNull(),
+    hourStart: text('hour_start').notNull(),
+    count: integer('count').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.subjectType, t.subjectId, t.route, t.hourStart] }),
+    index('api_usage_hourly_hour_idx').on(t.hourStart),
+  ],
+);
+
+/**
+ * Hourly count of limit denials per subject per limit key, with the first and
+ * last denial in the hour. Aggregated in memory before writing, so a script
+ * hammering a limit costs one row update per flush, not one insert per denial.
+ */
+export const limitDenialsHourly = sqliteTable(
+  'limit_denials_hourly',
+  {
+    subjectType: text('subject_type', { enum: ['user', 'ip'] }).notNull(),
+    subjectId: text('subject_id').notNull(),
+    limitKey: text('limit_key').notNull(),
+    hourStart: text('hour_start').notNull(),
+    count: integer('count').notNull(),
+    firstAt: text('first_at').notNull(),
+    lastAt: text('last_at').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.subjectType, t.subjectId, t.limitKey, t.hourStart] }),
+    index('limit_denials_hourly_hour_idx').on(t.hourStart),
+  ],
 );

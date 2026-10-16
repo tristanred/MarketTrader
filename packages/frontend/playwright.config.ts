@@ -41,6 +41,9 @@ export default defineConfig({
         MARKET_HOURS_MODE: 'instant',
         // Fast Discover worker so a freshly created game gets its list within a test.
         DISCOVER_REFRESH_INTERVAL_MS: '1000',
+        // E2E specs register many accounts from one IP and create games freely;
+        // limits get their own coverage in the server suite.
+        LIMITS_ENABLED: 'false',
       },
     },
     {

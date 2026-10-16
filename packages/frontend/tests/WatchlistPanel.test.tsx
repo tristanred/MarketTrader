@@ -7,6 +7,8 @@ import { WatchlistPanel, type WatchlistRow } from '@/components/game/arena/Watch
 import { useSetWatchlistNote } from '@/api/watchlists';
 import { DEFAULT_NOTE_SIZE } from '@/lib/noteSize';
 import { useToastStore } from '@/components/ui/toast';
+import { ApiError } from '@/lib/api';
+import type { LimitExceededBody } from '@markettrader/shared';
 
 vi.mock('@/api/stocks', () => ({
   useStockSearch: (query: string) => ({
@@ -19,9 +21,10 @@ vi.mock('@/api/stocks', () => ({
 }));
 
 const setNote = vi.fn(() => Promise.resolve());
+const { addSymbol } = vi.hoisted(() => ({ addSymbol: vi.fn() }));
 
 vi.mock('@/api/watchlists', () => ({
-  useAddWatchlistSymbol: () => ({ mutateAsync: vi.fn() }),
+  useAddWatchlistSymbol: () => ({ mutateAsync: addSymbol }),
   useCreateWatchlist: () => ({ mutateAsync: vi.fn() }),
   useRenameWatchlist: () => ({ mutateAsync: vi.fn() }),
   useDeleteWatchlist: () => ({ mutateAsync: vi.fn() }),
@@ -78,6 +81,7 @@ afterEach(() => {
 });
 
 beforeEach(() => {
+  addSymbol.mockReset();
   setNote.mockReset();
   setNote.mockResolvedValue(undefined);
   useToastStore.setState({ toasts: [] });
@@ -121,6 +125,31 @@ describe('WatchlistPanel', () => {
     expect(screen.getByText('ESC')).toBeInTheDocument();
     // Inline search input is focused.
     expect(screen.getByPlaceholderText(/search symbol to add/i)).toBeInTheDocument();
+  });
+
+  it('shows the limit message, not the status line, when an add is refused', async () => {
+    const body: LimitExceededBody = {
+      error: 'Watchlist symbol limit reached (13 per list)',
+      code: 'LIMIT_EXCEEDED',
+      limit: 'watchlistItems',
+      max: 13,
+      probation: true,
+      maturityDays: 7,
+    };
+    addSymbol.mockRejectedValue(new ApiError(409, body, '409 Conflict'));
+    const user = userEvent.setup();
+    render(wrap(<WatchlistPanel rows={ROWS} watchlistId="wl-1" />));
+    await user.click(screen.getByRole('button', { name: /\+ ?ADD/i }));
+    await user.type(screen.getByPlaceholderText(/search symbol to add/i), 'MSFT');
+    await user.click(await screen.findByText('Microsoft Corporation'));
+    expect(addSymbol).toHaveBeenCalled();
+
+    expect(
+      await screen.findByText(
+        'Watchlist symbol limit reached (13 per list). New accounts have lower limits for their first 7 days.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/409/)).not.toBeInTheDocument();
   });
 
   describe('symbol notes', () => {

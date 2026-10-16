@@ -109,4 +109,19 @@ describe('liveValueSchema', () => {
     expect(schema.safeParse('pending').success).toBe(true);
     expect(schema.safeParse('sometimes').success).toBe(false);
   });
+
+  it('validates privileged CIDR overrides', () => {
+    const schema = liveValueSchema('LIMITS_PRIVILEGED_CIDRS');
+    expect(schema.safeParse('203.0.113.0/24, 2001:db8::/32, 198.51.100.7').success).toBe(true);
+    expect(schema.safeParse('').success).toBe(true);
+    expect(schema.safeParse('203.0.113.0/33').success).toBe(false);
+    expect(schema.safeParse('office').success).toBe(false);
+  });
+
+  it('allows a zero maturity period but not a negative one', () => {
+    const schema = liveValueSchema('LIMITS_MATURITY_DAYS');
+    expect(schema.safeParse(0).success).toBe(true);
+    expect(schema.safeParse(-1).success).toBe(false);
+    expect(schema.safeParse(366).success).toBe(false);
+  });
 });

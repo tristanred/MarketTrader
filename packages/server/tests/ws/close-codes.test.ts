@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { WS_INVALID_FRAME_CLOSE_CODE, WS_POLICY_CLOSE_CODE } from '../../src/ws/close-codes.js';
+import {
+  WS_INVALID_FRAME_CLOSE_CODE,
+  WS_LIMIT_EXCEEDED_CLOSE_CODE,
+  WS_POLICY_CLOSE_CODE,
+} from '../../src/ws/close-codes.js';
 
 /**
  * Both values are duplicated in `packages/frontend/src/lib/wsAuth.ts`, which
@@ -28,5 +32,20 @@ describe('WebSocket close codes', () => {
         WS_INVALID_FRAME_CLOSE_CODE <= 1014 &&
         ![1004, 1005, 1006].includes(WS_INVALID_FRAME_CLOSE_CODE));
     expect(valid).toBe(true);
+  });
+  it('pins the limit-exceeded close code', () => {
+    expect(WS_LIMIT_EXCEEDED_CLOSE_CODE).toBe(4429);
+  });
+
+  it('keeps the three codes disjoint', () => {
+    expect(
+      new Set([WS_POLICY_CLOSE_CODE, WS_INVALID_FRAME_CLOSE_CODE, WS_LIMIT_EXCEEDED_CLOSE_CODE])
+        .size,
+    ).toBe(3);
+  });
+
+  it('keeps the limit code inside the private range ws will send', () => {
+    expect(WS_LIMIT_EXCEEDED_CLOSE_CODE).toBeGreaterThanOrEqual(3000);
+    expect(WS_LIMIT_EXCEEDED_CLOSE_CODE).toBeLessThanOrEqual(4999);
   });
 });

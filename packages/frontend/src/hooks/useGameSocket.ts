@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, type MutableRefObject } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuthStore } from '@/stores/authStore';
 import { useLiveStore } from '@/stores/liveStore';
@@ -22,8 +22,31 @@ function buildWsUrl(gameId: string): string {
 }
 
 /**
+ * Quiet period before a changed symbol set is pushed. The server caps
+ * `subscribe` frames per minute, and a user flicking between watchlists would
+ * otherwise send one per click.
+ */
+const SUBSCRIBE_DEBOUNCE_MS = 250;
+
+/**
+ * Wait before re-sending a `subscribe` the server refused for `wsSubscribes`.
+ * The server keeps the previous set and still counts the refused frame, so a
+ * quick retry would only be refused again; one full window (the limit is per
+ * minute) lets it drain. Re-armed on every refusal.
+ */
+const SUBSCRIBE_RETRY_MS = 60_000;
+
+type TimerRef = MutableRefObject<ReturnType<typeof setTimeout> | null>;
+
+function clearTimer(ref: TimerRef): void {
+  if (ref.current === null) return;
+  clearTimeout(ref.current);
+  ref.current = null;
+}
+
+/**
  * Opens a per-game WebSocket connection, dispatches inbound events into the
- * live store, sends a `subscribe` message whenever the symbol list changes,
+ * live store, sends a `subscribe` message once a changed symbol list settles,
  * and reconnects under {@link ReconnectController}'s backoff policy. Publishes
  * its health on the `game` channel of {@link useConnectionStore}. Returns
  * nothing; tear-down happens on unmount.
@@ -55,6 +78,9 @@ export function useGameSocket(gameId: string, symbols: string[], myGamePlayerId:
   // Tracks the last sorted-joined symbol set actually sent on this socket.
   // Reset on socket open so the first subscribe after a reconnect always fires.
   const lastSentKeyRef = useRef<string | null>(null);
+  // Pending re-send after a refused subscribe. While set, symbol changes wait
+  // for it instead of spending more of the refused window.
+  const subscribeRetryRef: TimerRef = useRef(null);
 
   useEffect(() => {
     if (!gameId || !token) return;
@@ -88,6 +114,7 @@ export function useGameSocket(gameId: string, symbols: string[], myGamePlayerId:
         reconnect.markOpen();
         setStatus('game', 'live');
         lastSentKeyRef.current = null;
+        clearTimer(subscribeRetryRef);
         sendSubscribe(ws, symbolsRef.current);
       };
 
@@ -131,6 +158,16 @@ export function useGameSocket(gameId: string, symbols: string[], myGamePlayerId:
           } else if (parsed.event === 'achievement_unlocked') {
             handleAchievementUnlockRef.current(parsed.data);
             void qcRef.current.invalidateQueries({ queryKey: ['achievements', gameId] });
+          } else if (parsed.event === 'error' && parsed.data.limit === 'wsSubscribes') {
+            // The server still holds the previous set, so what we last sent is
+            // not what it has; forget it so the retry is not skipped as a repeat.
+            lastSentKeyRef.current = null;
+            clearTimer(subscribeRetryRef);
+            subscribeRetryRef.current = setTimeout(() => {
+              subscribeRetryRef.current = null;
+              if (wsRef.current !== ws || ws.readyState !== WebSocket.OPEN) return;
+              sendSubscribe(ws, symbolsRef.current);
+            }, SUBSCRIBE_RETRY_MS);
           }
         } catch {
           // malformed — drop
@@ -146,6 +183,7 @@ export function useGameSocket(gameId: string, symbols: string[], myGamePlayerId:
       };
 
       ws.onclose = (evt?: CloseEvent) => {
+        clearTimer(subscribeRetryRef);
         if (cancelled) return;
         // The server closes established sockets with the policy code once the
         // access token expires. Reconnecting re-offers the same dead token, so
@@ -179,6 +217,7 @@ export function useGameSocket(gameId: string, symbols: string[], myGamePlayerId:
 
     return () => {
       cancelled = true;
+      clearTimer(subscribeRetryRef);
       detachResume();
       unsubscribeRetry();
       reconnect.cancel();
@@ -195,20 +234,28 @@ export function useGameSocket(gameId: string, symbols: string[], myGamePlayerId:
     };
   }, [gameId, token]);
 
-  // When the parent's symbol list changes, push a fresh subscribe — but only
-  // when the sorted set actually differs from what was last sent.
+  // When the parent's symbol list changes, push a fresh subscribe once the set
+  // has been stable for SUBSCRIBE_DEBOUNCE_MS — but only when the sorted set
+  // actually differs from what was last sent. Keyed on the sorted set rather
+  // than the array, so a parent that rebuilds an equal array every render
+  // cannot keep resetting the timer.
+  const symbolsKey = [...symbols].sort().join(',');
   useEffect(() => {
-    const ws = wsRef.current;
-    if (!ws || ws.readyState !== WebSocket.OPEN) return;
-    if (symbols.length === 0) return;
-    const key = [...symbols].sort().join(',');
-    if (lastSentKeyRef.current === key) return;
-    const msg: WsClientEvent = { event: 'subscribe', data: { symbols } };
-    try {
-      ws.send(JSON.stringify(msg));
-      lastSentKeyRef.current = key;
-    } catch {
-      // ignore
-    }
-  }, [symbols]);
+    if (symbolsKey === '') return;
+    const handle = setTimeout(() => {
+      const ws = wsRef.current;
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      // A refused subscribe is waiting to retry, and it sends the latest set.
+      if (subscribeRetryRef.current !== null) return;
+      if (lastSentKeyRef.current === symbolsKey) return;
+      const msg: WsClientEvent = { event: 'subscribe', data: { symbols: symbolsRef.current } };
+      try {
+        ws.send(JSON.stringify(msg));
+        lastSentKeyRef.current = symbolsKey;
+      } catch {
+        // ignore
+      }
+    }, SUBSCRIBE_DEBOUNCE_MS);
+    return () => clearTimeout(handle);
+  }, [symbolsKey]);
 }

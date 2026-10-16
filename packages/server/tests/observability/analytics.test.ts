@@ -83,6 +83,7 @@ describe('server-side analytics through the event bus', () => {
       provider: new MockStockProvider(),
       marketStatusProvider: new MockMarketStatusProvider(),
       disablePoller: true,
+      limits: { disabled: true },
       disableRateLimit: true,
       loginThrottle: { disabled: true },
       leaderboardThrottleMs: 0,

@@ -77,6 +77,7 @@ Every signal carries the ADR-014 build stamp as resource attributes — `service
 | `markettrader.pending_orders.settled` | Counter | `outcome` (`filled`/`cancelled`/`triggered`/`expired`) |
 | `markettrader.achievements.unlocked` | Counter | `achievement`, `rarity` |
 | `markettrader.events.emitted` | Counter | `type` |
+| `markettrader.limits.denied` | Counter | `limit` (a `LimitKey`, or `ip:<METHOD /route>` for the per-IP route limits) — never a user id; per-user denials are in `limit_denials_hourly` |
 | `markettrader.web_vitals.{lcp,cls,inp,fcp,ttfb}` | Histogram | `rating` |
 
 ### Querying these in Prometheus

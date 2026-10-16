@@ -195,6 +195,7 @@ describe('POST /auth/login — per-account throttle', () => {
       provider: new MockStockProvider(),
       marketStatusProvider: new MockMarketStatusProvider(),
       disablePoller: true,
+      limits: { disabled: true },
       disableRateLimit: true,
       runtimeConfig: RuntimeConfig.fromEnvironment({
         LOGIN_MAX_FAILED_ATTEMPTS: 3,

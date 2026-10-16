@@ -11,6 +11,7 @@ import { SymbolNotePopover } from './SymbolNotePopover';
 import { useLiveStore } from '@/stores/liveStore';
 import { cn } from '@/lib/utils';
 import { capture } from '@/lib/posthog';
+import { extractApiMessage } from '@/lib/extractApiMessage';
 import type { Watchlist } from '@markettrader/shared';
 
 export interface WatchlistRow {
@@ -119,7 +120,7 @@ export function WatchlistPanel({
       setMode('idle');
       setNewName('');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create list');
+      setError(err instanceof Error ? extractApiMessage(err) : 'Failed to create list');
     }
   };
 
@@ -136,7 +137,7 @@ export function WatchlistPanel({
       setRenamingId(null);
       setRenameDraft('');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to rename list');
+      setError(err instanceof Error ? extractApiMessage(err) : 'Failed to rename list');
     }
   };
 
@@ -154,7 +155,7 @@ export function WatchlistPanel({
         if (next) onSelectList?.(next.id);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete list');
+      setError(err instanceof Error ? extractApiMessage(err) : 'Failed to delete list');
     }
   };
 
@@ -366,7 +367,7 @@ export function WatchlistPanel({
                   capture('watchlist_symbol_added', { symbol: sym });
                   setMode('idle');
                 } catch (err) {
-                  setError(err instanceof Error ? err.message : 'Failed to add symbol');
+                  setError(err instanceof Error ? extractApiMessage(err) : 'Failed to add symbol');
                 }
               }}
             />

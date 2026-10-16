@@ -13,6 +13,7 @@ async function buildAppWithTrust(trustProxy: boolean | string): Promise<FastifyI
     provider: new MockStockProvider(),
     marketStatusProvider: new MockMarketStatusProvider(),
     disablePoller: true,
+    limits: { disabled: true },
     disableRateLimit: false,
     // Off, so what these assert is the IP-keyed limiter and nothing else.
     loginThrottle: { disabled: true },

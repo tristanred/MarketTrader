@@ -28,9 +28,26 @@ vi.mock('@/api/admin/config', () => ({
   useAdminResetConfig: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
 
+vi.mock('@/api/admin/limits', () => ({
+  useAdminLimitPolicy: () => ({
+    data: {
+      enabled: true, maturityDays: 7, probationPercent: 25, privilegedCidrs: [], privilegedMultiplier: 10,
+      requestIp: '192.0.2.10', requestIpPrivileged: false,
+    },
+    isLoading: false,
+    isError: false,
+  }),
+}));
+
 import { AdminConfigPage } from '@/pages/admin/AdminConfigPage';
 
 describe('AdminConfigPage', () => {
+  it('shows the caller IP as the server sees it and whether it is privileged', () => {
+    render(<AdminConfigPage />);
+    expect(screen.getByText('192.0.2.10')).toBeInTheDocument();
+    expect(screen.getByText(/not privileged/)).toBeInTheDocument();
+  });
+
   // The secret's mock value is non-null on purpose: the server nulls it, and
   // this pins that the page would not render one that slipped through.
   it('groups options by category and never shows a secret value', () => {

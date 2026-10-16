@@ -3,6 +3,14 @@ import type { WsServerEvent, StockQuote, WsPriceUpdateEvent } from '@markettrade
 import { meters } from '../observability/telemetry.js';
 
 /**
+ * True while a socket is CONNECTING or OPEN. Admission counts only these, so an
+ * entry whose `close` was never heard cannot hold one of the user's slots forever.
+ */
+export function isLive(socket: WebSocket): boolean {
+  return socket.readyState === 0 /* CONNECTING */ || socket.readyState === 1 /* OPEN */;
+}
+
+/**
  * Represents a connected player's WebSocket session within a game room.
  * Tracks identity and per-client symbol subscriptions for filtered price updates.
  */
@@ -48,6 +56,17 @@ export class GameClientRegistry {
 
   getActiveGameIds(): string[] {
     return [...this.games.keys()];
+  }
+
+  /** Live (CONNECTING or OPEN) sockets `userId` holds across every game — read by the `wsConnections` limit. */
+  countForUser(userId: string): number {
+    let count = 0;
+    for (const clients of this.games.values()) {
+      for (const [socket, entry] of clients) {
+        if (entry.playerId === userId && isLive(socket)) count += 1;
+      }
+    }
+    return count;
   }
 
   /** Every registered socket across all games — walked by the heartbeat. */

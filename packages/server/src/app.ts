@@ -8,6 +8,12 @@ import { registerHelmet } from './plugins/helmet.js';
 import { registerRateLimit } from './plugins/rate-limit.js';
 import { registerWebsocket } from './plugins/websocket.js';
 import { registerSwagger } from './plugins/swagger.js';
+import { createLimits } from './limits/index.js';
+import { rateDenialLabel } from './limits/rate.js';
+import { registerLimitErrorHandler } from './limits/errors.js';
+import { UsageTracker } from './limits/usage-tracker.js';
+import { flushUsage } from './limits/usage-store.js';
+import { recordRateLimitDenial, recordUnrecordedDenial, registerUsageHooks } from './limits/usage-hooks.js';
 import { healthRoutes } from './routes/health.js';
 import { versionRoutes } from './routes/version.js';
 import { authRoutes } from './routes/auth.js';
@@ -41,6 +47,7 @@ import { startPricePoller } from './ws/price-poller.js';
 import { startPendingOrdersWorker } from './workers/pending-orders.js';
 import { startPortfolioSnapshotWorker } from './workers/portfolio-snapshot.js';
 import { startDiscoverWorker } from './workers/discover.js';
+import { startUsageRollupWorker } from './workers/usage-rollup.js';
 import { attachErrorCapture } from './observability/error-capture.js';
 import { registerOtel } from './plugins/otel.js';
 import { EventBus } from './events/bus.js';
@@ -69,6 +76,10 @@ export async function buildApp(
     analytics?: AnalyticsClient | null;
     /** Live options for this app instance. Defaults to the process environment. */
     runtimeConfig?: RuntimeConfig;
+    /** Request/denial counters for this app. Tests inject one to inspect it. */
+    usageTracker?: UsageTracker;
+    /** Pass `{ disabled: true }` to lift every per-user limit. Tests only. */
+    limits?: { disabled?: boolean };
     /** Mount the Swagger UI and OpenAPI spec at `/docs`. Defaults to off in production. */
     exposeDocs?: boolean;
   } = {},
@@ -83,6 +94,8 @@ export async function buildApp(
     leaderboardThrottleMs,
     analytics = getPostHog(),
     runtimeConfig = RuntimeConfig.fromEnvironment(),
+    usageTracker = new UsageTracker(),
+    limits: limitOptions = {},
     exposeDocs = env.NODE_ENV !== 'production',
     ...fastifyOpts
   } = opts;
@@ -108,8 +121,21 @@ export async function buildApp(
   await registerSensible(app);
   await registerCookie(app);
   await registerJwt(app, db);
-  await registerRateLimit(app, { disabled: disableRateLimit });
+  await registerRateLimit(app, {
+    disabled: disableRateLimit,
+    // Info, not warn: warn ships to PostHog, which bills by volume, and a
+    // script hammering a limit would turn into a bill.
+    onExceeded: (request) => {
+      request.log.info(
+        { limit: rateDenialLabel(request), ip: request.ip, userId: request.account?.id },
+        'rate limit exceeded',
+      );
+      recordRateLimitDenial(usageTracker, request);
+    },
+  });
   await registerSwagger(app, { exposeDocs });
+  // Before any route plugin: route contexts inherit the error handler at registration.
+  registerLimitErrorHandler(app, runtimeConfig, (request, err) => recordUnrecordedDenial(usageTracker, request, err));
 
   const registry = new GameClientRegistry();
   const globalRegistry = new GlobalClientRegistry();
@@ -127,6 +153,18 @@ export async function buildApp(
       'runtime config overrides active; they take precedence over the environment until reset in /admin/config',
     );
   }
+
+  // After overrides load, so the first resolved limit already reflects them.
+  const limits = createLimits({
+    db,
+    config: runtimeConfig,
+    tracker: usageTracker,
+    ...(limitOptions.disabled !== undefined ? { disabled: limitOptions.disabled } : {}),
+  });
+  app.decorate('limits', limits);
+  // Root-level, before every route: the ceiling and the usage counters must
+  // cover each route registered below.
+  registerUsageHooks(app, limits);
 
   // In-process event bus + achievement engine. Construct before route
   // registration so route factories can capture the bus reference.
@@ -169,23 +207,31 @@ export async function buildApp(
 
   await app.register(healthRoutes);
   await app.register(versionRoutes);
-  await app.register(authRoutes(db, new FailedLoginTracker(runtimeConfig, loginThrottle)));
-  await app.register(gameRoutes(db, bus));
+  await app.register(authRoutes(db, new FailedLoginTracker(runtimeConfig, loginThrottle), limits));
+  await app.register(gameRoutes(db, limits, bus));
   await app.register(publicGamesRoutes(db));
   await app.register(stockRoutes(db, provider, runtimeConfig));
   await app.register(
-    tradingRoutes(db, provider, marketStatusProvider, runtimeConfig, registry, leaderboardThrottleMs, bus),
+    tradingRoutes(db, provider, marketStatusProvider, runtimeConfig, limits, registry, leaderboardThrottleMs, bus),
   );
   await app.register(marketStatusRoutes(marketStatusProvider, runtimeConfig));
-  await app.register(watchlistRoutes(db, runtimeConfig));
+  await app.register(watchlistRoutes(db, limits));
   await app.register(discoverRoutes(db));
   await app.register(systemSettingsRoutes(systemSettings));
   await app.register(achievementsRoutes(db, achievementEngine));
+  // One count for both the WS upgrade cap and the admin usage view, so they cannot disagree.
+  const countUserSockets = (userId: string): number =>
+    registry.countForUser(userId) + globalRegistry.countForUser(userId);
   await registerAdminGuard(app, db);
-  await app.register(adminRoutes(db, provider, systemSettings, configOverrides, bus, registry));
+  await app.register(
+    adminRoutes(db, provider, systemSettings, configOverrides, limits, countUserSockets, bus, registry),
+  );
   await app.register(adminAchievementsRoutes(db, achievementEngine, systemSettings));
-  await app.register(liveRoute(db, registry, achievementEngine));
-  await app.register(globalLiveRoute(db, globalRegistry));
+  const wsLimits = { limits, config: runtimeConfig, countUserSockets };
+  await app.register(
+    liveRoute(db, registry, achievementEngine, env.WS_REVALIDATE_INTERVAL_MS, wsLimits),
+  );
+  await app.register(globalLiveRoute(db, globalRegistry, env.WS_REVALIDATE_INTERVAL_MS, wsLimits));
 
   if (!disablePoller) {
     // Keeps idle sockets from being reaped by an intermediary, and reaps peers
@@ -235,6 +281,14 @@ export async function buildApp(
     const discoverWorker = startDiscoverWorker({ db, provider, config: runtimeConfig, logger: app.log });
     app.addHook('onClose', async () => {
       await discoverWorker.stop();
+    });
+
+    const tracker = limits.tracker;
+    const usageWorker = startUsageRollupWorker({ db, tracker, config: runtimeConfig, logger: app.log });
+    app.addHook('onClose', async () => {
+      await usageWorker.stop();
+      // Counts gathered since the last tick; a graceful shutdown loses nothing.
+      await flushUsage(db, tracker.swap());
     });
 
     // Engine tick: feeds time-based achievements without external triggers.

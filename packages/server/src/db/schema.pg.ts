@@ -33,16 +33,22 @@ export const timeInForceEnum = pgEnum('time_in_force', ['day', 'gtc']);
 export const bracketRoleEnum = pgEnum('bracket_role', ['entry', 'take_profit', 'stop_loss']);
 
 /** Registered platform accounts. One user can participate in many games. */
-export const users = pgTable('users', {
-  id: text('id')
-    .primaryKey()
-    .$defaultFn(() => crypto.randomUUID()),
-  username: text('username').notNull().unique(),
-  passwordHash: text('password_hash').notNull(),
-  /** When true, login is rejected with 403. Set by admins via PATCH /admin/users/:id. */
-  disabled: boolean('disabled').notNull().default(false),
-  createdAt: timestamp('created_at', { mode: 'string' }).defaultNow().notNull(),
-});
+export const users = pgTable(
+  'users',
+  {
+    id: text('id')
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    username: text('username').notNull().unique(),
+    passwordHash: text('password_hash').notNull(),
+    /** When true, login is rejected with 403. Set by admins via PATCH /admin/users/:id. */
+    disabled: boolean('disabled').notNull().default(false),
+    createdAt: timestamp('created_at', { mode: 'string' }).defaultNow().notNull(),
+    /** `request.ip` at registration. See the SQLite variant. Personal data — docs/pii-inventory.md. */
+    registrationIp: text('registration_ip'),
+  },
+  (t) => [index('users_registration_ip_created_idx').on(t.registrationIp, t.createdAt)],
+);
 
 /**
  * Authorization groups. Currently a single seeded row: `admin`. Membership is
@@ -138,7 +144,7 @@ export const games = pgTable('games', {
    * the game is active.
    */
   snapshotsCompactedAt: timestamp('snapshots_compacted_at', { mode: 'string' }),
-});
+}, (t) => [index('games_created_by_created_at_idx').on(t.createdBy, t.createdAt)]);
 
 /**
  * Join table between users and games. Each row represents one player in one game.
@@ -167,7 +173,10 @@ export const gamePlayers = pgTable(
      */
     lastSeenUnlockAt: timestamp('last_seen_unlock_at', { mode: 'string' }),
   },
-  (t) => [unique().on(t.gameId, t.userId)],
+  (t) => [
+    unique().on(t.gameId, t.userId),
+    index('game_players_user_joined_idx').on(t.userId, t.joinedAt),
+  ],
 );
 
 /**
@@ -523,4 +532,59 @@ export const gameDiscoverPicks = pgTable(
       .notNull(),
   },
   (t) => [unique().on(t.gameId, t.sessionDate)],
+);
+
+/** Per-user exceptions to the global limits. See the SQLite variant. */
+export const userLimitOverrides = pgTable(
+  'user_limit_overrides',
+  {
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    limitKey: text('limit_key').notNull(),
+    value: integer('value').notNull(),
+    note: text('note'),
+    updatedBy: text('updated_by'),
+    updatedAt: timestamp('updated_at', { mode: 'string', withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.limitKey] })],
+);
+
+/**
+ * Hourly request counts per subject per route. Mirrors the SQLite variant;
+ * timestamps are deliberately ISO text here too so window filters are identical.
+ */
+export const apiUsageHourly = pgTable(
+  'api_usage_hourly',
+  {
+    subjectType: text('subject_type', { enum: ['user', 'ip'] }).notNull(),
+    subjectId: text('subject_id').notNull(),
+    route: text('route').notNull(),
+    hourStart: text('hour_start').notNull(),
+    count: integer('count').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.subjectType, t.subjectId, t.route, t.hourStart] }),
+    index('api_usage_hourly_hour_idx').on(t.hourStart),
+  ],
+);
+
+/** Hourly limit denials per subject per limit key. Mirrors the SQLite variant. */
+export const limitDenialsHourly = pgTable(
+  'limit_denials_hourly',
+  {
+    subjectType: text('subject_type', { enum: ['user', 'ip'] }).notNull(),
+    subjectId: text('subject_id').notNull(),
+    limitKey: text('limit_key').notNull(),
+    hourStart: text('hour_start').notNull(),
+    count: integer('count').notNull(),
+    firstAt: text('first_at').notNull(),
+    lastAt: text('last_at').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.subjectType, t.subjectId, t.limitKey, t.hourStart] }),
+    index('limit_denials_hourly_hour_idx').on(t.hourStart),
+  ],
 );

@@ -26,7 +26,8 @@ import type { Db } from '../../src/db/index.js';
  * SELECT open explicitly and act on the socket while the handler is parked.
  */
 
-/** Position of the replay SELECT in the upgrade handler's query sequence. */
+/** Positions of SELECTs in the upgrade handler's query sequence. */
+const MEMBERSHIP_SELECT_INDEX = 2;
 const REPLAY_SELECT_INDEX = 3;
 
 /** The Drizzle select chain the replay query builds, narrowed to what it calls. */
@@ -34,6 +35,7 @@ interface QueryStep extends PromiseLike<unknown> {
   from(arg: unknown): QueryStep;
   where(arg: unknown): QueryStep;
   orderBy(arg: unknown): QueryStep;
+  limit(arg: unknown): QueryStep;
 }
 
 /**
@@ -46,10 +48,12 @@ class ReplaySelectGate {
   private releaseHeld: (() => void) | null = null;
   private reached: Promise<void> | null = null;
   private markReached: (() => void) | null = null;
+  private index = REPLAY_SELECT_INDEX;
 
-  /** Arms the gate for the next upgrade; resets the per-connection query count. */
-  arm(): void {
+  /** Arms the gate for the next upgrade at SELECT `index`; resets the per-connection query count. */
+  arm(index: number = REPLAY_SELECT_INDEX): void {
     this.selects = 0;
+    this.index = index;
     this.held = new Promise<void>((resolve) => {
       this.releaseHeld = resolve;
     });
@@ -64,7 +68,7 @@ class ReplaySelectGate {
     let timer: NodeJS.Timeout;
     const timeout = new Promise<never>((_, reject) => {
       timer = setTimeout(
-        () => reject(new Error('replay SELECT never reached — has the query sequence changed?')),
+        () => reject(new Error('gated SELECT never reached — has the query sequence changed?')),
         timeoutMs,
       );
     });
@@ -92,7 +96,7 @@ class ReplaySelectGate {
           const builder = select.apply(target, args) as QueryStep;
           this.selects += 1;
           const gate = this.held;
-          if (this.selects !== REPLAY_SELECT_INDEX || !gate) return builder;
+          if (this.selects !== this.index || !gate) return builder;
           this.markReached?.();
           return gateQuery(builder, gate);
         };
@@ -108,6 +112,7 @@ function gateQuery(builder: QueryStep, gate: Promise<void>): QueryStep {
     from: (arg) => { step = step.from(arg); return gated; },
     where: (arg) => { step = step.where(arg); return gated; },
     orderBy: (arg) => { step = step.orderBy(arg); return gated; },
+    limit: (arg) => { step = step.limit(arg); return gated; },
     then: (onFulfilled, onRejected) => gate.then(() => step.then(onFulfilled, onRejected)),
   };
   return gated;
@@ -146,6 +151,7 @@ describe('the connect-time replay window', () => {
       provider: new MockStockProvider(),
       marketStatusProvider: new MockMarketStatusProvider(),
       disablePoller: true,
+      limits: { disabled: true },
       disableRateLimit: true,
       leaderboardThrottleMs: 0,
     });
@@ -243,5 +249,33 @@ describe('the connect-time replay window', () => {
     expect([...(entry?.subscriptions ?? [])]).toEqual(['AAPL']);
 
     client.close();
+  });
+
+  it('never registers a socket whose peer left before admission finished', async () => {
+    const player = await makePlayer('window-preregister');
+    gate.arm(MEMBERSHIP_SELECT_INDEX);
+    const client = new WebSocket(`ws://127.0.0.1:${port}/games/${player.gameId}/live`, [
+      WS_AUTH_SUBPROTOCOL,
+      player.token,
+    ]);
+    await waitForOpen(client);
+    await gate.whenParked();
+
+    // Wait for the server side to reach CLOSED, not just the client: a socket
+    // still CLOSING has yet to emit `close`, and a listener attached in time
+    // would mask the leak. `ws` drops a socket from its tracked set on `close`.
+    client.close();
+    const deadline = Date.now() + 2000;
+    while (wsApp.websocketServer.clients.size > 0) {
+      if (Date.now() > deadline) throw new Error('server socket never closed');
+      await new Promise((r) => setTimeout(r, 5));
+    }
+    gate.release();
+    await new Promise((r) => setTimeout(r, 20));
+
+    // Registering here would add an entry whose only `close` has already
+    // fired: never removed, and before the readyState guard it held one of the
+    // user's wsConnections slots for the life of the process.
+    expect(registry.getClients(player.gameId).size).toBe(0);
   });
 });

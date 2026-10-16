@@ -1,3 +1,4 @@
+import { withPrivilegedIp } from '../limits/rate.js';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
@@ -39,8 +40,8 @@ export function stockRoutes(_db: Db, provider: StockProvider, config: ConfigRead
     // per-IP cap keeps that in check while staying generous for real use.
     // search is keyed by query (distinct queries bypass the cache → upstream),
     // so it gets a tighter limit than the symbol-keyed lookups.
-    const searchRateLimit = { rateLimit: { max: 30, timeWindow: '1 minute' } };
-    const lookupRateLimit = { rateLimit: { max: 120, timeWindow: '1 minute' } };
+    const searchRateLimit = { rateLimit: withPrivilegedIp(config, { max: 30, timeWindow: '1 minute' }) };
+    const lookupRateLimit = { rateLimit: withPrivilegedIp(config, { max: 120, timeWindow: '1 minute' }) };
 
     app.get('/stocks/search', {
       config: searchRateLimit,

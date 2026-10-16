@@ -3,12 +3,18 @@ import { eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { createTestApp, createTestDb } from '../helpers/app.js';
 import { MockStockProvider } from '../helpers/mock-provider.js';
-import {
-  placeWorkingOrder,
-  listWorkingOrders,
-  MAX_OPEN_ORDERS_PER_PLAYER,
-} from '../../src/services/working-order.js';
+import { placeWorkingOrder, listWorkingOrders } from '../../src/services/working-order.js';
+import { LimitExceededError } from '../../src/limits/errors.js';
+import type { ResolvedLimit } from '../../src/limits/resolver.js';
 import { schema } from '../../src/db/index.js';
+
+const OPEN_ORDER_LIMIT: ResolvedLimit = {
+  key: 'openOrders',
+  max: 50,
+  basis: 'base',
+  privileged: false,
+  probation: false,
+};
 
 type Db = Awaited<ReturnType<typeof createTestDb>>;
 
@@ -70,7 +76,8 @@ describe('resting orders reject unparseable tickers', () => {
 
   it('caps the number of resting orders one player can accumulate', async () => {
     const { db, gamePlayerId } = await seed();
-    for (let i = 0; i < MAX_OPEN_ORDERS_PER_PLAYER; i++) {
+    const max = OPEN_ORDER_LIMIT.max!;
+    for (let i = 0; i < max; i++) {
       await placeWorkingOrder(db, {
         gamePlayerId,
         symbol: junkSymbol(i),
@@ -79,23 +86,25 @@ describe('resting orders reject unparseable tickers', () => {
         orderType: 'limit',
         timeInForce: 'gtc',
         limitPrice: 0.01,
+        openOrderLimit: OPEN_ORDER_LIMIT,
       });
     }
-    expect(await listWorkingOrders(db, gamePlayerId)).toHaveLength(MAX_OPEN_ORDERS_PER_PLAYER);
+    expect(await listWorkingOrders(db, gamePlayerId)).toHaveLength(max);
 
     await expect(
       placeWorkingOrder(db, {
         gamePlayerId,
-        symbol: junkSymbol(MAX_OPEN_ORDERS_PER_PLAYER),
+        symbol: junkSymbol(max),
         direction: 'buy',
         quantity: 1,
         orderType: 'limit',
         timeInForce: 'gtc',
         limitPrice: 0.01,
+        openOrderLimit: OPEN_ORDER_LIMIT,
       }),
-    ).rejects.toMatchObject({ code: 'TOO_MANY_OPEN_ORDERS' });
+    ).rejects.toBeInstanceOf(LimitExceededError);
 
-    expect(await listWorkingOrders(db, gamePlayerId)).toHaveLength(MAX_OPEN_ORDERS_PER_PLAYER);
+    expect(await listWorkingOrders(db, gamePlayerId)).toHaveLength(max);
   });
 });
 

@@ -8,8 +8,13 @@ import type { ClientEntry, GameClientRegistry } from './registry.js';
 import type { AchievementEngine } from '../achievements/engine.js';
 import { ACCESS_TOKEN_TYPE } from '../plugins/jwt.js';
 import { extractSubprotocolToken } from './subprotocol.js';
-import { WS_INVALID_FRAME_CLOSE_CODE, WS_POLICY_CLOSE_CODE } from './close-codes.js';
+import { WS_INVALID_FRAME_CLOSE_CODE, WS_LIMIT_EXCEEDED_CLOSE_CODE, WS_POLICY_CLOSE_CODE } from './close-codes.js';
 import { env } from '../env.js';
+import { loadAccount } from '../limits/account.js';
+import { withPrivilegedIp } from '../limits/rate.js';
+import { LIMIT_CATALOGUE } from '../limits/catalogue.js';
+import { SlidingWindowCounter } from '../limits/sliding-window.js';
+import { admitConnection, admitSubscribe, type WsLimitDeps, type WsSubject } from './limits.js';
 
 /** Claims read off the upgrade credential. `exp` is seconds since the epoch. */
 interface AccessClaims {
@@ -123,17 +128,23 @@ async function revalidateSockets(
  *
  * @param revalidateIntervalMs - Overrides `WS_REVALIDATE_INTERVAL_MS`; tests
  *   pass a small value to observe a sweep without waiting.
+ * @param wsLimits - Per-user socket limits (`wsConnections`, `wsSubscribes`).
+ *   Omitted only by tests that mount the bare route.
  */
 export function liveRoute(
   db: Db,
   registry: GameClientRegistry,
   engine: AchievementEngine,
   revalidateIntervalMs: number = env.WS_REVALIDATE_INTERVAL_MS,
+  wsLimits?: WsLimitDeps,
 ) {
   return async function (app: FastifyInstance): Promise<void> {
     // WeakMap rather than a field on ClientEntry: a socket that vanishes
     // without firing `close` cannot leak an entry here.
     const expiryOf = new WeakMap<WebSocket, number>();
+    // One window per app instance, keyed by user, so a client cannot reset its
+    // budget by reconnecting.
+    const subscribeCounter = new SlidingWindowCounter(LIMIT_CATALOGUE.wsSubscribes.windowMs);
 
     const sweep = setInterval(() => {
       // Fails open deliberately: a database blip must not mass-disconnect
@@ -158,7 +169,12 @@ export function liveRoute(
       // hours and never describe anything useful.
       {
         websocket: true,
-        config: { rateLimit: { max: 10, timeWindow: '1 minute' }, otel: false },
+        config: {
+          rateLimit: wsLimits
+            ? withPrivilegedIp(wsLimits.config, { max: 10, timeWindow: '1 minute' })
+            : { max: 10, timeWindow: '1 minute' },
+          otel: false,
+        },
       },
       async (socket, request: FastifyRequest<{ Params: { id: string } }>) => {
         const gameId = request.params.id;
@@ -187,27 +203,40 @@ export function liveRoute(
 
         // Same live account read the REST guard does, so a disabled or deleted
         // account cannot open a socket with a token minted before the change.
-        const [account] = await db
-          .select({ disabled: schema.users.disabled })
-          .from(schema.users)
-          .where(eq(schema.users.id, payload.id))
-          .limit(1);
+        const account = await loadAccount(db, payload.id);
 
         if (!account || account.disabled) {
           socket.close(WS_POLICY_CLOSE_CODE, 'Invalid token');
           return;
         }
 
-        const [membership] = await db
-          .select({ id: schema.gamePlayers.id, lastSeenUnlockAt: schema.gamePlayers.lastSeenUnlockAt })
-          .from(schema.gamePlayers)
-          .where(and(eq(schema.gamePlayers.gameId, gameId), eq(schema.gamePlayers.userId, payload.id)))
-          .limit(1);
+        const subject: WsSubject = { account, ip: request.ip };
+        // In parallel with the membership read, so admission adds no sequential
+        // round trip before the message listener below attaches. Both resolve
+        // before the socket is registered, so a refused socket never enters the
+        // registry and never counts against its own admission.
+        const [[membership], admittedConnection] = await Promise.all([
+          db
+            .select({ id: schema.gamePlayers.id, lastSeenUnlockAt: schema.gamePlayers.lastSeenUnlockAt })
+            .from(schema.gamePlayers)
+            .where(and(eq(schema.gamePlayers.gameId, gameId), eq(schema.gamePlayers.userId, payload.id)))
+            .limit(1),
+          wsLimits ? admitConnection(wsLimits, subject) : Promise.resolve(true),
+        ]);
 
         if (!membership) {
           socket.close(WS_POLICY_CLOSE_CODE, 'Not a game member');
           return;
         }
+
+        if (!admittedConnection) {
+          closeSocket(socket, WS_LIMIT_EXCEEDED_CLOSE_CODE, 'Connection limit reached');
+          return;
+        }
+
+        // The peer may have left during the awaits above; its one `close` has
+        // then already fired, so a registered entry would never be removed.
+        if (socket.readyState !== 1 /* OPEN */) return;
 
         // Capture the time before registering the socket so the replay SELECT
         // uses it as an upper bound. Any unlock with unlockedAt > connectTime
@@ -222,28 +251,48 @@ export function liveRoute(
         // listener added afterwards never hears it — the registry entry would
         // then outlive the process, and its first `subscribe` (sent from the
         // browser's `onopen`) would be dropped on the floor.
-        socket.on('message', (raw: Buffer) => {
+        const applySubscribe = async (raw: Buffer): Promise<void> => {
+          let symbols: string[];
           try {
             const parsed = clientFrameSchema.safeParse(JSON.parse(raw.toString()));
             if (!parsed.success) {
               closeSocket(socket, WS_INVALID_FRAME_CLOSE_CODE, 'Invalid frame');
               return;
             }
-            const entry = registry.getEntry(gameId, socket);
-            if (!entry) return;
-            // Replace, not append: the client sends the full active set on
-            // every change, and additive merging would broadcast forever
-            // to symbols the user has dropped (e.g. when switching lists).
-            entry.subscriptions.clear();
-            for (const symbol of parsed.data.data.symbols) {
-              entry.subscriptions.add(symbol.toUpperCase());
-            }
+            symbols = parsed.data.data.symbols;
           } catch {
             // Unparseable JSON. Same disposition as a schema failure — no
             // legitimate client sends one, and answering nothing lets a peer
             // keep probing for free.
             closeSocket(socket, WS_INVALID_FRAME_CLOSE_CODE, 'Invalid frame');
+            return;
           }
+
+          // Dropped rather than closed: a close hands the client a fresh socket
+          // whose first act is to re-subscribe, which throttles nothing.
+          if (wsLimits && !(await admitSubscribe(wsLimits, subscribeCounter, subject))) {
+            registry.sendToSocket(socket, {
+              event: 'error',
+              data: { code: 'LIMIT_EXCEEDED', limit: 'wsSubscribes' },
+            });
+            return;
+          }
+
+          const entry = registry.getEntry(gameId, socket);
+          if (!entry) return;
+          // Replace, not append: the client sends the full active set on
+          // every change, and additive merging would broadcast forever
+          // to symbols the user has dropped (e.g. when switching lists).
+          entry.subscriptions.clear();
+          for (const symbol of symbols) entry.subscriptions.add(symbol.toUpperCase());
+        };
+
+        // Chained so frames apply in arrival order even though admission awaits.
+        let frames: Promise<void> = Promise.resolve();
+        socket.on('message', (raw: Buffer) => {
+          frames = frames.then(() => applySubscribe(raw)).catch((err: unknown) => {
+            app.log.error({ err, gameId }, 'ws subscribe handling failed');
+          });
         });
 
         const cleanup = () => registry.remove(gameId, socket);

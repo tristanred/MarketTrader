@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { ConfigCategory, ConfigKind } from '@markettrader/shared';
 import type { env, liveBootConfig } from '../env.js';
+import { validateCidrList } from '../limits/cidr.js';
 import {
   VALID_MARKET_HOURS_MODES,
   VALID_MARKET_STATUS_PROVIDERS,
@@ -38,6 +39,8 @@ export interface LiveDescriptor extends DescriptorBase {
   mutability: 'live';
   min?: number;
   max?: number;
+  /** Extra check for `string` kinds; returns an error message, or undefined when valid. */
+  validate?: (value: string) => string | undefined;
 }
 
 /** An option consumed once at startup and therefore shown read-only. */
@@ -217,6 +220,100 @@ export const CONFIG_REGISTRY = {
     category: 'limits', kind: 'integer', mutability: 'live', min: 1, max: 200,
     description: 'Watchlists one user may own. Lowering it does not delete existing lists.',
   },
+  USAGE_FLUSH_INTERVAL_MS: {
+    category: 'limits', kind: 'integer', unit: 'ms', mutability: 'live', min: 5 * SECOND, max: 10 * MINUTE,
+    description: 'How often per-user request and denial counts are written to the usage tables.',
+  },
+  USAGE_RETENTION_DAYS: {
+    category: 'limits', kind: 'integer', mutability: 'live', min: 1, max: 365,
+    description: 'Days of hourly usage history kept for the admin limits panel.',
+  },
+  GAME_MAX_STARTING_BALANCE: {
+    category: 'limits', kind: 'integer', mutability: 'live', min: 1_000, max: 1_000_000_000,
+    description: 'Largest starting balance a player may give a new game. Admin edits are not checked.',
+  },
+  GAME_MAX_DURATION_DAYS: {
+    category: 'limits', kind: 'integer', mutability: 'live', min: 1, max: 3_650,
+    description: 'Longest a new game may run, in days.',
+  },
+  GAME_MAX_START_DELAY_DAYS: {
+    category: 'limits', kind: 'integer', mutability: 'live', min: 0, max: 3_650,
+    description: 'How far ahead a new game may be scheduled to start, in days.',
+  },
+  GAME_MAX_PLAYERS: {
+    category: 'limits', kind: 'integer', mutability: 'live', min: 2, max: 10_000,
+    description: 'Most players one game may hold. A property of the game, so it has no per-user override. Admin seating is not checked.',
+  },
+  LIMITS_ENABLED: {
+    category: 'limits', kind: 'boolean', mutability: 'live',
+    description:
+      'Master switch for per-user limits. Off lifts every limit below; the fixed per-IP caps on login, register and stock lookups stay.',
+  },
+  LIMITS_MATURITY_DAYS: {
+    category: 'limits', kind: 'integer', mutability: 'live', min: 0, max: 365,
+    description: 'Days a new account runs on probation (reduced limits). 0 turns probation off.',
+  },
+  LIMITS_PROBATION_PERCENT: {
+    category: 'limits', kind: 'integer', mutability: 'live', min: 1, max: 100,
+    description: 'Share of each limit an account on probation gets, rounded up, never below 1.',
+  },
+  LIMITS_PRIVILEGED_CIDRS: {
+    category: 'limits', kind: 'string', mutability: 'live', validate: validateCidrList,
+    description:
+      'Comma-separated IPs/CIDR subnets (e.g. an office) whose requests get the privileged multiplier on every limit. Matched on request.ip, so TRUST_PROXY must be right.',
+  },
+  LIMITS_PRIVILEGED_MULTIPLIER: {
+    category: 'limits', kind: 'integer', mutability: 'live', min: 1, max: 1_000,
+    description: 'Factor applied to every limit for a privileged connection.',
+  },
+  LIMIT_API_REQUESTS_PER_MINUTE: {
+    category: 'limits', kind: 'integer', mutability: 'live', min: 1, max: 100_000,
+    description: 'Authenticated REST requests per user per minute, across every route.',
+  },
+  LIMIT_TRADES_PER_MINUTE: {
+    category: 'limits', kind: 'integer', mutability: 'live', min: 1, max: 10_000,
+    description: 'Orders one user may place per minute.',
+  },
+  LIMIT_ORDER_CANCELS_PER_MINUTE: {
+    category: 'limits', kind: 'integer', mutability: 'live', min: 1, max: 10_000,
+    description: 'Order cancellations (working and pending) one user may make per minute.',
+  },
+  LIMIT_CODE_LOOKUPS_PER_MINUTE: {
+    category: 'limits', kind: 'integer', mutability: 'live', min: 1, max: 10_000,
+    description: 'Invite-code lookups one user may make per minute. Bounds code enumeration.',
+  },
+  LIMIT_WS_SUBSCRIBES_PER_MINUTE: {
+    category: 'limits', kind: 'integer', mutability: 'live', min: 1, max: 10_000,
+    description: 'Live-price subscription changes one user may send per minute, across sockets.',
+  },
+  LIMIT_GAMES_CREATED_PER_WEEK: {
+    category: 'limits', kind: 'integer', mutability: 'live', min: 1, max: 10_000,
+    description: 'Games one user may create in any rolling 7 days.',
+  },
+  LIMIT_ACTIVE_GAMES_OWNED: {
+    category: 'limits', kind: 'integer', mutability: 'live', min: 1, max: 10_000,
+    description: 'Games one user may own that have not ended.',
+  },
+  LIMIT_GAMES_JOINED_PER_DAY: {
+    category: 'limits', kind: 'integer', mutability: 'live', min: 1, max: 10_000,
+    description: 'Games one user may join in any rolling 24 hours. Creating a game counts as joining it.',
+  },
+  LIMIT_ACTIVE_GAMES_JOINED: {
+    category: 'limits', kind: 'integer', mutability: 'live', min: 1, max: 10_000,
+    description: 'Games one user may be playing at once (not ended).',
+  },
+  LIMIT_OPEN_ORDERS_PER_PLAYER: {
+    category: 'limits', kind: 'integer', mutability: 'live', min: 1, max: 10_000,
+    description: 'Working plus pending orders one player may have open in one game.',
+  },
+  LIMIT_WS_CONNECTIONS_PER_USER: {
+    category: 'limits', kind: 'integer', mutability: 'live', min: 1, max: 1_000,
+    description: 'Live sockets one user may hold open at once.',
+  },
+  LIMIT_REGISTRATIONS_PER_IP_PER_DAY: {
+    category: 'limits', kind: 'integer', mutability: 'live', min: 1, max: 10_000,
+    description: 'Accounts that may be registered from one IP in any rolling 24 hours.',
+  },
 
   // ── websocket ───────────────────────────────────────────────────────────
   WS_HEARTBEAT_INTERVAL_MS: {
@@ -320,7 +417,14 @@ function schemaForKind(key: string, d: LiveDescriptor): z.ZodType<string | numbe
       const values: [string, ...string[]] = [first, ...rest];
       return z.enum(values);
     }
-    case 'string':
-      return z.string().max(2048);
+    case 'string': {
+      const base = z.string().max(2048);
+      const validate = d.validate;
+      if (!validate) return base;
+      return base.superRefine((value, ctx) => {
+        const problem = validate(value);
+        if (problem) ctx.addIssue({ code: z.ZodIssueCode.custom, message: problem });
+      });
+    }
   }
 }

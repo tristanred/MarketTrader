@@ -19,6 +19,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from '@/components/ui/toast';
 import { ConfirmDialog } from '@/components/admin/ConfirmDialog';
+import { UserLimitsCard } from '@/components/admin/UserLimitsCard';
 import { toastApiError } from '@/lib/toastApiError';
 
 const editSchema = z.object({
@@ -152,6 +153,8 @@ export function AdminUserDetailPage() {
           </div>
         </CardContent>
       </Card>
+
+      <UserLimitsCard userId={userId} />
 
       <Card>
         <CardHeader>

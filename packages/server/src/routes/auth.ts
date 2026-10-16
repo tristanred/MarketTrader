@@ -1,3 +1,13 @@
+import type { Limits } from '../limits/index.js';
+import { withPrivilegedIp } from '../limits/rate.js';
+import { LIMIT_CATALOGUE } from '../limits/catalogue.js';
+import {
+  countRegistrationsSince,
+  oldestRegistrationSince,
+  windowStart,
+} from '../limits/quota-counts.js';
+import { secondsUntilWindowFrees } from '../limits/enforce.js';
+import { KeyedLock } from '../limits/keyed-lock.js';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
@@ -46,6 +56,7 @@ const loginSchema = z.object({
 /**
  * Registers all authentication routes on the Fastify instance:
  * - `POST /auth/register` — create a new account; sets the refresh cookie and returns a 15-minute access token.
+ *   Also refused once an address has registered `LIMIT_REGISTRATIONS_PER_IP_PER_DAY` accounts in 24 h.
  * - `POST /auth/login`    — verify credentials; sets the refresh cookie and returns a 15-minute access token.
  * - `POST /auth/refresh`  — exchange the refresh-token cookie for a new access token.
  * - `POST /auth/logout`   — clear the refresh-token cookie (idempotent, no auth required).
@@ -53,6 +64,7 @@ const loginSchema = z.object({
  * Rate limits are applied per-route to slow brute-force attempts. Login is
  * additionally throttled per account by {@link FailedLoginTracker}, which does
  * not depend on `request.ip` and so survives an attacker rotating addresses.
+ * Per-IP caps are multiplied for privileged addresses via {@link withPrivilegedIp}.
  * Passwords are hashed with argon2; never bcrypt.
  */
 /**
@@ -70,10 +82,12 @@ async function loadUserGroups(db: Db, userId: string): Promise<string[]> {
   return rows.map((r) => r.name);
 }
 
-export function authRoutes(db: Db, loginThrottle: FailedLoginTracker) {
+export function authRoutes(db: Db, loginThrottle: FailedLoginTracker, limits: Limits) {
   return async function (rawApp: FastifyInstance): Promise<void> {
     const app = rawApp.withTypeProvider<ZodTypeProvider>();
     const { users } = schema;
+    const perIp = (max: number) => ({ rateLimit: withPrivilegedIp(limits.config, { max, timeWindow: '1 minute' }) });
+    const registrationLock = new KeyedLock();
 
     // Logged once when the throttle engages, not on every subsequent rejection —
     // a locked account under sustained attack would otherwise flood the log.
@@ -84,7 +98,7 @@ export function authRoutes(db: Db, loginThrottle: FailedLoginTracker) {
     };
 
     app.post('/auth/register', {
-      config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
+      config: perIp(10),
       schema: {
         tags: ['Auth'],
         summary: 'Create a new account and issue a 15-minute access token.',
@@ -92,24 +106,49 @@ export function authRoutes(db: Db, loginThrottle: FailedLoginTracker) {
       },
     }, async (request, reply) => {
       const { username, password } = request.body;
+      const ip = request.ip;
 
-      const passwordHash = await hash(password);
-      let user: { id: string; username: string } | undefined;
-      try {
-        // Registration grants no group membership, ever. The first admin comes
-        // from the boot-time seed in `db/seed-admin.ts`; promotions after that
-        // go through an existing admin.
-        [user] = await db
-          .insert(users)
-          .values({ username, passwordHash })
-          .returning({ id: users.id, username: users.username });
-      } catch (err: unknown) {
-        if (isUniqueConstraintError(err)) {
-          return reply.status(409).send({ error: 'Username already taken' });
+      // Before hashing: argon2 is the expensive step, and a refused address
+      // should not get to spend it. Counted from `users.registration_ip`, so a
+      // restart does not hand out a fresh day. Serialised per address from the
+      // count to the insert: the hash awaits between them, and every request
+      // in flight would otherwise count the same rows and all be admitted.
+      const user = await registrationLock.run(ip, async () => {
+        const now = Date.now();
+        const since = windowStart('registrationsPerIp', now);
+        await limits.enforcer.enforceFor(
+          { ip },
+          'registrationsPerIp',
+          () => countRegistrationsSince(db, ip, since),
+          {
+            retryAfter: async () =>
+              secondsUntilWindowFrees(
+                await oldestRegistrationSince(db, ip, since),
+                LIMIT_CATALOGUE.registrationsPerIp.windowMs!,
+                now,
+              ),
+          },
+        );
+
+        const passwordHash = await hash(password);
+        try {
+          // Registration grants no group membership, ever. The first admin comes
+          // from the boot-time seed in `db/seed-admin.ts`; promotions after that
+          // go through an existing admin.
+          const [row] = await db
+            .insert(users)
+            .values({ username, passwordHash, registrationIp: ip })
+            .returning({ id: users.id, username: users.username });
+          return row;
+        } catch (err: unknown) {
+          if (isUniqueConstraintError(err)) return 'taken' as const;
+          throw err;
         }
-        throw err;
-      }
+      });
 
+      if (user === 'taken') {
+        return reply.status(409).send({ error: 'Username already taken' });
+      }
       if (!user) {
         return reply.status(500).send({ error: 'Failed to create user' });
       }
@@ -130,7 +169,7 @@ export function authRoutes(db: Db, loginThrottle: FailedLoginTracker) {
     });
 
     app.post('/auth/login', {
-      config: { rateLimit: { max: 5, timeWindow: '1 minute' } },
+      config: perIp(5),
       schema: {
         tags: ['Auth'],
         summary: 'Verify credentials and issue a 15-minute access token.',
@@ -189,7 +228,7 @@ export function authRoutes(db: Db, loginThrottle: FailedLoginTracker) {
     });
 
     app.post('/auth/logout', {
-      config: { rateLimit: { max: 20, timeWindow: '1 minute' } },
+      config: perIp(20),
       schema: {
         tags: ['Auth'],
         summary: 'Clear the refresh-token cookie (idempotent).',
@@ -203,7 +242,7 @@ export function authRoutes(db: Db, loginThrottle: FailedLoginTracker) {
     });
 
     app.post('/auth/refresh', {
-      config: { rateLimit: { max: 20, timeWindow: '1 minute' } },
+      config: perIp(20),
       schema: {
         tags: ['Auth'],
         summary: 'Exchange the refresh-token cookie for a new access token.',

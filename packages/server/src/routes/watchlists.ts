@@ -5,7 +5,8 @@ import { and, asc, count, eq } from 'drizzle-orm';
 import type { Db } from '../db/index.js';
 import { schema } from '../db/index.js';
 import type { Watchlist } from '@markettrader/shared';
-import type { ConfigReader } from '../config/runtime-config.js';
+import type { Limits } from '../limits/index.js';
+import { withPrivilegedIp } from '../limits/rate.js';
 
 const nameSchema = z
   .string()
@@ -99,9 +100,9 @@ async function loadWatchlistForUser(
  * Growth is capped by `WATCHLIST_MAX_PER_USER` and `WATCHLIST_MAX_ITEMS`; a
  * write past either answers 409. The rows are an input to the price poller's
  * per-tick symbol set, so an unbounded list is upstream load everyone shares.
- * `config` supplies the live watchlist caps.
+ * `limits` enforces the per-user watchlist caps.
  */
-export function watchlistRoutes(db: Db, config: ConfigReader) {
+export function watchlistRoutes(db: Db, limits: Limits) {
   return async function (rawApp: FastifyInstance): Promise<void> {
     const app = rawApp.withTypeProvider<ZodTypeProvider>();
     const { watchlists, watchlistItems } = schema;
@@ -180,16 +181,13 @@ export function watchlistRoutes(db: Db, config: ConfigReader) {
 
       // Checked only on the branch that inserts, so a user at the cap can still
       // fetch an existing list by name above.
-      const [owned] = await db
-        .select({ total: count() })
-        .from(watchlists)
-        .where(eq(watchlists.userId, userId));
-      const maxPerUser = config.get('WATCHLIST_MAX_PER_USER');
-      if ((owned?.total ?? 0) >= maxPerUser) {
-        return reply.status(409).send({
-          error: `Watchlist limit reached (${maxPerUser} per user). Delete one first.`,
-        });
-      }
+      await limits.enforcer.enforce(request, 'watchlists', async () => {
+        const [owned] = await db
+          .select({ total: count() })
+          .from(watchlists)
+          .where(eq(watchlists.userId, userId));
+        return Number(owned?.total ?? 0);
+      });
 
       const [row] = await db.insert(watchlists).values({ userId, name }).returning();
       if (!row) return reply.status(500).send({ error: 'Failed to create watchlist' });
@@ -263,7 +261,7 @@ export function watchlistRoutes(db: Db, config: ConfigReader) {
         // Every row added here is fetched by the price poller on behalf of this
         // user whenever they hold a live socket, so the write path gets a cap of
         // its own on top of the per-list ceiling below.
-        config: { rateLimit: { max: 60, timeWindow: '1 minute' } },
+        config: { rateLimit: withPrivilegedIp(limits.config, { max: 60, timeWindow: '1 minute' }) },
         schema: {
           tags: ['Watchlists'],
           summary: 'Add a symbol to a watchlist (idempotent).',
@@ -281,12 +279,7 @@ export function watchlistRoutes(db: Db, config: ConfigReader) {
         if (!existing) return reply.status(404).send({ error: 'Watchlist not found' });
 
         if (!existing.symbols.includes(symbol)) {
-          const maxItems = config.get('WATCHLIST_MAX_ITEMS');
-          if (existing.symbols.length >= maxItems) {
-            return reply.status(409).send({
-              error: `Watchlist is full (${maxItems} symbols). Remove one first.`,
-            });
-          }
+          await limits.enforcer.enforce(request, 'watchlistItems', async () => existing.symbols.length);
           try {
             await db.insert(watchlistItems).values({ watchlistId, symbol });
           } catch {
@@ -304,7 +297,7 @@ export function watchlistRoutes(db: Db, config: ConfigReader) {
         onRequest: rawApp.authenticate,
         // Autosaved from a textarea as the user types, so the client debounces
         // and this bounds what a stuck debounce (or a script) can push through.
-        config: { rateLimit: { max: 120, timeWindow: '1 minute' } },
+        config: { rateLimit: withPrivilegedIp(limits.config, { max: 120, timeWindow: '1 minute' }) },
         schema: {
           tags: ['Watchlists'],
           summary: "Set or clear a symbol's note on a watchlist.",

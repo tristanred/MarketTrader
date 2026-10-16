@@ -102,6 +102,7 @@ describe('WebSocket credentials never travel in the URL (F6, F22)', () => {
       provider: new MockStockProvider(),
       marketStatusProvider: new MockMarketStatusProvider(),
       disablePoller: true,
+      limits: { disabled: true },
       disableRateLimit: true,
       leaderboardThrottleMs: 0,
     });

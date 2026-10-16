@@ -56,6 +56,8 @@ STOCK_PROVIDER=yahoo
 
 Production env validation (`validateProductionEnv()` in `packages/server/src/env.ts`) refuses to start if `JWT_SECRET` is shorter than 32 chars, `CORS_ORIGIN` is the dev default, `DATABASE_URL` isn't Postgres, or Alpaca is selected (via `STOCK_PROVIDER` or `MARKET_STATUS_PROVIDER`) without both `ALPACA_API_KEY_ID` and `ALPACA_API_SECRET_KEY`.
 
+**Keep the Postgres session `TimeZone` at `UTC`** (the `postgres:16` image default). `created_at`/`joined_at` are `timestamp` columns *without* time zone filled by `defaultNow()`, which stores session-local time, while the per-user limit windows (`limits/quota-counts.ts`) and the account-age / `Retry-After` arithmetic (`toIsoUtc` in `limits/account.ts`) build and read those values as UTC. Any other `TimeZone` shifts every rolling quota window and retry hint by the offset. Nothing checks this at boot.
+
 ## 4. Bring up the stack
 
 ```sh

@@ -1,6 +1,7 @@
 import type { WebSocket } from 'ws';
 import type { LiveWsMessage } from '@markettrader/shared';
 import { meters } from '../observability/telemetry.js';
+import { isLive } from './registry.js';
 
 /**
  * Per-app-instance registry of clients connected to the global `/ws/live`
@@ -12,6 +13,15 @@ export class GlobalClientRegistry {
 
   get size(): number {
     return this.clients.size;
+  }
+
+  /** Live (CONNECTING or OPEN) `/ws/live` sockets `userId` holds — read by the `wsConnections` limit. */
+  countForUser(userId: string): number {
+    let count = 0;
+    for (const [socket, entry] of this.clients) {
+      if (entry.userId === userId && isLive(socket)) count += 1;
+    }
+    return count;
   }
 
   add(userId: string, socket: WebSocket): void {

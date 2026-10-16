@@ -35,7 +35,7 @@ async function createGame(
 }
 
 function browseHas(res: LightMyRequestResponse, gameId: string): boolean {
-  return res.json<{ id: string }[]>().some((g) => g.id === gameId);
+  return res.json<{ games: { id: string }[] }>().games.some((g) => g.id === gameId);
 }
 
 // ─── POST /games ──────────────────────────────────────────────────────────────
@@ -454,7 +454,7 @@ describe('GET /games/browse', () => {
   function browse(token: string) {
     return app.inject({
       method: 'GET',
-      url: '/games/browse',
+      url: '/games/browse?limit=50',
       headers: { Authorization: `Bearer ${token}` },
     });
   }
@@ -470,9 +470,9 @@ describe('GET /games/browse', () => {
 
     const res = await browse(browser.token);
     expect(res.statusCode).toBe(200);
-    const row = res.json<
-      { id: string; name: string; playerCount: number; createdByUsername: string }[]
-    >().find((g) => g.id === gameId);
+    const row = res.json<{
+      games: { id: string; name: string; playerCount: number; createdByUsername: string }[];
+    }>().games.find((g) => g.id === gameId);
 
     expect(row).toBeDefined();
     expect(row?.name).toBe('Open Tournament');
@@ -483,7 +483,7 @@ describe('GET /games/browse', () => {
   it('never exposes the invite code', async () => {
     await createGame(app, owner.token, { name: 'No Code Leak' });
     const res = await browse(browser.token);
-    for (const row of res.json<Record<string, unknown>[]>()) {
+    for (const row of res.json<{ games: Record<string, unknown>[] }>().games) {
       expect(row).not.toHaveProperty('inviteCode');
     }
   });

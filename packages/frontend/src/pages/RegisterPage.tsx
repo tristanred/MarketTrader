@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { AuthAtmospherePanel } from '@/components/auth/AuthAtmospherePanel';
 import { ApiError } from '@/lib/api';
+import { formatLimitMessage, isLimitExceeded } from '@/lib/limits';
 import { capture } from '@/lib/posthog';
 
 const schema = z.object({
@@ -38,9 +39,11 @@ export function RegisterPage() {
   const errorMessage =
     register.error instanceof ApiError && register.error.status === 409
       ? 'Username already taken'
-      : register.error
-        ? 'Registration failed. Try again.'
-        : null;
+      : isLimitExceeded(register.error)
+        ? formatLimitMessage(register.error.body)
+        : register.error
+          ? 'Registration failed. Try again.'
+          : null;
 
   return (
     <main className="safe-area grid min-h-dvh bg-bg text-text lg:grid-cols-[3fr_2fr]">

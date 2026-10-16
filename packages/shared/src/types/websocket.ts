@@ -1,3 +1,4 @@
+import type { LimitKey } from './limits.js';
 import type { StockQuote } from './stock.js';
 import type { LeaderboardEntry } from './game.js';
 import type { TradeDirection, WorkingOrder } from './player.js';
@@ -67,6 +68,15 @@ export interface WsSubscribeEvent {
   data: { symbols: string[] };
 }
 
+/**
+ * Sent to one socket when the server refuses a client frame for exceeding a
+ * limit. The refused frame has no effect — the previous subscription stays.
+ */
+export interface WsErrorEvent {
+  event: 'error';
+  data: { code: 'LIMIT_EXCEEDED'; limit: LimitKey };
+}
+
 /** Union of all event shapes the server can push to a connected client. */
 export type WsServerEvent =
   | WsPriceUpdateEvent
@@ -75,7 +85,8 @@ export type WsServerEvent =
   | WsOrderPlacedEvent
   | WsOrderCancelledEvent
   | WsOrderTriggeredEvent
-  | WsAchievementUnlockedEvent;
+  | WsAchievementUnlockedEvent
+  | WsErrorEvent;
 
 /** Union of all event shapes a client can send to the server. */
 export type WsClientEvent = WsSubscribeEvent;

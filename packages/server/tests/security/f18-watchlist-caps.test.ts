@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import type { Watchlist } from '@markettrader/shared';
 import { createTestAppWithDb } from '../helpers/app.js';
-import type { RuntimeConfig } from '../../src/config/runtime-config.js';
+import { RuntimeConfig } from '../../src/config/runtime-config.js';
 
 async function registerUser(app: FastifyInstance, username: string): Promise<string> {
   const res = await app.inject({
@@ -28,7 +28,10 @@ describe('F18 — watchlist growth is bounded', () => {
   let token: string;
 
   beforeAll(async () => {
-    ({ app, config } = await createTestAppWithDb());
+    ({ app, config } = await createTestAppWithDb(undefined, undefined, {
+      limits: { disabled: false },
+      runtimeConfig: RuntimeConfig.fromEnvironment({ LIMITS_PROBATION_PERCENT: 100 }),
+    }));
     token = await registerUser(app, 'f18-capped');
   });
   afterAll(() => app.close());
@@ -49,6 +52,10 @@ describe('F18 — watchlist growth is bounded', () => {
 
     const overflow = await addItem(app, token, list.id, 'ONEMORE');
     expect(overflow.statusCode).toBe(409);
+    expect(overflow.json<{ code: string; limit: string }>()).toMatchObject({
+      code: 'LIMIT_EXCEEDED',
+      limit: 'watchlistItems',
+    });
     expect(overflow.json<{ error: string }>().error).toContain(String(config.get('WATCHLIST_MAX_ITEMS')));
 
     // A full list must stay usable: re-adding an existing symbol is still the
@@ -78,6 +85,10 @@ describe('F18 — watchlist growth is bounded', () => {
       payload: { name: 'One Too Many' },
     });
     expect(overflow.statusCode).toBe(409);
+    expect(overflow.json<{ code: string; limit: string }>()).toMatchObject({
+      code: 'LIMIT_EXCEEDED',
+      limit: 'watchlists',
+    });
     expect(overflow.json<{ error: string }>().error).toContain(
       String(config.get('WATCHLIST_MAX_PER_USER')),
     );

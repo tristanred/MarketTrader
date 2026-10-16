@@ -16,6 +16,12 @@ overrides:
   # tsup depends on esbuild ^0.27, which cannot reach the 0.28.1 that fixes
   # GHSA-g7r4-m6w7-qqqr. Used only to load tsup.config.ts and bundle the server.
   'tsup>esbuild': '^0.28.1'
+  # tailwindcss@3.4.19 (last v3) and its postcss-nested@6 both pin
+  # postcss-selector-parser ^6, which carries GHSA-rj75-hqrm-r3gf. The fix only
+  # exists in 7.1.6, and current postcss-nested already depends on ^7.1.6, so 7.x
+  # is a supported pairing with this parser API. Remove when moving to Tailwind v4.
+  'tailwindcss>postcss-selector-parser': '^7.1.6'
+  'postcss-nested>postcss-selector-parser': '^7.1.6'
 allowBuilds:
   better-sqlite3: true
   esbuild: true

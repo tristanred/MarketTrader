@@ -227,9 +227,11 @@ VITE_POSTHOG_HOST=     # build-time; normally /relay (same-origin proxy)
 
 `TRUST_PROXY` decides `request.ip`, which is the key every per-route rate limit is
 bucketed on. Trusting every hop (`true`) makes that value client-controlled and lifts
-every cap, so `validateProductionEnv` rejects it. Accepts `false`, a hop count, the
+every cap, so `validateProductionEnv` rejects it. Accepts `false`, the
 `loopback`/`linklocal`/`uniquelocal` presets, or a comma-separated IP/CIDR list; parsed
-and validated at boot by `parseTrustProxy` in `env.ts`.
+and validated at boot by `parseTrustProxy` in `env.ts`. A hop count is refused at boot:
+Fastify ≥ 5.12.7 treats a numeric `trustProxy` as trusting nothing, which would put
+every client behind the proxy in one rate-limit bucket.
 
 Additional vars rarely need touching (defined in `env.ts`, most also documented
 in `.env.example`): the `MARKET_*` family (hours mode, status provider, extended
@@ -414,12 +416,27 @@ equivalent route to the collector.
 
 ---
 
+## Code Scanning (CodeQL)
+
+Many rules in this file are also enforced as custom CodeQL queries in `.github/codeql/markettrader-queries`
+(ADR-017; catalogue in `docs/codeql.md`). If you change one of those rules here, update its query too.
+When a PR gets an alert, fix the code. Change the query only if the alert is a genuine false positive, and add a fixture for that case.
+- Fixtures go at repo-shaped paths inside the test dir (`markettrader-tests/<group>/<Query>/packages/server/src/...`):
+  the queries scope by path suffix, so a fixture anywhere else is silently out of scope.
+- Run `gh codeql test run .github/codeql/markettrader-tests` after any query change, and read every
+  `--learn`-generated `.expected` line. A failed compile writes its errors into `.expected` and still passes.
+- Known violations are left as open `warning` alerts on purpose. `error` severity is reserved for leaks and
+  auth bypasses, which hold today.
+
+---
+
 ## Key Documents to Read
 
 - `docs/technical-decisions.md` — before suggesting a library or architectural change
 - `.changeset/README.md` — the release flow in short form
 - `docs/design.md` — before adding any new entity, endpoint, or feature
 - `docs/observability.md` — the metric catalogue and what is instrumented
+- `docs/codeql.md` — the invariant queries, their status, and how to write one
 - `docs/superpowers/specs/2026-05-08-markettrader-design.md` — the initial full spec
 
 ---

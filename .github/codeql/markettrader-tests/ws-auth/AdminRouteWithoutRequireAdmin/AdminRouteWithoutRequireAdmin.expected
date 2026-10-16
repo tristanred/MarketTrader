@@ -1,0 +1,3 @@
+| packages/server/src/routes/admin/users.ts:10:1:10:86 | app.pat ... andler) | Admin route PATCH /admin/users/:id is not guarded by requireAdmin; use `onRequest: rawApp.requireAdmin`. |
+| packages/server/src/routes/admin/users.ts:13:1:13:48 | app.get ... andler) | Admin route GET /admin/stats is not guarded by requireAdmin; use `onRequest: rawApp.requireAdmin`. |
+| packages/server/src/routes/admin/users.ts:16:1:16:87 | app.pos ... andler) | Admin route POST /maintenance/flush is not guarded by requireAdmin; use `onRequest: rawApp.requireAdmin`. |

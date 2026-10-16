@@ -1,0 +1,3 @@
+provide:
+  - "markettrader-queries/qlpack.yml"
+  - "markettrader-tests/qlpack.yml"

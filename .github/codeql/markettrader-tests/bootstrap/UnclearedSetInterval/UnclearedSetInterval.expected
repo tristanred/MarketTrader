@@ -1,0 +1,4 @@
+| packages/server/src/ws/timers.ts:52:18:52:44 | setInte ... , 5000) | setInterval(...) is neither unref()'d nor cleared in an onClose hook/stop() in this file. |
+| packages/server/src/ws/timers.ts:61:3:61:29 | setInte ... , 1000) | setInterval(...) result is discarded, so it can never be cleared; store it and unref() it or clear it in an onClose hook/stop(). |
+| packages/server/src/ws/timers.ts:66:13:66:39 | setInte ... , 1000) | setInterval(...) is neither unref()'d nor cleared in an onClose hook/stop() in this file. |
+| packages/server/src/ws/timers.ts:85:19:85:45 | setInte ... , 1000) | setInterval(...) is neither unref()'d nor cleared in an onClose hook/stop() in this file. |

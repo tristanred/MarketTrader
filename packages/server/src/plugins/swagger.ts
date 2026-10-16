@@ -9,15 +9,22 @@ import {
 import { buildInfo } from '../build-info.js';
 
 /**
- * Registers Fastify's Zod-aware validator + serializer compilers and mounts
- * `@fastify/swagger` (spec generation) and `@fastify/swagger-ui` (UI at `/docs`).
+ * Registers Fastify's Zod-aware validator + serializer compilers and, when
+ * `exposeDocs` is set, mounts `@fastify/swagger` (spec) and `@fastify/swagger-ui`
+ * (UI at `/docs`). The compilers are unconditional — every route's Zod schema
+ * depends on them; only the docs surface is optional.
  *
  * Must be called after `registerJwt()` so the `bearerAuth` security scheme can
  * be referenced by downstream route definitions, and before any route plugin.
  */
-export async function registerSwagger(app: FastifyInstance): Promise<void> {
+export async function registerSwagger(
+  app: FastifyInstance,
+  { exposeDocs }: { exposeDocs: boolean },
+): Promise<void> {
   app.setValidatorCompiler(validatorCompiler);
   app.setSerializerCompiler(serializerCompiler);
+
+  if (!exposeDocs) return;
 
   await app.register(fastifySwagger, {
     openapi: {

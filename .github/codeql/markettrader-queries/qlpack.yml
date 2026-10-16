@@ -1,0 +1,6 @@
+name: markettrader/invariants
+version: 0.0.1
+library: false
+dependencies:
+  codeql/javascript-all: "*"
+extractor: javascript

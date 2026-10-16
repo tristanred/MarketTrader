@@ -90,7 +90,7 @@ export const CONFIG_REGISTRY = {
   TRUST_PROXY: {
     category: 'security', kind: 'string', mutability: 'restart',
     description:
-      'Which upstream hops may set X-Forwarded-For: false, a hop count, a preset (loopback, linklocal, uniquelocal), or an address/CIDR list. Decides request.ip, the key of every rate limit.',
+      'Which upstream hops may set X-Forwarded-For: false, a preset (loopback, linklocal, uniquelocal), or an address/CIDR list. Decides request.ip, the key of every rate limit.',
     restartReason: 'Fastify reads it once when the server is constructed.',
   },
   LOGIN_MAX_FAILED_ATTEMPTS: {

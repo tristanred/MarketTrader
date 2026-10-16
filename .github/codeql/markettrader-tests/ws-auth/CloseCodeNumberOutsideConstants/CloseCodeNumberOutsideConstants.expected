@@ -1,0 +1,2 @@
+| packages/frontend/src/hooks/useGameSocket.ts:5:19:5:22 | 1008 | WebSocket close code 1008 is spelled out here; import WS_POLICY_CLOSE_CODE / WS_INVALID_FRAME_CLOSE_CODE from ws/close-codes.ts or lib/wsAuth.ts instead. |
+| packages/frontend/src/hooks/useGameSocket.ts:9:19:9:22 | 4400 | WebSocket close code 4400 is spelled out here; import WS_POLICY_CLOSE_CODE / WS_INVALID_FRAME_CLOSE_CODE from ws/close-codes.ts or lib/wsAuth.ts instead. |

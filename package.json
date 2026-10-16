@@ -20,7 +20,7 @@
     "docs:achievements": "pnpm --filter @markettrader/frontend exec node ./scripts/generate-achievement-docs.mjs"
   },
   "devDependencies": {
-    "@changesets/cli": "^3.0.0",
+    "@changesets/cli": "^3.0.3",
     "@typescript-eslint/eslint-plugin": "^8.67.0",
     "@typescript-eslint/parser": "^8.67.0",
     "eslint": "^9.39.5",

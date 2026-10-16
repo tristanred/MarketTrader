@@ -1,0 +1,6 @@
+| packages/server/src/services/discover.ts:1:1:1:26 | import  ... axios'; | Outbound HTTP via the 'axios' HTTP client outside providers/ and observability/; route external calls through a StockProvider. |
+| packages/server/src/services/discover.ts:2:1:2:46 | import  ... ndici'; | Outbound HTTP via the 'undici' HTTP client outside providers/ and observability/; route external calls through a StockProvider. |
+| packages/server/src/services/discover.ts:9:9:9:72 | fetch(' ... ng/US') | Outbound HTTP via fetch() outside providers/ and observability/; route external calls through a StockProvider. |
+| packages/server/src/services/discover.ts:10:9:10:47 | globalT ... e.com') | Outbound HTTP via fetch() outside providers/ and observability/; route external calls through a StockProvider. |
+| packages/server/src/services/discover.ts:12:3:12:34 | https.g ... e.com') | Outbound HTTP via node:http(s).get() outside providers/ and observability/; route external calls through a StockProvider. |
+| packages/server/src/services/discover.ts:13:3:13:31 | request ... e.com') | Outbound HTTP via node:http(s).request() outside providers/ and observability/; route external calls through a StockProvider. |

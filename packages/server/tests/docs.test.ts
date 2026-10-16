@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { createTestApp } from './helpers/app.js';
+import { buildApp } from '../src/app.js';
+import { createTestApp, createTestDb } from './helpers/app.js';
+import { MockStockProvider } from './helpers/mock-provider.js';
+import { MockMarketStatusProvider } from './helpers/mock-market-status.js';
 
 // Guards the @fastify/swagger-ui mount. The nginx site proxies the whole /docs
 // prefix on the assumption that the UI's assets stay absolute under
@@ -34,6 +37,41 @@ describe('swagger ui', () => {
       const res = await app.inject({ method: 'GET', url: `/docs/${ref}` });
       expect(res.statusCode, `/docs/${ref}`).toBe(200);
     }
+    await app.close();
+  });
+});
+
+// Production builds default `exposeDocs` to false: the API has no third-party
+// consumers, so the spec is reconnaissance with no upside.
+describe('swagger ui with exposeDocs: false', () => {
+  async function buildWithoutDocs() {
+    return buildApp({
+      logger: false,
+      db: await createTestDb(),
+      provider: new MockStockProvider(),
+      marketStatusProvider: new MockMarketStatusProvider(),
+      disablePoller: true,
+      disableRateLimit: true,
+      loginThrottle: { disabled: true },
+      exposeDocs: false,
+    });
+  }
+
+  it('mounts neither the UI nor the spec', async () => {
+    const app = await buildWithoutDocs();
+    for (const url of ['/docs', '/docs/', '/docs/json', '/docs/yaml']) {
+      const res = await app.inject({ method: 'GET', url });
+      expect(res.statusCode, url).toBe(404);
+    }
+    await app.close();
+  });
+
+  // The Zod compilers are registered alongside the docs plugins; skipping the
+  // docs must not skip request validation.
+  it('still validates request bodies with Zod', async () => {
+    const app = await buildWithoutDocs();
+    const res = await app.inject({ method: 'POST', url: '/auth/login', payload: {} });
+    expect(res.statusCode).toBe(400);
     await app.close();
   });
 });

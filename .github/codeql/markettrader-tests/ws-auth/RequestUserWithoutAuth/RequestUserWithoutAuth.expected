@@ -1,0 +1,4 @@
+| packages/server/src/routes/games.ts:18:10:18:21 | request.user | request.user is read outside the handler of a route guarded by authenticate/requireAdmin; it is unset there. Add the auth hook to the route or pass the user id in explicitly. |
+| packages/server/src/routes/games.ts:23:11:23:14 | user | request.user is read outside the handler of a route guarded by authenticate/requireAdmin; it is unset there. Add the auth hook to the route or pass the user id in explicitly. |
+| packages/server/src/routes/games.ts:24:21:24:32 | request.user | request.user is read outside the handler of a route guarded by authenticate/requireAdmin; it is unset there. Add the auth hook to the route or pass the user id in explicitly. |
+| packages/server/src/routes/games.ts:37:10:37:21 | request.user | request.user is read outside the handler of a route guarded by authenticate/requireAdmin; it is unset there. Add the auth hook to the route or pass the user id in explicitly. |

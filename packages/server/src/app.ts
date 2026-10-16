@@ -69,6 +69,8 @@ export async function buildApp(
     analytics?: AnalyticsClient | null;
     /** Live options for this app instance. Defaults to the process environment. */
     runtimeConfig?: RuntimeConfig;
+    /** Mount the Swagger UI and OpenAPI spec at `/docs`. Defaults to off in production. */
+    exposeDocs?: boolean;
   } = {},
 ): Promise<FastifyInstance> {
   const {
@@ -81,6 +83,7 @@ export async function buildApp(
     leaderboardThrottleMs,
     analytics = getPostHog(),
     runtimeConfig = RuntimeConfig.fromEnvironment(),
+    exposeDocs = env.NODE_ENV !== 'production',
     ...fastifyOpts
   } = opts;
   const provider = injectedProvider ?? new CachedProvider(db, createProvider(runtimeConfig), runtimeConfig);
@@ -106,7 +109,7 @@ export async function buildApp(
   await registerCookie(app);
   await registerJwt(app, db);
   await registerRateLimit(app, { disabled: disableRateLimit });
-  await registerSwagger(app);
+  await registerSwagger(app, { exposeDocs });
 
   const registry = new GameClientRegistry();
   const globalRegistry = new GlobalClientRegistry();

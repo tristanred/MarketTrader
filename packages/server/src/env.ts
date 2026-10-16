@@ -66,23 +66,30 @@ function isAddressOrSubnet(token: string): boolean {
 }
 
 /**
- * Parses `TRUST_PROXY` into Fastify's `trustProxy` option: `false`, a hop count,
- * a {@link TRUST_PROXY_PRESETS} name, or a comma-separated list of addresses and
+ * Parses `TRUST_PROXY` into Fastify's `trustProxy` option: `false`, a
+ * {@link TRUST_PROXY_PRESETS} name, or a comma-separated list of addresses and
  * CIDR subnets.
  *
  * Anything Fastify would accept but that is not one of those forms is rejected
  * here rather than at request time. `proxy-addr` compiles its trust list lazily,
  * so a typo would otherwise boot cleanly and only misresolve `request.ip` under
- * traffic — which silently keys every rate limit on the wrong value.
+ * traffic — which silently keys every rate limit on the wrong value. A hop count
+ * is refused for the same reason: Fastify >= 5.12.7 treats one as trusting nothing.
  *
  * `true` parses (some operators genuinely front the app with a chain they
  * control) but {@link validateProductionEnv} refuses it in production.
  */
-export function parseTrustProxy(raw: string): boolean | number | string {
+export function parseTrustProxy(raw: string): boolean | string {
   const value = raw.trim();
   if (value === '' || value.toLowerCase() === 'false') return false;
   if (value.toLowerCase() === 'true') return true;
-  if (/^\d+$/.test(value)) return Number(value);
+  if (/^\d+$/.test(value)) {
+    throw new Error(
+      `Invalid TRUST_PROXY: "${raw}". A hop count is not supported: Fastify treats it as ` +
+        `trusting nothing, so every client behind the proxy would share one rate-limit ` +
+        `bucket. Use loopback, uniquelocal, or the proxy's IP address or CIDR subnet.`,
+    );
+  }
 
   const tokens = value.split(',').map((t) => t.trim());
   const valid = tokens.every(
@@ -91,7 +98,7 @@ export function parseTrustProxy(raw: string): boolean | number | string {
   );
   if (!valid) {
     throw new Error(
-      `Invalid TRUST_PROXY: "${raw}". Must be true, false, a hop count, ` +
+      `Invalid TRUST_PROXY: "${raw}". Must be true, false, ` +
         `one of ${TRUST_PROXY_PRESETS.join(', ')}, or a comma-separated list of ` +
         `IP addresses and CIDR subnets.`,
     );
@@ -395,7 +402,7 @@ export interface ProductionEnvCheck {
   JWT_SECRET: string;
   CORS_ORIGIN: string;
   DATABASE_URL: string;
-  TRUST_PROXY: boolean | number | string;
+  TRUST_PROXY: boolean | string;
   STOCK_PROVIDER: string;
   MARKET_STATUS_PROVIDER: string;
   ALPACA_API_KEY_ID: string;
@@ -470,7 +477,7 @@ export function validateProductionEnv(cfg: ProductionEnvCheck = env): void {
     errors.push(
       'TRUST_PROXY must not be true in production: it trusts every hop, so a client-supplied ' +
         'X-Forwarded-For becomes request.ip and every per-IP rate limit is bypassable. ' +
-        'Use "loopback", "uniquelocal", a hop count, or an explicit address list.',
+        'Use "loopback", "uniquelocal", or an explicit address list.',
     );
   }
 

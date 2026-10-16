@@ -2,17 +2,33 @@ import path from 'node:path';
 import { isIP } from 'node:net';
 
 // TODO(polygon-provider): add 'polygon' once PolygonProvider is implemented
-const VALID_PROVIDERS = ['yahoo', 'alpaca', 'mock'] as const;
+export const VALID_PROVIDERS = ['yahoo', 'alpaca', 'mock'] as const;
 type StockProvider = (typeof VALID_PROVIDERS)[number];
 
+// Names present in the process environment at boot, even if empty. Lets the
+// admin panel tell "set by the host" from "built-in default" without any other
+// module reading process.env.
+const explicitlySet = new Set<string>();
+
+function read(name: string): string | undefined {
+  const value = process.env[name];
+  if (value !== undefined) explicitlySet.add(name);
+  return value;
+}
+
 function optional(name: string, fallback: string): string {
-  return process.env[name] ?? fallback;
+  return read(name) ?? fallback;
 }
 
 function required(name: string): string {
-  const value = process.env[name];
+  const value = read(name);
   if (!value) throw new Error(`Missing required environment variable: ${name}`);
   return value;
+}
+
+/** True when `name` was present in the process environment at boot, even if empty. */
+export function wasSetInEnvironment(name: string): boolean {
+  return explicitlySet.has(name);
 }
 
 function parsePort(raw: string): number {
@@ -100,13 +116,13 @@ function validatedProvider(): StockProvider {
   return value as StockProvider;
 }
 
-const VALID_MARKET_STATUS_PROVIDERS = ['yahoo', 'alpaca', 'static'] as const;
+export const VALID_MARKET_STATUS_PROVIDERS = ['yahoo', 'alpaca', 'static'] as const;
 type MarketStatusProviderName = (typeof VALID_MARKET_STATUS_PROVIDERS)[number];
 
-const VALID_MARKET_HOURS_MODES = ['disabled', 'pending', 'instant'] as const;
+export const VALID_MARKET_HOURS_MODES = ['disabled', 'pending', 'instant'] as const;
 type MarketHoursMode = (typeof VALID_MARKET_HOURS_MODES)[number];
 
-const VALID_NODE_ENVS = ['development', 'production', 'test'] as const;
+export const VALID_NODE_ENVS = ['development', 'production', 'test'] as const;
 type NodeEnv = (typeof VALID_NODE_ENVS)[number];
 
 /**
@@ -140,7 +156,7 @@ function validatedMarketHoursMode(): MarketHoursMode {
  * `'static'` for an offline, key-less fallback at any time.
  */
 function validatedMarketStatusProvider(stockProvider: StockProvider): MarketStatusProviderName {
-  const raw = process.env.MARKET_STATUS_PROVIDER;
+  const raw = read('MARKET_STATUS_PROVIDER');
   if (!raw) return stockProvider === 'mock' ? 'static' : stockProvider;
   if (!(VALID_MARKET_STATUS_PROVIDERS as readonly string[]).includes(raw)) {
     throw new Error(
@@ -181,91 +197,7 @@ export const env = {
    */
   ALPACA_API_SECRET_KEY: optional('ALPACA_API_SECRET_KEY', ''),
   MARKET_STATUS_PROVIDER: validatedMarketStatusProvider(stockProvider),
-  MARKET_STATUS_CACHE_TTL_MS: parsePositiveInt(
-    'MARKET_STATUS_CACHE_TTL_MS',
-    optional('MARKET_STATUS_CACHE_TTL_MS', '60000'),
-  ),
   NODE_ENV: validatedNodeEnv(),
-
-  // Stock-data resilience tunables. All durations are in milliseconds.
-  /** TTL for the `stock_price_cache` table. Cache hits skip the upstream fetch. */
-  STOCK_CACHE_TTL_MS: parsePositiveInt('STOCK_CACHE_TTL_MS', optional('STOCK_CACHE_TTL_MS', '60000')),
-  /** In-memory cache TTL for `searchSymbols` results, keyed by lowercased query. */
-  STOCK_SEARCH_CACHE_TTL_MS: parsePositiveInt('STOCK_SEARCH_CACHE_TTL_MS', optional('STOCK_SEARCH_CACHE_TTL_MS', '300000')),
-  /** In-memory cache TTL for `getHistory` results, keyed by (symbol, range). */
-  STOCK_HISTORY_CACHE_TTL_MS: parsePositiveInt('STOCK_HISTORY_CACHE_TTL_MS', optional('STOCK_HISTORY_CACHE_TTL_MS', '60000')),
-  /**
-   * When the upstream is rate-limited, fall back to a cached quote if the row
-   * is no older than this. Older rows propagate the RATE_LIMITED error.
-   */
-  STOCK_STALE_PRICE_MAX_AGE_MS: parsePositiveInt('STOCK_STALE_PRICE_MAX_AGE_MS', optional('STOCK_STALE_PRICE_MAX_AGE_MS', '300000')),
-  /** After a 429, refuse upstream calls for this long (negative caching). */
-  STOCK_RATE_LIMIT_BACKOFF_MS: parsePositiveInt('STOCK_RATE_LIMIT_BACKOFF_MS', optional('STOCK_RATE_LIMIT_BACKOFF_MS', '60000')),
-  /**
-   * If true, the trade endpoint executes orders at the most recent cached
-   * price when the live quote is rate-limited. Default false — operators
-   * who prefer fairness over availability should leave this off.
-   */
-  STOCK_ALLOW_STALE_TRADES: parseBool(optional('STOCK_ALLOW_STALE_TRADES', 'false')),
-  /** Trades using a cached price older than this are rejected even when stale trades are allowed. */
-  STOCK_STALE_TRADE_MAX_AGE_MS: parsePositiveInt('STOCK_STALE_TRADE_MAX_AGE_MS', optional('STOCK_STALE_TRADE_MAX_AGE_MS', '300000')),
-
-  /**
-   * Controls how the trade endpoint behaves when the market is closed.
-   * - `instant`  — fill immediately at the last known price (legacy behavior, default).
-   * - `disabled` — reject with 409 MARKET_CLOSED.
-   * - `pending`  — accept the order, reserve cash/shares, settle at next market open.
-   */
-  MARKET_HOURS_MODE: validatedMarketHoursMode(),
-  /** When true, PRE and POST sessions count as "open" for trading. */
-  MARKET_HOURS_INCLUDE_EXTENDED: parseBool(optional('MARKET_HOURS_INCLUDE_EXTENDED', 'false')),
-  /** How often the pending-orders worker checks for orders to settle, in ms. */
-  PENDING_ORDERS_TICK_MS: parsePositiveInt(
-    'PENDING_ORDERS_TICK_MS',
-    optional('PENDING_ORDERS_TICK_MS', '30000'),
-  ),
-  /**
-   * How often the portfolio-snapshot worker captures every active player's
-   * total portfolio value. Default 5 minutes — aligns with the WS price-batch
-   * cadence. Drives the leaderboard race chart and per-row sparklines.
-   */
-  PORTFOLIO_SNAPSHOT_INTERVAL_MS: parsePositiveInt(
-    'PORTFOLIO_SNAPSHOT_INTERVAL_MS',
-    optional('PORTFOLIO_SNAPSHOT_INTERVAL_MS', '300000'),
-  ),
-  /**
-   * How often the Discover worker checks for missing lists: market movers for
-   * the session that just closed, and daily picks for games without one.
-   * Default 5 minutes — bounds how long a new game shows "preparing", and how
-   * soon after the 16:00 ET close the movers are captured.
-   */
-  DISCOVER_REFRESH_INTERVAL_MS: parsePositiveInt(
-    'DISCOVER_REFRESH_INTERVAL_MS',
-    optional('DISCOVER_REFRESH_INTERVAL_MS', '300000'),
-  ),
-
-  /**
-   * Hard cap on how many distinct symbols one price-poller tick may fetch.
-   * The poller's symbol set is assembled from user-controlled rows (holdings,
-   * open orders, watchlists) and the provider it drains is process-wide, so an
-   * unbounded set lets one account's row count degrade prices for everyone.
-   * Symbols are prioritised holdings → open orders → watchlists, so anything
-   * dropped at the cap is display-only. Truncation is logged.
-   */
-  PRICE_POLLER_MAX_SYMBOLS: parsePositiveInt(
-    'PRICE_POLLER_MAX_SYMBOLS',
-    optional('PRICE_POLLER_MAX_SYMBOLS', '500'),
-  ),
-  /** Symbols one watchlist may hold. Adds past it are refused with 409. */
-  WATCHLIST_MAX_ITEMS: parsePositiveInt(
-    'WATCHLIST_MAX_ITEMS',
-    optional('WATCHLIST_MAX_ITEMS', '50'),
-  ),
-  /** Watchlists one user may own. Creates past it are refused with 409. */
-  WATCHLIST_MAX_PER_USER: parsePositiveInt(
-    'WATCHLIST_MAX_PER_USER',
-    optional('WATCHLIST_MAX_PER_USER', '20'),
-  ),
 
   /**
    * How often the server sends WebSocket ping frames to connected clients, in
@@ -302,27 +234,6 @@ export const env = {
     'SQLITE_BUSY_TIMEOUT_MS',
     optional('SQLITE_BUSY_TIMEOUT_MS', '5000'),
   ),
-
-  /**
-   * Consecutive failed logins for one username before `POST /auth/login` starts
-   * answering 429 for {@link env.LOGIN_LOCKOUT_MS}. Counted per account rather
-   * than per IP so the control survives an attacker rotating source addresses.
-   */
-  LOGIN_MAX_FAILED_ATTEMPTS: parsePositiveInt(
-    'LOGIN_MAX_FAILED_ATTEMPTS',
-    optional('LOGIN_MAX_FAILED_ATTEMPTS', '10'),
-  ),
-  /** Failures older than this stop counting toward the threshold. */
-  LOGIN_FAILURE_WINDOW_MS: parsePositiveInt(
-    'LOGIN_FAILURE_WINDOW_MS',
-    optional('LOGIN_FAILURE_WINDOW_MS', '900000'),
-  ),
-  /**
-   * How long an account stays throttled once the threshold trips. Kept short on
-   * purpose: anyone can trigger it for any username, so a long value would hand
-   * an attacker a denial-of-service against a chosen account.
-   */
-  LOGIN_LOCKOUT_MS: parsePositiveInt('LOGIN_LOCKOUT_MS', optional('LOGIN_LOCKOUT_MS', '900000')),
 
   /**
    * Base OTLP/HTTP endpoint of an OpenTelemetry Collector, e.g.
@@ -363,6 +274,122 @@ export const env = {
    * by volume, and Fastify writes two info lines per request.
    */
   POSTHOG_LOG_LEVEL_MIN: optional('POSTHOG_LOG_LEVEL_MIN', 'warn'),
+} as const;
+
+/**
+ * Boot values of the options an admin may override from `/admin/config`. Read
+ * them through an injected `ConfigReader` so an override reaches the consumer;
+ * only `config/runtime-config.ts` may import this (enforced by eslint). Moving a
+ * property here from {@link env} makes the compiler list every consumer to update.
+ */
+export const liveBootConfig = {
+  /**
+   * Controls how the trade endpoint behaves when the market is closed.
+   * - `instant`  — fill immediately at the last known price (legacy behavior, default).
+   * - `disabled` — reject with 409 MARKET_CLOSED.
+   * - `pending`  — accept the order, reserve cash/shares, settle at next market open.
+   */
+  MARKET_HOURS_MODE: validatedMarketHoursMode(),
+  /** When true, PRE and POST sessions count as "open" for trading. */
+  MARKET_HOURS_INCLUDE_EXTENDED: parseBool(optional('MARKET_HOURS_INCLUDE_EXTENDED', 'false')),
+
+  /** How often the pending-orders worker checks for orders to settle, in ms. */
+  PENDING_ORDERS_TICK_MS: parsePositiveInt(
+    'PENDING_ORDERS_TICK_MS',
+    optional('PENDING_ORDERS_TICK_MS', '30000'),
+  ),
+  /**
+   * How often the portfolio-snapshot worker captures every active player's
+   * total portfolio value. Default 5 minutes — aligns with the WS price-batch
+   * cadence. Drives the leaderboard race chart and per-row sparklines.
+   */
+  PORTFOLIO_SNAPSHOT_INTERVAL_MS: parsePositiveInt(
+    'PORTFOLIO_SNAPSHOT_INTERVAL_MS',
+    optional('PORTFOLIO_SNAPSHOT_INTERVAL_MS', '300000'),
+  ),
+  /**
+   * How often the Discover worker checks for missing lists: market movers for
+   * the session that just closed, and daily picks for games without one.
+   * Default 5 minutes — bounds how long a new game shows "preparing", and how
+   * soon after the 16:00 ET close the movers are captured.
+   */
+  DISCOVER_REFRESH_INTERVAL_MS: parsePositiveInt(
+    'DISCOVER_REFRESH_INTERVAL_MS',
+    optional('DISCOVER_REFRESH_INTERVAL_MS', '300000'),
+  ),
+
+  // Stock-data resilience tunables. All durations are in milliseconds.
+  /** TTL for the `stock_price_cache` table. Cache hits skip the upstream fetch. */
+  STOCK_CACHE_TTL_MS: parsePositiveInt('STOCK_CACHE_TTL_MS', optional('STOCK_CACHE_TTL_MS', '60000')),
+  /** In-memory cache TTL for `searchSymbols` results, keyed by lowercased query. */
+  STOCK_SEARCH_CACHE_TTL_MS: parsePositiveInt('STOCK_SEARCH_CACHE_TTL_MS', optional('STOCK_SEARCH_CACHE_TTL_MS', '300000')),
+  /** In-memory cache TTL for `getHistory` results, keyed by (symbol, range). */
+  STOCK_HISTORY_CACHE_TTL_MS: parsePositiveInt('STOCK_HISTORY_CACHE_TTL_MS', optional('STOCK_HISTORY_CACHE_TTL_MS', '60000')),
+  /**
+   * When the upstream is rate-limited, fall back to a cached quote if the row
+   * is no older than this. Older rows propagate the RATE_LIMITED error.
+   */
+  STOCK_STALE_PRICE_MAX_AGE_MS: parsePositiveInt('STOCK_STALE_PRICE_MAX_AGE_MS', optional('STOCK_STALE_PRICE_MAX_AGE_MS', '300000')),
+  /** After a 429, refuse upstream calls for this long (negative caching). */
+  STOCK_RATE_LIMIT_BACKOFF_MS: parsePositiveInt('STOCK_RATE_LIMIT_BACKOFF_MS', optional('STOCK_RATE_LIMIT_BACKOFF_MS', '60000')),
+  /**
+   * If true, the trade endpoint executes orders at the most recent cached
+   * price when the live quote is rate-limited. Default false — operators
+   * who prefer fairness over availability should leave this off.
+   */
+  STOCK_ALLOW_STALE_TRADES: parseBool(optional('STOCK_ALLOW_STALE_TRADES', 'false')),
+  /** Trades using a cached price older than this are rejected even when stale trades are allowed. */
+  STOCK_STALE_TRADE_MAX_AGE_MS: parsePositiveInt('STOCK_STALE_TRADE_MAX_AGE_MS', optional('STOCK_STALE_TRADE_MAX_AGE_MS', '300000')),
+
+  /** Symbols one watchlist may hold. Adds past it are refused with 409. */
+  WATCHLIST_MAX_ITEMS: parsePositiveInt(
+    'WATCHLIST_MAX_ITEMS',
+    optional('WATCHLIST_MAX_ITEMS', '50'),
+  ),
+  /** Watchlists one user may own. Creates past it are refused with 409. */
+  WATCHLIST_MAX_PER_USER: parsePositiveInt(
+    'WATCHLIST_MAX_PER_USER',
+    optional('WATCHLIST_MAX_PER_USER', '20'),
+  ),
+
+  /**
+   * Hard cap on how many distinct symbols one price-poller tick may fetch.
+   * The poller's symbol set is assembled from user-controlled rows (holdings,
+   * open orders, watchlists) and the provider it drains is process-wide, so an
+   * unbounded set lets one account's row count degrade prices for everyone.
+   * Symbols are prioritised holdings → open orders → watchlists, so anything
+   * dropped at the cap is display-only. Truncation is logged.
+   */
+  PRICE_POLLER_MAX_SYMBOLS: parsePositiveInt(
+    'PRICE_POLLER_MAX_SYMBOLS',
+    optional('PRICE_POLLER_MAX_SYMBOLS', '500'),
+  ),
+  /** How long the market open/closed state is cached, in ms. */
+  MARKET_STATUS_CACHE_TTL_MS: parsePositiveInt(
+    'MARKET_STATUS_CACHE_TTL_MS',
+    optional('MARKET_STATUS_CACHE_TTL_MS', '60000'),
+  ),
+
+  /**
+   * Consecutive failed logins for one username before `POST /auth/login` starts
+   * answering 429 for {@link liveBootConfig.LOGIN_LOCKOUT_MS}. Counted per account rather
+   * than per IP so the control survives an attacker rotating source addresses.
+   */
+  LOGIN_MAX_FAILED_ATTEMPTS: parsePositiveInt(
+    'LOGIN_MAX_FAILED_ATTEMPTS',
+    optional('LOGIN_MAX_FAILED_ATTEMPTS', '10'),
+  ),
+  /** Failures older than this stop counting toward the threshold. */
+  LOGIN_FAILURE_WINDOW_MS: parsePositiveInt(
+    'LOGIN_FAILURE_WINDOW_MS',
+    optional('LOGIN_FAILURE_WINDOW_MS', '900000'),
+  ),
+  /**
+   * How long an account stays throttled once the threshold trips. Kept short on
+   * purpose: anyone can trigger it for any username, so a long value would hand
+   * an attacker a denial-of-service against a chosen account.
+   */
+  LOGIN_LOCKOUT_MS: parsePositiveInt('LOGIN_LOCKOUT_MS', optional('LOGIN_LOCKOUT_MS', '900000')),
 } as const;
 
 /** True when an OTLP endpoint is configured. Everything telemetry keys off this. */

@@ -7,6 +7,7 @@ const NAV_LINKS = [
   { to: '/admin/portfolios', label: 'Portfolios' },
   { to: '/admin/trades', label: 'Trades' },
   { to: '/admin/system', label: 'System' },
+  { to: '/admin/config', label: 'Config' },
   { to: '/admin/audit', label: 'Audit' },
 ] as const;
 

@@ -13,6 +13,7 @@ import type {
   StockQuote,
   StockSearchResult,
 } from '@markettrader/shared';
+import { RuntimeConfig } from '../../src/config/runtime-config.js';
 
 /**
  * Inner-provider double that lets a test set the next response or error and
@@ -86,7 +87,7 @@ describe('CachedProvider', () => {
     // isolate enrichment tests that reuse symbols.
     await db.delete(schema.stockPriceCache);
     inner = new FakeInner();
-    provider = new CachedProvider(db, inner);
+    provider = new CachedProvider(db, inner, RuntimeConfig.fromEnvironment());
   });
 
   describe('getQuote stale fallback', () => {
@@ -402,7 +403,7 @@ describe('CachedProvider.getMarketMovers', () => {
   it('is absent when the wrapped provider has no market movers', async () => {
     const db = await createTestDb();
     const inner = new FakeInner();
-    expect(new CachedProvider(db, inner).getMarketMovers).toBeUndefined();
+    expect(new CachedProvider(db, inner, RuntimeConfig.fromEnvironment()).getMarketMovers).toBeUndefined();
   });
 
   it('passes through to the wrapped provider when it has one, uncached', async () => {
@@ -413,7 +414,7 @@ describe('CachedProvider.getMarketMovers', () => {
       calls += 1;
       return [{ symbol: 'AAA', name: kind, price: 1, changePct: count }];
     };
-    const cached = new CachedProvider(db, inner);
+    const cached = new CachedProvider(db, inner, RuntimeConfig.fromEnvironment());
 
     expect(await cached.getMarketMovers?.('losers', 5)).toEqual([
       { symbol: 'AAA', name: 'losers', price: 1, changePct: 5 },

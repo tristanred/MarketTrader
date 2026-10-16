@@ -5,7 +5,7 @@ import {
   recordSnapshotsForActiveGames,
   compactEndedGames,
 } from '../services/portfolio-snapshot.js';
-import { env } from '../env.js';
+import type { ConfigReader } from '../config/runtime-config.js';
 import { startIntervalWorker, type IntervalWorker } from './interval-worker.js';
 
 /**
@@ -33,10 +33,11 @@ export async function runPortfolioSnapshotTick(deps: { db: Db; bus?: EventBus })
 export function startPortfolioSnapshotWorker(deps: {
   db: Db;
   bus?: EventBus;
+  config: ConfigReader;
   logger?: FastifyBaseLogger;
   intervalMs?: number;
 }): IntervalWorker {
-  const intervalMs = deps.intervalMs ?? env.PORTFOLIO_SNAPSHOT_INTERVAL_MS;
+  const intervalMs = deps.intervalMs ?? (() => deps.config.get('PORTFOLIO_SNAPSHOT_INTERVAL_MS'));
   return startIntervalWorker(
     'portfolio-snapshot',
     () => runPortfolioSnapshotTick(deps),

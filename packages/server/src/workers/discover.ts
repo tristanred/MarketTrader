@@ -2,7 +2,7 @@ import type { FastifyBaseLogger } from 'fastify';
 import type { Db } from '../db/index.js';
 import type { StockProvider } from '../providers/index.js';
 import { pruneDiscover, refreshGamePicks, refreshMarketMovers } from '../services/discover.js';
-import { env } from '../env.js';
+import type { ConfigReader } from '../config/runtime-config.js';
 import { startIntervalWorker, type IntervalWorker } from './interval-worker.js';
 
 /** Dependencies for {@link runDiscoverTick} and {@link startDiscoverWorker}. */
@@ -35,12 +35,12 @@ export async function runDiscoverTick(deps: DiscoverWorkerDeps): Promise<void> {
  * start so a restart doesn't leave games on "preparing" for a full interval.
  */
 export function startDiscoverWorker(
-  deps: DiscoverWorkerDeps & { intervalMs?: number },
+  deps: DiscoverWorkerDeps & { config: ConfigReader; intervalMs?: number },
 ): IntervalWorker {
   return startIntervalWorker(
     'discover',
     () => runDiscoverTick(deps),
-    deps.intervalMs ?? env.DISCOVER_REFRESH_INTERVAL_MS,
+    deps.intervalMs ?? (() => deps.config.get('DISCOVER_REFRESH_INTERVAL_MS')),
     (err) => deps.logger?.error({ err }, 'discover tick failed'),
     { immediate: true },
   );

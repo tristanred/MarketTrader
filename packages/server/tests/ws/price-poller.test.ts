@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { RuntimeConfig } from '../../src/config/runtime-config.js';
 import { pollPrices } from '../../src/ws/price-poller.js';
 import { GameClientRegistry } from '../../src/ws/registry.js';
 import { createTestDb } from '../helpers/app.js';
@@ -26,6 +27,8 @@ function makeFakeSocket(): WebSocket & { sent: string[] } {
     removeListener: () => undefined,
   } as unknown as WebSocket & { sent: string[] };
 }
+
+const config = RuntimeConfig.fromEnvironment();
 
 describe('pollPrices — watchlist symbols', () => {
   it('fetches and broadcasts symbols that are only on a connected user\'s watchlist', async () => {
@@ -75,7 +78,7 @@ describe('pollPrices — watchlist symbols', () => {
     entry.subscriptions.add('AAPL');
     entry.subscriptions.add('TSLA');
 
-    await pollPrices(db, provider, registry);
+    await pollPrices(db, provider, registry, config);
 
     expect(socket.sent.length).toBe(1);
     const event = JSON.parse(socket.sent[0]!) as { event: string; data: StockQuote[] };
@@ -107,7 +110,7 @@ describe('pollPrices — watchlist symbols', () => {
       return originalGetQuote(s);
     };
 
-    await pollPrices(db, provider, registry);
+    await pollPrices(db, provider, registry, config);
     expect(calls).toBe(0);
   });
 });

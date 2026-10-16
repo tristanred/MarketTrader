@@ -339,7 +339,7 @@ export const systemSettings = sqliteTable('system_settings', {
 
 /**
  * Periodic capture of every player's total portfolio value, written by the
- * portfolio-snapshot worker every {@link env.PORTFOLIO_SNAPSHOT_INTERVAL_MS}
+ * portfolio-snapshot worker every {@link liveBootConfig.PORTFOLIO_SNAPSHOT_INTERVAL_MS}
  * and on-demand after each trade execution. Powers the leaderboard race chart
  * and per-row sparklines. `rank` is denormalised — recomputing rank from
  * `totalValue` at read time would require every player's value at every

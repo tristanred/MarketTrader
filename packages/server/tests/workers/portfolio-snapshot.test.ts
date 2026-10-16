@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
+import { RuntimeConfig } from '../../src/config/runtime-config.js';
 import { createTestDb } from '../helpers/app.js';
 import {
   runPortfolioSnapshotTick,
@@ -64,7 +65,7 @@ describe('startPortfolioSnapshotWorker', () => {
     const gameId = await seedActiveGameWithPlayer(db);
 
     // Drive the timer manually to observe tick boundaries.
-    const handle = startPortfolioSnapshotWorker({ db, intervalMs: 1000 });
+    const handle = startPortfolioSnapshotWorker({ db, config: RuntimeConfig.fromEnvironment(), intervalMs: 1000 });
     try {
       await vi.advanceTimersByTimeAsync(1000);
       // Allow microtasks (the .finally) to settle.

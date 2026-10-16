@@ -2,6 +2,7 @@ import type {
   StockHistoryBar,
   StockHistoryRange,
 } from '@markettrader/shared';
+import { RuntimeConfig } from '../../../packages/server/src/config/runtime-config.js';
 import { createProvider } from '../../../packages/server/src/providers/factory.js';
 
 /** Map of symbol → ascending-by-time bars. */
@@ -35,7 +36,7 @@ export async function loadHistoricalPrices(
   priceAt: (symbol: string, timestampISO: string) => number | null;
   earliestBarMs: number;
 }> {
-  const provider = createProvider();
+  const provider = createProvider(RuntimeConfig.fromEnvironment());
   const range = pickRange(gameStartISO);
   const map: PriceMap = new Map();
   let earliestBarMs = Infinity;

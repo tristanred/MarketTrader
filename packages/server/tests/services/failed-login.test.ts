@@ -1,7 +1,15 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { FailedLoginTracker } from '../../src/services/failed-login.js';
+import { RuntimeConfig } from '../../src/config/runtime-config.js';
 
 const OPTS = { maxAttempts: 3, windowMs: 60_000, lockoutMs: 300_000 };
+
+const limits = () =>
+  RuntimeConfig.fromEnvironment({
+    LOGIN_MAX_FAILED_ATTEMPTS: OPTS.maxAttempts,
+    LOGIN_FAILURE_WINDOW_MS: OPTS.windowMs,
+    LOGIN_LOCKOUT_MS: OPTS.lockoutMs,
+  });
 
 describe('FailedLoginTracker', () => {
   beforeEach(() => {
@@ -13,14 +21,14 @@ describe('FailedLoginTracker', () => {
   });
 
   it('stays quiet below the threshold', () => {
-    const tracker = new FailedLoginTracker(OPTS);
+    const tracker = new FailedLoginTracker(limits());
     expect(tracker.recordFailure('alice')).toBe(false);
     expect(tracker.recordFailure('alice')).toBe(false);
     expect(tracker.retryAfterMs('alice')).toBeNull();
   });
 
   it('engages on the nth failure and reports the remaining lockout', () => {
-    const tracker = new FailedLoginTracker(OPTS);
+    const tracker = new FailedLoginTracker(limits());
     tracker.recordFailure('alice');
     tracker.recordFailure('alice');
     expect(tracker.recordFailure('alice')).toBe(true);
@@ -28,14 +36,14 @@ describe('FailedLoginTracker', () => {
   });
 
   it('throttles only the account that failed', () => {
-    const tracker = new FailedLoginTracker(OPTS);
+    const tracker = new FailedLoginTracker(limits());
     for (let i = 0; i < OPTS.maxAttempts; i++) tracker.recordFailure('alice');
     expect(tracker.retryAfterMs('alice')).not.toBeNull();
     expect(tracker.retryAfterMs('bob')).toBeNull();
   });
 
   it('releases the account once the lockout expires', () => {
-    const tracker = new FailedLoginTracker(OPTS);
+    const tracker = new FailedLoginTracker(limits());
     for (let i = 0; i < OPTS.maxAttempts; i++) tracker.recordFailure('alice');
 
     vi.advanceTimersByTime(OPTS.lockoutMs - 1);
@@ -46,7 +54,7 @@ describe('FailedLoginTracker', () => {
   });
 
   it('starts the count over after the lockout, rather than re-locking immediately', () => {
-    const tracker = new FailedLoginTracker(OPTS);
+    const tracker = new FailedLoginTracker(limits());
     for (let i = 0; i < OPTS.maxAttempts; i++) tracker.recordFailure('alice');
 
     vi.advanceTimersByTime(OPTS.lockoutMs);
@@ -57,7 +65,7 @@ describe('FailedLoginTracker', () => {
   });
 
   it('forgets failures older than the window', () => {
-    const tracker = new FailedLoginTracker(OPTS);
+    const tracker = new FailedLoginTracker(limits());
     tracker.recordFailure('alice');
     tracker.recordFailure('alice');
 
@@ -69,7 +77,7 @@ describe('FailedLoginTracker', () => {
   });
 
   it('clears the count on reset', () => {
-    const tracker = new FailedLoginTracker(OPTS);
+    const tracker = new FailedLoginTracker(limits());
     tracker.recordFailure('alice');
     tracker.recordFailure('alice');
     tracker.reset('alice');
@@ -78,7 +86,7 @@ describe('FailedLoginTracker', () => {
   });
 
   it('reports engagement once, not on every subsequent failure', () => {
-    const tracker = new FailedLoginTracker(OPTS);
+    const tracker = new FailedLoginTracker(limits());
     tracker.recordFailure('alice');
     tracker.recordFailure('alice');
     expect(tracker.recordFailure('alice')).toBe(true);
@@ -86,7 +94,7 @@ describe('FailedLoginTracker', () => {
   });
 
   it('is inert when disabled', () => {
-    const tracker = new FailedLoginTracker({ ...OPTS, disabled: true });
+    const tracker = new FailedLoginTracker(limits(), { disabled: true });
     for (let i = 0; i < OPTS.maxAttempts * 5; i++) {
       expect(tracker.recordFailure('alice')).toBe(false);
     }
@@ -96,7 +104,7 @@ describe('FailedLoginTracker', () => {
   it('stays bounded while an attacker enumerates usernames', () => {
     // Failures are recorded for names that do not exist, so an unbounded map
     // would be a memory-exhaustion vector rather than a defence.
-    const tracker = new FailedLoginTracker(OPTS);
+    const tracker = new FailedLoginTracker(limits());
     for (let i = 0; i < 20_000; i++) {
       tracker.recordFailure(`user-${i}`);
       // Keep the sweep from finding anything expired to reclaim.
@@ -105,7 +113,7 @@ describe('FailedLoginTracker', () => {
     expect(size(tracker)).toBeLessThanOrEqual(5000);
 
     // Eviction is oldest-first, so a currently locked account survives the churn.
-    const victim = new FailedLoginTracker(OPTS);
+    const victim = new FailedLoginTracker(limits());
     for (let i = 0; i < OPTS.maxAttempts; i++) victim.recordFailure('alice');
     for (let i = 0; i < 6000; i++) victim.recordFailure(`user-${i}`);
     expect(victim.retryAfterMs('alice')).not.toBeNull();
@@ -116,3 +124,19 @@ describe('FailedLoginTracker', () => {
 function size(tracker: FailedLoginTracker): number {
   return (tracker as unknown as { entries: Map<string, unknown> }).entries.size;
 }
+
+describe('FailedLoginTracker with a runtime override', () => {
+  it('applies a lowered threshold to an existing tracker', () => {
+    const config = RuntimeConfig.fromEnvironment({
+      LOGIN_MAX_FAILED_ATTEMPTS: 5,
+      LOGIN_FAILURE_WINDOW_MS: OPTS.windowMs,
+      LOGIN_LOCKOUT_MS: OPTS.lockoutMs,
+    });
+    const tracker = new FailedLoginTracker(config);
+    config.set('LOGIN_MAX_FAILED_ATTEMPTS', 3);
+    expect(tracker.recordFailure('alice')).toBe(false);
+    expect(tracker.recordFailure('alice')).toBe(false);
+    expect(tracker.recordFailure('alice')).toBe(true);
+    expect(tracker.retryAfterMs('alice')).not.toBeNull();
+  });
+});

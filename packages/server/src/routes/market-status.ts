@@ -1,11 +1,8 @@
-import type { FastifyInstance, FastifyReply } from 'fastify';
+import type { FastifyInstance } from 'fastify';
 import { StockProviderError } from '../providers/index.js';
 import type { MarketStatusProvider } from '../providers/market-status/index.js';
-import { env } from '../env.js';
-
-function setRetryAfter(reply: FastifyReply): void {
-  reply.header('Retry-After', Math.ceil(env.STOCK_RATE_LIMIT_BACKOFF_MS / 1000));
-}
+import type { ConfigReader } from '../config/runtime-config.js';
+import { setRetryAfter } from './retry-after.js';
 
 /**
  * Public route exposing the current trading session.
@@ -15,7 +12,7 @@ function setRetryAfter(reply: FastifyReply): void {
  * Used by the frontend chart to decide whether to merge live ticks; see
  * `packages/frontend/src/components/StockChart.tsx`.
  */
-export function marketStatusRoutes(provider: MarketStatusProvider) {
+export function marketStatusRoutes(provider: MarketStatusProvider, config: ConfigReader) {
   return async function (app: FastifyInstance): Promise<void> {
     app.get('/market/status', {
       schema: {
@@ -29,7 +26,7 @@ export function marketStatusRoutes(provider: MarketStatusProvider) {
       } catch (err) {
         if (err instanceof StockProviderError) {
           if (err.code === 'RATE_LIMITED') {
-            setRetryAfter(reply);
+            setRetryAfter(reply, config);
             return reply.status(429).send({ code: err.code, message: err.message });
           }
           return reply.status(502).send({ code: err.code, message: err.message });

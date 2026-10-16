@@ -9,6 +9,7 @@ import type { StockProvider } from '../../src/providers/index.js';
 import type { MarketStatusProvider } from '../../src/providers/market-status/interface.js';
 import { MockStockProvider } from './mock-provider.js';
 import { MockMarketStatusProvider } from './mock-market-status.js';
+import { RuntimeConfig } from '../../src/config/runtime-config.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -29,23 +30,35 @@ export async function createTestDb() {
   return db;
 }
 
+/** Extra knobs for {@link createTestAppWithDb}. */
+export interface TestAppOptions {
+  /** Live options for the app; build with `RuntimeConfig.fromEnvironment({ … })`. */
+  runtimeConfig?: RuntimeConfig;
+}
+
 export async function createTestApp(
   provider?: StockProvider,
   marketStatusProvider?: MarketStatusProvider,
+  options: TestAppOptions = {},
 ): Promise<FastifyInstance> {
-  return (await createTestAppWithDb(provider, marketStatusProvider)).app;
+  return (await createTestAppWithDb(provider, marketStatusProvider, options)).app;
 }
 
 /**
- * Like {@link createTestApp} but also returns the backing `db`, for tests that
- * need to assert on or mutate persisted state directly (e.g. flipping
- * `users.disabled` to exercise the account kill-switch).
+ * Like {@link createTestApp} but also returns the backing `db` and the app's
+ * `config`, for tests that assert on persisted state or apply a runtime override.
  */
 export async function createTestAppWithDb(
   provider?: StockProvider,
   marketStatusProvider?: MarketStatusProvider,
-): Promise<{ app: FastifyInstance; db: Awaited<ReturnType<typeof createTestDb>> }> {
+  options: TestAppOptions = {},
+): Promise<{
+  app: FastifyInstance;
+  db: Awaited<ReturnType<typeof createTestDb>>;
+  config: RuntimeConfig;
+}> {
   const db = await createTestDb();
+  const config = options.runtimeConfig ?? RuntimeConfig.fromEnvironment();
   // Always disable the price poller in tests to prevent setInterval from
   // keeping the Vitest process alive after app.close().
   const app = await buildApp({
@@ -60,8 +73,9 @@ export async function createTestAppWithDb(
     // it build their own app.
     loginThrottle: { disabled: true },
     leaderboardThrottleMs: 0,
+    runtimeConfig: config,
   });
-  return { app, db };
+  return { app, db, config };
 }
 
 let promotionDb: Awaited<ReturnType<typeof createTestDb>> | undefined;

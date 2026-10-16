@@ -21,6 +21,7 @@ import { discoverRoutes } from './routes/discover.js';
 import { adminRoutes } from './routes/admin/index.js';
 import { registerAdminGuard } from './plugins/admin-guard.js';
 import { SystemSettingsService } from './services/system-settings.js';
+import { ConfigOverridesService } from './services/config-overrides.js';
 import { systemSettingsRoutes } from './routes/system-settings.js';
 import type { StockProvider } from './providers/index.js';
 import { CachedProvider, createProvider } from './providers/index.js';
@@ -50,6 +51,7 @@ import { achievements as achievementDefinitions } from './achievements/definitio
 import { achievementsRoutes } from './routes/achievements.js';
 import { FailedLoginTracker, type FailedLoginOptions } from './services/failed-login.js';
 import { adminAchievementsRoutes } from './routes/admin/achievements.js';
+import { RuntimeConfig } from './config/runtime-config.js';
 
 export async function buildApp(
   opts: FastifyServerOptions & {
@@ -59,12 +61,14 @@ export async function buildApp(
     disablePoller?: boolean;
     /** When true, registers the rate-limit plugin with no real ceiling. Tests only. */
     disableRateLimit?: boolean;
-    /** Overrides for the per-account login throttle. Pass `{ disabled: true }` in tests. */
+    /** Pass `{ disabled: true }` in tests; thresholds come from `runtimeConfig`. */
     loginThrottle?: FailedLoginOptions;
     /** Override leaderboard broadcast throttle in ms. Defaults to 1000. Pass 0 in tests. */
     leaderboardThrottleMs?: number;
     /** PostHog client for analytics and error tracking. Defaults to {@link getPostHog}. */
     analytics?: AnalyticsClient | null;
+    /** Live options for this app instance. Defaults to the process environment. */
+    runtimeConfig?: RuntimeConfig;
     /** Mount the Swagger UI and OpenAPI spec at `/docs`. Defaults to off in production. */
     exposeDocs?: boolean;
   } = {},
@@ -78,15 +82,16 @@ export async function buildApp(
     loginThrottle,
     leaderboardThrottleMs,
     analytics = getPostHog(),
+    runtimeConfig = RuntimeConfig.fromEnvironment(),
     exposeDocs = env.NODE_ENV !== 'production',
     ...fastifyOpts
   } = opts;
-  const provider = injectedProvider ?? new CachedProvider(db, createProvider());
+  const provider = injectedProvider ?? new CachedProvider(db, createProvider(runtimeConfig), runtimeConfig);
   const marketStatusProvider =
     injectedMarketStatus ??
     new CachedMarketStatus(
       createMarketStatusProvider(provider),
-      env.MARKET_STATUS_CACHE_TTL_MS,
+      () => runtimeConfig.get('MARKET_STATUS_CACHE_TTL_MS'),
     );
   const app = Fastify(fastifyOpts);
 
@@ -111,6 +116,17 @@ export async function buildApp(
 
   const systemSettings = new SystemSettingsService(db);
   await systemSettings.ensureSeeded();
+
+  // Before any worker arms a timer, so their first reads already see the
+  // persisted overrides.
+  const configOverrides = new ConfigOverridesService(db, runtimeConfig);
+  const activeOverrides = await configOverrides.load(app.log);
+  if (activeOverrides.length > 0) {
+    app.log.warn(
+      { keys: activeOverrides },
+      'runtime config overrides active; they take precedence over the environment until reset in /admin/config',
+    );
+  }
 
   // In-process event bus + achievement engine. Construct before route
   // registration so route factories can capture the bus reference.
@@ -153,20 +169,20 @@ export async function buildApp(
 
   await app.register(healthRoutes);
   await app.register(versionRoutes);
-  await app.register(authRoutes(db, new FailedLoginTracker(loginThrottle)));
+  await app.register(authRoutes(db, new FailedLoginTracker(runtimeConfig, loginThrottle)));
   await app.register(gameRoutes(db, bus));
   await app.register(publicGamesRoutes(db));
-  await app.register(stockRoutes(db, provider));
+  await app.register(stockRoutes(db, provider, runtimeConfig));
   await app.register(
-    tradingRoutes(db, provider, marketStatusProvider, registry, leaderboardThrottleMs, bus),
+    tradingRoutes(db, provider, marketStatusProvider, runtimeConfig, registry, leaderboardThrottleMs, bus),
   );
-  await app.register(marketStatusRoutes(marketStatusProvider));
-  await app.register(watchlistRoutes(db));
+  await app.register(marketStatusRoutes(marketStatusProvider, runtimeConfig));
+  await app.register(watchlistRoutes(db, runtimeConfig));
   await app.register(discoverRoutes(db));
   await app.register(systemSettingsRoutes(systemSettings));
   await app.register(achievementsRoutes(db, achievementEngine));
   await registerAdminGuard(app, db);
-  await app.register(adminRoutes(db, provider, systemSettings, bus, registry));
+  await app.register(adminRoutes(db, provider, systemSettings, configOverrides, bus, registry));
   await app.register(adminAchievementsRoutes(db, achievementEngine, systemSettings));
   await app.register(liveRoute(db, registry, achievementEngine));
   await app.register(globalLiveRoute(db, globalRegistry));
@@ -185,35 +201,38 @@ export async function buildApp(
       heartbeat.stop();
     });
 
-    const poller = startPricePoller(db, provider, registry, app.log);
+    const poller = startPricePoller(db, provider, registry, runtimeConfig, app.log);
     app.addHook('onClose', async () => {
       await poller.stop();
     });
 
-    if (env.MARKET_HOURS_MODE === 'pending') {
-      const pendingWorker = startPendingOrdersWorker({
-        db,
-        provider,
-        marketStatusProvider,
-        registry,
-        bus,
-        logger: app.log,
-      });
-      app.addHook('onClose', async () => {
-        await pendingWorker.stop();
-      });
-    }
+    // Runs in every mode, not only `pending`: the same tick fills resting
+    // limit/stop/bracket orders and expires day orders, and MARKET_HOURS_MODE
+    // can change at runtime, so pending rows may exist under any mode.
+    const pendingWorker = startPendingOrdersWorker({
+      db,
+      provider,
+      marketStatusProvider,
+      registry,
+      bus,
+      config: runtimeConfig,
+      logger: app.log,
+    });
+    app.addHook('onClose', async () => {
+      await pendingWorker.stop();
+    });
 
     const snapshotWorker = startPortfolioSnapshotWorker({
       db,
       bus,
+      config: runtimeConfig,
       logger: app.log,
     });
     app.addHook('onClose', async () => {
       await snapshotWorker.stop();
     });
 
-    const discoverWorker = startDiscoverWorker({ db, provider, logger: app.log });
+    const discoverWorker = startDiscoverWorker({ db, provider, config: runtimeConfig, logger: app.log });
     app.addHook('onClose', async () => {
       await discoverWorker.stop();
     });

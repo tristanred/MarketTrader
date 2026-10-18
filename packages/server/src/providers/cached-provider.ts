@@ -12,7 +12,7 @@ import type {
 } from '@markettrader/shared';
 import type { Db } from '../db/index.js';
 import { schema } from '../db/index.js';
-import type { StockProvider } from './interface.js';
+import type { StockFundamentals, StockProvider } from './interface.js';
 import { StockProviderError } from './interface.js';
 import { env } from '../env.js';
 import type { ConfigReader } from '../config/runtime-config.js';
@@ -31,6 +31,16 @@ const SEARCH_ENRICH_TOP_N = 10;
  * grows for as long as someone sends fresh terms. Oldest insertion is evicted.
  */
 export const SEARCH_CACHE_MAX_ENTRIES = 500;
+
+/**
+ * How long fetched fundamentals are reused. They move on quarterly reports, so
+ * an hour costs nothing in accuracy; a fixed constant rather than a live option
+ * because no operator has a reason to tune it.
+ */
+export const FUNDAMENTALS_CACHE_TTL_MS = 60 * 60_000;
+
+/** Most symbols the in-memory fundamentals cache retains. Oldest insertion is evicted. */
+export const FUNDAMENTALS_CACHE_MAX_ENTRIES = 500;
 
 /**
  * Symbols per upstream batch quote. Keeps one poller tick from turning into a
@@ -106,6 +116,18 @@ export class CachedProvider implements StockProvider {
    */
   readonly getMarketMovers?: (kind: MarketMoverKind, count: number) => Promise<DiscoverItem[]>;
 
+  private readonly fundamentalsBySymbol = new Map<
+    string,
+    { fundamentals: StockFundamentals; cachedAt: number }
+  >();
+
+  /**
+   * The wrapped provider's fundamentals behind an in-memory cache of
+   * {@link FUNDAMENTALS_CACHE_TTL_MS}, present only when the wrapped provider
+   * has them so callers can still feature-detect. Failures are not cached.
+   */
+  readonly getFundamentals?: (symbol: string) => Promise<StockFundamentals>;
+
   constructor(
     private readonly db: Db,
     private readonly inner: StockProvider,
@@ -116,6 +138,29 @@ export class CachedProvider implements StockProvider {
       this.getMarketMovers = (kind, count) =>
         this.upstream('getMarketMovers', undefined, () => movers(kind, count));
     }
+    const fundamentals = inner.getFundamentals?.bind(inner);
+    if (fundamentals) {
+      this.getFundamentals = (symbol) => this.cachedFundamentals(symbol, fundamentals);
+    }
+  }
+
+  private async cachedFundamentals(
+    symbol: string,
+    fetch: (symbol: string) => Promise<StockFundamentals>,
+  ): Promise<StockFundamentals> {
+    const hit = this.fundamentalsBySymbol.get(symbol);
+    if (hit && Date.now() - hit.cachedAt < FUNDAMENTALS_CACHE_TTL_MS) return hit.fundamentals;
+
+    const fundamentals = await this.upstream('getFundamentals', symbol, () => fetch(symbol));
+    // Deleting first re-inserts a refreshed symbol at the young end, and keeps a
+    // refresh at the cap from evicting some other symbol's live entry.
+    this.fundamentalsBySymbol.delete(symbol);
+    if (this.fundamentalsBySymbol.size >= FUNDAMENTALS_CACHE_MAX_ENTRIES) {
+      const oldest = this.fundamentalsBySymbol.keys().next();
+      if (!oldest.done) this.fundamentalsBySymbol.delete(oldest.value);
+    }
+    this.fundamentalsBySymbol.set(symbol, { fundamentals, cachedAt: Date.now() });
+    return fundamentals;
   }
 
   /**

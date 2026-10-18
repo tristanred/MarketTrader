@@ -123,3 +123,22 @@ describe('MockProvider.getMarketMovers', () => {
     }
   });
 });
+
+describe('MockProvider.getFundamentals', () => {
+  it('is deterministic per symbol and differs across symbols', async () => {
+    const p = new MockProvider();
+    const a = await p.getFundamentals('aapl');
+    expect(await p.getFundamentals('AAPL')).toEqual(a);
+    expect((await p.getFundamentals('MSFT')).trailingPE).not.toBe(a.trailingPE);
+  });
+
+  it('returns plausible fractions and future earnings', async () => {
+    const f = await new MockProvider().getFundamentals('NVDA');
+    expect(f.sector).toBe('Technology');
+    expect(f.trailingPE).toBeGreaterThan(0);
+    expect(f.grossMargins).toBeGreaterThan(0);
+    expect(f.grossMargins).toBeLessThan(1);
+    expect(f.fiftyTwoWeekHigh).toBeGreaterThan(f.fiftyTwoWeekLow!);
+    expect(Date.parse(f.nextEarningsDate!)).toBeGreaterThan(Date.now());
+  });
+});

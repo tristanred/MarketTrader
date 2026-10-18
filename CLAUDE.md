@@ -240,6 +240,7 @@ Abuse controls live in `packages/server/src/limits/` (ADR-018, `docs/design.md` 
   3. Add a catalogue entry in `limits/catalogue.ts`, including its `label` (used in denial messages). Its `satisfies` clause fails typecheck until you do.
   4. Add a UI label to `LIMIT_LABELS` in `frontend/src/lib/limitLabels.ts`. Its `Record` fails typecheck until you do.
   5. Add one enforcement point.
+  6. Add a case to the exhaustive `usedFor` switch in `routes/admin/limits.ts` (what the admin "Limits & usage" card shows as `used`). Typecheck fails until you do.
 
   Tests opt in with `createTestAppWithDb(…, { limits: { disabled: false } })`; the fixture disables limits by default.
 - **The per-IP `@fastify/rate-limit` configs are a second layer, not a replacement.** Their `max` goes through `withPrivilegedIp` so the office allowlist lifts them too, and `LIMITS_ENABLED=false` leaves them on. Keep both layers, as with the login controls.
@@ -254,6 +255,19 @@ All price fetching goes through the `StockProvider` interface in `packages/serve
 
 Default provider: Yahoo Finance (no key required).  
 Switch via `STOCK_PROVIDER=alpaca` env var.
+
+---
+
+## Stock Analysis (LLM)
+
+The Analyze button's BUY / HOLD / SELL verdict comes from OpenRouter, server-side only (ADR-019, `docs/design.md` → Stock analysis).
+
+- **All LLM HTTP goes through `LlmClient` in `providers/llm/`.** Never `fetch` an LLM from a service or route. The client is generic (no stock types), so the next LLM feature reuses it.
+- **`ANALYSIS_MAX_GENERATIONS_PER_DAY` is deliberately outside the limits resolver.** It is the spend backstop that binds admins, overrides and `LIMITS_ENABLED=false`, as `PRICE_POLLER_MAX_SYMBOLS` does for the poller. Never remove it on the grounds that the per-user `stockAnalyses` quota exists.
+- **Cache hits and joins on an in-flight generation never consume quota** and run before every limit check, so a user at their limit or during an outage still sees cached results. Only `ok` rows in `stock_analyses` count toward the user quota; the global ceiling counts every row.
+- **Bump `PROMPT_VERSION` (`services/stock-analysis/prompt.ts`) when the prompt or the output schema changes meaning.** It is part of the cache key. The prompt snapshot test fails until you update it, which is the reminder.
+- **Model output is untrusted.** It is Zod-validated in the service (the JSON Schema sent upstream is only a hint), and the UI renders it as plain text nodes only, never markdown or HTML.
+- **Tests** inject a `FakeLlmClient` (`tests/helpers/fake-llm.ts`) with `createTestAppWithDb(…, { llmClient })`. The fixture defaults to `null` (feature off), and `createLlmClient` returns null under `NODE_ENV=test`, so no suite can reach OpenRouter.
 
 ---
 
@@ -275,6 +289,7 @@ POSTHOG_KEY=           # PostHog project token; with POSTHOG_HOST turns on serve
 POSTHOG_HOST=          # e.g. https://us.i.posthog.com
 VITE_POSTHOG_KEY=      # build-time; SPA PostHog token
 VITE_POSTHOG_HOST=     # build-time; normally /relay (same-origin proxy)
+OPENROUTER_API_KEY=    # secret; turns on LLM stock analysis (unset = off, never a boot failure)
 ```
 
 `TRUST_PROXY` decides `request.ip`, which is the key every per-route rate limit is
@@ -293,6 +308,7 @@ stale-trade policy), the `LOGIN_*` family (per-account login throttle),
 `WS_HEARTBEAT_INTERVAL_MS`, `WS_REVALIDATE_INTERVAL_MS`, `PRICE_POLLER_MAX_SYMBOLS`,
 the `WATCHLIST_MAX_*` pair, the `LIMITS_*` policy and `LIMIT_*` per-user limits (User Limits above),
 `USAGE_FLUSH_INTERVAL_MS` / `USAGE_RETENTION_DAYS`, the `GAME_MAX_*` game bounds,
+the `ANALYSIS_*` family (stock-analysis model, cache TTL, timeouts, global ceiling, retention),
 `SQLITE_BUSY_TIMEOUT_MS`, and the `OTEL_*` family. `env.ts` is the source of truth
 for the full set.
 

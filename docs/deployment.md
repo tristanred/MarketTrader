@@ -52,11 +52,18 @@ STOCK_PROVIDER=yahoo
 # STOCK_PROVIDER=alpaca
 # ALPACA_API_KEY_ID=...
 # ALPACA_API_SECRET_KEY=...
+# OPENROUTER_API_KEY=...   # turns on LLM stock analysis
 ```
 
 Production env validation (`validateProductionEnv()` in `packages/server/src/env.ts`) refuses to start if `JWT_SECRET` is shorter than 32 chars, `CORS_ORIGIN` is the dev default, `DATABASE_URL` isn't Postgres, or Alpaca is selected (via `STOCK_PROVIDER` or `MARKET_STATUS_PROVIDER`) without both `ALPACA_API_KEY_ID` and `ALPACA_API_SECRET_KEY`.
 
 **Keep the Postgres session `TimeZone` at `UTC`** (the `postgres:16` image default). `created_at`/`joined_at` are `timestamp` columns *without* time zone filled by `defaultNow()`, which stores session-local time, while the per-user limit windows (`limits/quota-counts.ts`) and the account-age / `Retry-After` arithmetic (`toIsoUtc` in `limits/account.ts`) build and read those values as UTC. Any other `TimeZone` shifts every rolling quota window and retry hint by the offset. Nothing checks this at boot.
+
+**Stock analysis is off unless `OPENROUTER_API_KEY` is set** (ADR-019). Unset is not an error: the Analyze button is hidden and the endpoint answers 503. To turn it on:
+- Put the key in the server's environment (`.env` here, or the service environment on a non-Docker host).
+- Allow outbound HTTPS from the server to `openrouter.ai`.
+
+No proxy route, timeout, CSP, or `/relay` change is needed. The browser only talks to `/api/`, and the server makes the LLM call. Free models can take close to a minute to answer (13–52 s in testing), too close to the 60 s `proxy_read_timeout` nginx applies by default on `/api/`. So `POST /stocks/:symbol/analysis` waits at most `ANALYSIS_RESPONSE_WAIT_MS` (default 25 s), then answers 202 and lets the client poll while the generation finishes in the background. `ANALYSIS_TIMEOUT_MS`, the deadline on the call itself, is not bound by the proxy. **`ANALYSIS_RESPONSE_WAIT_MS` must stay under the proxy's `proxy_read_timeout`**, both the container `nginx.conf` and any proxy in front of it. The admin panel refuses values over 50 s, but the environment variable is not range-checked.
 
 ## 4. Bring up the stack
 

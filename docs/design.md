@@ -62,6 +62,7 @@ See the spec for full schema. Summary:
 | `Watchlist` / `WatchlistItem` | User-owned symbol lists, global to the user rather than scoped to a game |
 | `DiscoverMarketMovers` | One market-wide Discover list (gainers, losers, most active, trending) per NYSE session, shared by every game |
 | `GameDiscoverPicks` | A game's 20 Discover daily picks for one NYSE session |
+| `StockAnalysis` | One LLM stock-analysis attempt (`stock_analyses`): the shared per-symbol cache and the per-user quota ledger in one append-only table |
 
 `Game` carries two discoverability fields:
 
@@ -138,6 +139,92 @@ the arena's right rail. Full design: `docs/superpowers/specs/2026-10-07-discover
   feature adds nothing to the poller's per-tick symbol set.
 - Rows older than 14 sessions' worth of days are pruned by the same worker.
 
+### Stock analysis
+
+An **Analyze** button on the quote view (the symbol page and the in-game quote
+dialog) asks an LLM, through OpenRouter and from the server only, for a
+position-independent **BUY / HOLD / SELL** verdict with a confidence, a summary,
+and bull and bear points. The prompt carries no player data, so one result
+serves every user. The feature is off unless `OPENROUTER_API_KEY` is set: the
+POST answers 503 `ANALYSIS_DISABLED`, the status reports `enabled: false`, and
+the button is hidden. Full design: `docs/superpowers/specs/2026-10-17-stock-analysis-design.md`;
+decision record: ADR-019.
+
+- **One table, `stock_analyses`**, with one append-only row per attempt that
+  reached the model (`status` `ok` | `failed`). It is both the cache and the
+  quota ledger, and quotas count its rows:
+  - **Cache hit:** the newest `ok` row for (`symbol`, `prompt_version`,
+    configured `model`) within `ANALYSIS_CACHE_TTL_MS` (default 1 day). The key
+    uses the configured `ANALYSIS_MODEL`, because `openrouter/free` answers with
+    a different backing model per call. `reported_model` is for display only.
+    Changing the model or bumping `PROMPT_VERSION` starts a fresh cache.
+  - **User quota** (`stockAnalyses`, `LIMIT_STOCK_ANALYSES_PER_DAY`): the
+    user's `ok` rows in the last 24 h. Failures, cache hits and joining another
+    user's generation are free.
+  - **Global ceiling** (`ANALYSIS_MAX_GENERATIONS_PER_DAY`, default 50): every
+    row, `ok` or `failed`, in the last 24 h, plus generations in flight. It is
+    not a `LIMIT_*` key and does not go through the resolver, so it binds admins,
+    overrides and `LIMITS_ENABLED=false`, and the privileged multiplier does not
+    raise it.
+  - `generated_by` is set to NULL when the account is deleted; the row stays as
+    shared cache. The hourly `stock-analysis-prune` worker deletes rows older
+    than `max(ANALYSIS_RETENTION_DAYS, cache TTL, 24 h)`.
+- **Endpoints** (both authenticated; types in `packages/shared/src/types/stock-analysis.ts`):
+
+  | Route | Returns |
+  |---|---|
+  | `GET /stocks/:symbol/analysis/status` | `StockAnalysisStatus`: `enabled`, `available` + `retryAt` (breaker open or ceiling reached), `cached` (viewing it is free), `generating`, `lastFailure`, and the caller's `usage`. Never generates. |
+  | `POST /stocks/:symbol/analysis` | 200 `StockAnalysisResponse` (`source`: `cache` / `shared` / `generated`) · 202 `{ status: 'generating', usage }` · 404 unknown symbol · 409 `ANALYSIS_IN_PROGRESS` · 429 `LIMIT_EXCEEDED` (with `Retry-After`) · 429 stock-provider `RATE_LIMITED` · 502 `ANALYSIS_FAILED` · 503 `ANALYSIS_DISABLED` / `ANALYSIS_UNAVAILABLE` / `ANALYSIS_CAPACITY` (with `Retry-After` when known) · 504 `ANALYSIS_TIMEOUT` |
+
+  The POST also has a per-IP `withPrivilegedIp` cap of 20/min, as a second
+  layer under the quota.
+- **Flow of a POST** (`services/stock-analysis/service.ts`):
+  1. Fetch the quote, which validates the symbol before anything is spent.
+  2. Return a cached analysis, or join a generation already running for the
+     same key. Both are free and bypass every limit, so a user at their limit or
+     during an outage still sees cached results.
+  3. If the breaker is open, answer 503 `ANALYSIS_UNAVAILABLE`.
+  4. If this user already has a generation running, answer 409. A user runs one
+     generation at a time, and the busy mark lasts until the generation settles,
+     not until the HTTP request returns.
+  5. Check the user quota (429), then the global ceiling (503), then the key's
+     60 s failure cooldown (503).
+  6. Start the generation: details, a year of history and fundamentals are
+     fetched best-effort, then one LLM call. Its output is Zod-validated, and an
+     `ok` or `failed` row is written. A fresh analysis emits `analysis.generated`.
+  7. Wait up to `ANALYSIS_RESPONSE_WAIT_MS` (default 25 s). If the generation
+     settles in time, answer 200 or the mapped error. If not, answer 202 and let
+     it finish in the background. The client then polls the status endpoint
+     every ~2.5 s, POSTs again once `cached` is true (a free cache hit), and
+     shows `lastFailure` inline if one appears.
+- **Upstream failures.** Account-level ones (bad key, no credits, spend limit,
+  rate limit, bad request) open a process-wide breaker that pauses the feature
+  for everyone; cached results keep working. The rest fail only that request,
+  write a `failed` row if the model was reached, and charge nobody. Pause
+  lengths and error mapping: ADR-019.
+- **UI.**
+  - The button sits in the quote view's meta row, right of "Last updated". A
+    caption under it shows the allowance ("7 of 10 left today"), "Already
+    analyzed — free to view", the limit or pause with its reset time, or nothing
+    for an unlimited user. The button is disabled when the user is blocked and
+    nothing is cached. A blocked button refetches its status every 60 s. A
+    generation already running for the symbol (another tab, another player, a
+    reload mid-generation) shows as busy but stays clickable: a click waits on
+    it, for free, instead of starting another.
+  - The result panel opens between the chart and the position card. It shows
+    the verdict on a three-segment `SELL · HOLD · BUY` rating rail, confidence
+    as a word (Low / Moderate / High, with the number in the tooltip), the
+    summary, the bull and bear lists (stacked below `sm` and always in the
+    in-game dialog), and a footer with the price at analysis, the reported
+    model and "Not financial advice".
+  - Errors show inline in the panel, not as toasts, and a failed generation
+    offers **Try again**. Every model string renders as a plain text node, never
+    as markdown or HTML.
+  - The panel resets when the symbol changes.
+- **Analytics.** The client captures `stock_analysis_requested { symbol, surface }`
+  on each click. The server captures `stock_analysis_generated` from the
+  `EventBus` subscriber for fresh generations only.
+
 ### Runtime configuration (admin)
 
 `/admin/config` lists every option the server reads from its environment — one descriptor per
@@ -178,6 +265,7 @@ Every abuse control is a **limit** with a key (`LimitKey`, `packages/shared/src/
 | Active games owned | `LIMIT_ACTIVE_GAMES_OWNED` | concurrent | 5 |
 | Games joined | `LIMIT_GAMES_JOINED_PER_DAY` | quota | 20 / 24 h |
 | Active games joined | `LIMIT_ACTIVE_GAMES_JOINED` | concurrent | 30 |
+| Fresh stock analyses (cached views are free) | `LIMIT_STOCK_ANALYSES_PER_DAY` | quota | 10 / 24 h |
 | Open orders per game-player (working + pending) | `LIMIT_OPEN_ORDERS_PER_PLAYER` | concurrent | 50 |
 | Watchlists / items per list | `WATCHLIST_MAX_PER_USER` / `WATCHLIST_MAX_ITEMS` | concurrent | 20 / 50 |
 | Open live sockets | `LIMIT_WS_CONNECTIONS_PER_USER` | concurrent | 10 |
@@ -188,6 +276,7 @@ Every abuse control is a **limit** with a key (`LimitKey`, `packages/shared/src/
 - API requests: the in-memory `UsageTracker`, from a global `preHandler`.
 - `subscribe` frames: a per-user `SlidingWindowCounter` inside the `/games/:id/live` route, shared across that user's sockets.
 - Quotas and the game/watchlist caps: `limits.enforcer.enforce(...)`, counting the real rows (`limits/quota-counts.ts`).
+- Stock analyses: `limits.enforcer.enforceFor(...)` over the user's `ok` rows in `stock_analyses`. It runs with no transaction, while the user is marked busy for the whole generation (ADR-019).
 - Open orders: `assertOpenOrderCapacity` inside the order's transaction, with the resolver's max, on both the working and the pending path.
 - Sockets: `admitConnection` (`ws/limits.ts`) against both live registries at upgrade.
 
@@ -198,7 +287,7 @@ Every abuse control is a **limit** with a key (`LimitKey`, `packages/shared/src/
 - **WebSocket:** a socket past the connection cap is closed with `4429`. A `subscribe` past the frame rate is dropped and answered with the frame `{ event: 'error', data: { code: 'LIMIT_EXCEEDED', limit: 'wsSubscribes' } }`, and the previous subscription stays in force. `useGameSocket` re-sends its current set 60 s later, and again after each further refusal.
 - **The pre-existing per-IP route limits** (login, register, refresh, `/stocks/*`, the watchlist write caps, WS upgrades) keep their numbers and stay on when `LIMITS_ENABLED=false`. They gain the privileged multiplier (`withPrivilegedIp`). An admin is exempt only where the route authenticates before the limiter runs (the watchlist writes); the public routes and the WS upgrade caps are not admin-exempt, because the socket authenticates after the upgrade.
 
-**No ceiling for admins or with the off switch.** Admins, and everyone while `LIMITS_ENABLED=false`, have no open-order or watchlist write ceiling. The price poller's fan-out from those rows is still bounded by `PRICE_POLLER_MAX_SYMBOLS`.
+**No ceiling for admins or with the off switch.** Admins, and everyone while `LIMITS_ENABLED=false`, have no open-order or watchlist write ceiling. The price poller's fan-out from those rows is still bounded by `PRICE_POLLER_MAX_SYMBOLS`. Likewise they have no stock-analysis quota, but the global `ANALYSIS_MAX_GENERATIONS_PER_DAY` still binds them.
 
 **Game bounds are global and not per-user:**
 - `GAME_MAX_STARTING_BALANCE`
@@ -239,6 +328,7 @@ Browser (React SPA)
     │                                   │       ├── Yahoo Finance (default)
     │                                   │       ├── Alpaca Markets
     │                                   │       └── Polygon.io
+    │                                   ├── OpenRouter (LLM stock analysis; off without a key)
     │                                   │
     ├── OTLP /otel ─────────→ OpenTelemetry Collector ←── OTLP (traces/metrics/logs)
     │                                   │
@@ -424,3 +514,27 @@ exposes index membership, so after a rebalance the list drifts until someone
 regenerates it. A delisted or renamed symbol does not break anything — its quote
 is missing, so the pick shows "—" for price and change — but it keeps being
 drawn until the file is refreshed.
+
+### Stock-analysis coordination is per-process
+
+The per-user busy mark, the single-flight map, the `lastFailure` record, the
+upstream breaker, and the in-flight term of the global ceiling are all in
+memory (ADR-019). So:
+
+- they are exact only within one server process. With several instances, each
+  could run its own generation for the same symbol, and the user quota and the
+  ceiling would each overshoot by up to the instance count;
+- in one process the global ceiling counts every other user mid-check or
+  generating, so it errs strict: near the cap, a user can be refused because
+  another user's request turned out to be a free cache hit;
+- a restart closes the breaker, so a still-bad key spends one more request
+  before it reopens, and drops in-flight generations without a row or a
+  `lastFailure`.
+
+### Stock analysis has no stale fallback
+
+While the breaker is open, only analyses still inside `ANALYSIS_CACHE_TTL_MS`
+are served. An expired one is not shown as "stale", so during a long outage a
+symbol whose analysis aged out just shows "temporarily unavailable". The rows
+are still there (they outlive the TTL until `ANALYSIS_RETENTION_DAYS`), so the
+fallback is a read-path change only.

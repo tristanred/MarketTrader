@@ -588,3 +588,31 @@ export const limitDenialsHourly = pgTable(
     index('limit_denials_hourly_hour_idx').on(t.hourStart),
   ],
 );
+
+/** LLM stock-analysis attempts: shared cache and quota ledger. Mirrors the SQLite variant. */
+export const stockAnalyses = pgTable(
+  'stock_analyses',
+  {
+    id: text('id')
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    symbol: text('symbol').notNull(),
+    model: text('model').notNull(),
+    reportedModel: text('reported_model'),
+    promptVersion: integer('prompt_version').notNull(),
+    status: text('status', { enum: ['ok', 'failed'] }).notNull(),
+    errorCode: text('error_code'),
+    generatedBy: text('generated_by').references(() => users.id, { onDelete: 'set null' }),
+    result: text('result'),
+    priceAtAnalysis: real('price_at_analysis').notNull(),
+    promptTokens: integer('prompt_tokens'),
+    completionTokens: integer('completion_tokens'),
+    durationMs: integer('duration_ms').notNull(),
+    createdAt: timestamp('created_at', { mode: 'string' }).defaultNow().notNull(),
+  },
+  (t) => [
+    index('stock_analyses_cache_idx').on(t.symbol, t.promptVersion, t.model, t.createdAt),
+    index('stock_analyses_user_idx').on(t.generatedBy, t.createdAt),
+    index('stock_analyses_created_idx').on(t.createdAt),
+  ],
+);

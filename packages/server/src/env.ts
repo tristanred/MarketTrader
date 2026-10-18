@@ -67,6 +67,23 @@ function validatedCidrList(name: string): string {
   return raw;
 }
 
+/**
+ * Problem with an OpenRouter model id (`vendor/model`, optional `:variant`), or
+ * undefined when valid. Shared with the admin panel's override check.
+ */
+export function validateModelSlug(value: string): string | undefined {
+  return /^[A-Za-z0-9][A-Za-z0-9._-]*\/[A-Za-z0-9._:-]+$/.test(value) && value.length <= 100
+    ? undefined
+    : 'Must be an OpenRouter model id such as openrouter/free or vendor/model:variant.';
+}
+
+function validatedModelSlug(name: string, fallback: string): string {
+  const raw = optional(name, fallback).trim();
+  const problem = validateModelSlug(raw);
+  if (problem) throw new Error(`Invalid ${name}: "${raw}". ${problem}`);
+  return raw;
+}
+
 /** Named address ranges `proxy-addr` understands, accepted verbatim by Fastify. */
 const TRUST_PROXY_PRESETS = ['loopback', 'linklocal', 'uniquelocal'] as const;
 
@@ -202,6 +219,11 @@ export const env = {
    */
   ALPACA_API_SECRET_KEY: optional('ALPACA_API_SECRET_KEY', ''),
   MARKET_STATUS_PROVIDER: validatedMarketStatusProvider(stockProvider),
+  /**
+   * OpenRouter API key for LLM stock analysis. Empty turns the feature off: the
+   * endpoints answer 503 and the Analyze button is hidden. Never a boot failure.
+   */
+  OPENROUTER_API_KEY: optional('OPENROUTER_API_KEY', ''),
   NODE_ENV: validatedNodeEnv(),
 
   /**
@@ -459,6 +481,52 @@ export const liveBootConfig = {
   LIMIT_REGISTRATIONS_PER_IP_PER_DAY: parsePositiveInt(
     'LIMIT_REGISTRATIONS_PER_IP_PER_DAY',
     optional('LIMIT_REGISTRATIONS_PER_IP_PER_DAY', '5'),
+  ),
+  /** Fresh stock analyses one user may generate in any rolling 24 hours. Cached views are free. */
+  LIMIT_STOCK_ANALYSES_PER_DAY: parsePositiveInt(
+    'LIMIT_STOCK_ANALYSES_PER_DAY',
+    optional('LIMIT_STOCK_ANALYSES_PER_DAY', '10'),
+  ),
+
+  // Stock analysis (LLM via OpenRouter). Off unless OPENROUTER_API_KEY is set.
+  /** OpenRouter model id. Part of the cache key, so changing it starts a fresh cache. */
+  ANALYSIS_MODEL: validatedModelSlug('ANALYSIS_MODEL', 'openrouter/free'),
+  /** How long one analysis is served to every user before the next request regenerates it. */
+  ANALYSIS_CACHE_TTL_MS: parsePositiveInt(
+    'ANALYSIS_CACHE_TTL_MS',
+    optional('ANALYSIS_CACHE_TTL_MS', '86400000'),
+  ),
+  /**
+   * Abort an LLM call after this long. Free models routinely take 15–60 s, so a
+   * generation outlives its request: see ANALYSIS_RESPONSE_WAIT_MS.
+   */
+  ANALYSIS_TIMEOUT_MS: parsePositiveInt(
+    'ANALYSIS_TIMEOUT_MS',
+    optional('ANALYSIS_TIMEOUT_MS', '90000'),
+  ),
+  /**
+   * How long `POST /stocks/:symbol/analysis` waits for a generation before
+   * answering 202 and letting the client poll. Must stay under the reverse
+   * proxy's read timeout (nginx defaults to 60 s).
+   */
+  ANALYSIS_RESPONSE_WAIT_MS: parsePositiveInt(
+    'ANALYSIS_RESPONSE_WAIT_MS',
+    optional('ANALYSIS_RESPONSE_WAIT_MS', '25000'),
+  ),
+  /**
+   * Global ceiling on LLM calls in any rolling 24 hours, failures included. A
+   * spend backstop rather than a per-user limit, so admins and
+   * LIMITS_ENABLED=false are still bound by it. 50 matches OpenRouter's
+   * free-model daily cap for accounts without purchased credits.
+   */
+  ANALYSIS_MAX_GENERATIONS_PER_DAY: parsePositiveInt(
+    'ANALYSIS_MAX_GENERATIONS_PER_DAY',
+    optional('ANALYSIS_MAX_GENERATIONS_PER_DAY', '50'),
+  ),
+  /** Days analysis rows (and who requested each) are kept before pruning. */
+  ANALYSIS_RETENTION_DAYS: parsePositiveInt(
+    'ANALYSIS_RETENTION_DAYS',
+    optional('ANALYSIS_RETENTION_DAYS', '30'),
   ),
 
   /**

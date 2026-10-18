@@ -78,6 +78,12 @@ Every signal carries the ADR-014 build stamp as resource attributes — `service
 | `markettrader.achievements.unlocked` | Counter | `achievement`, `rarity` |
 | `markettrader.events.emitted` | Counter | `type` |
 | `markettrader.limits.denied` | Counter | `limit` (a `LimitKey`, or `ip:<METHOD /route>` for the per-IP route limits) — never a user id; per-user denials are in `limit_denials_hourly` |
+| `markettrader.analysis.requests` | Counter | `outcome` (`cache`/`shared`/`generated`/`pending` (answered 202)/`failed`/`limited`/`capacity`/`unavailable`/`in_progress`/`disabled` (no LLM configured)/`error` (unknown symbol, price-provider trouble)) |
+| `markettrader.analysis.duration` | Histogram (ms) | `outcome` (`ok`/`error`) — one generation, inputs and LLM call together |
+| `markettrader.analysis.breaker.trips` | Counter | `reason` (the `LlmError` code: `AUTH`/`NO_CREDITS`/`SPEND_LIMIT`/`RATE_LIMITED`/`BAD_REQUEST`) — each time analysis was paused for everyone |
+| `markettrader.llm.requests` | Counter | `provider`, `outcome` (`ok`/`timeout`/`rate_limited`/`no_credits`/`auth`/`spend_limit`/`bad_request`/`refused`/`truncated`/`invalid_output`/`upstream_error`/`aborted`) |
+| `markettrader.llm.duration` | Histogram (ms) | `provider` |
+| `markettrader.llm.tokens` | Counter | `direction` (`prompt`/`completion`) |
 | `markettrader.web_vitals.{lcp,cls,inp,fcp,ttfb}` | Histogram | `rating` |
 
 ### Querying these in Prometheus
@@ -106,7 +112,14 @@ labelled `service` / `span_name` / `span_kind` / `status_code`. Two traps follow
 - Span metrics and undici are in **seconds**; every application histogram is in **milliseconds**.
 
 **Symbols are deliberately not metric attributes.** The symbol universe is unbounded and would
-blow up cardinality. Symbols appear on spans, which are not aggregated.
+blow up cardinality. Symbols appear on spans, which are not aggregated. Model ids are kept off
+metrics for the same reason (`ANALYSIS_MODEL` is free text, and `openrouter/free` reports a
+different backing model per call); they are span attributes too.
+
+`analysis.breaker.trips` is the one to alert on for stock analysis: `AUTH` or `BAD_REQUEST` needs
+an operator (also logged at `error`), while the others clear on their own (logged at `warn`).
+`analysis.requests{outcome="capacity"}` means the global `ANALYSIS_MAX_GENERATIONS_PER_DAY`
+ceiling is binding.
 
 `quote_cache.lookups{result="stale"}` is the one to watch: `stale` means the upstream was
 rate-limited and a cached price was served instead. It is the app degrading rather than failing,
@@ -130,8 +143,22 @@ preference.
 - **Manual spans** — `trade.execute` (`services/trade.ts`), `provider.*`
   (`providers/cached-provider.ts`), `worker.tick` (`workers/interval-worker.ts`). Every
   background loop routes through `startIntervalWorker`, so instrumenting it once covers the price
-  poller, the pending-orders settler, the portfolio-snapshot worker, and the Discover worker
-  (`worker=discover`; its provider calls appear as `operation=getMarketMovers`).
+  poller, the pending-orders settler, the portfolio-snapshot worker, the Discover worker
+  (`worker=discover`; its provider calls appear as `operation=getMarketMovers`), and the hourly
+  `worker=stock-analysis-prune`.
+- **Stock analysis** — two manual spans, both ended in `finally`:
+  - `analysis.generate` (`services/stock-analysis/service.ts`), one per fresh generation, with
+    `analysis.symbol`, `analysis.model` (the configured `ANALYSIS_MODEL`), `analysis.inputs`
+    (which optional inputs reached the prompt, e.g. `details,history,fundamentals` or
+    `quote-only`), and `analysis.reported_model`. Cache hits and joins open no span. A generation
+    that outlives its request (the POST answered 202) keeps running, so this span can end after
+    its parent HTTP span.
+  - `llm.complete` (`providers/llm/openrouter.ts`), its child, with `llm.provider`, `llm.model`,
+    and `llm.reported_model`. Failures record the exception, whose message carries only a status
+    and an error code. The `@openrouter/sdk` request beneath it uses global `fetch`, so it gets
+    the usual undici span.
+  - The generation's input fetches appear under `analysis.generate` as `provider.*` spans,
+    including `operation=getFundamentals`.
 - **Not instrumented: the database.** There is no OTel instrumentation for `postgres`
   (postgres.js) or `@libsql/client`, and `instrumentation-pg` targets `pg`, which this project
   does not use. The manual spans above cover the hot paths instead.
@@ -209,12 +236,15 @@ production share a project; every event carries an `environment` property to tel
 
 - **Browser** (`lib/posthog.ts`): pageviews, exceptions (autocaptured, plus those caught by
   `RouteErrorBoundary`), replay, `posthog.logger` records, and the UX events only the browser
-  knows — `trade_order_submitted`, watchlist actions, `user_logged_in`, `account_registered`.
+  knows — `trade_order_submitted`, watchlist actions, `user_logged_in`, `account_registered`,
+  `stock_analysis_requested` (`symbol`, `surface`: `symbol_page`/`quote_dialog`).
   `identifyUser` runs on every session set; a failed refresh does not reset the person, an
   explicit logout does.
 - **Server, events** (`observability/analytics.ts`): one `EventBus` subscriber, keyed by
   `users.id` — `game_created`, `game_joined` (`join_source`), `trade_executed` (`origin`; admin
-  force-executes skipped), `achievement_unlocked`, `game_finished` (one per ranked player).
+  force-executes skipped), `achievement_unlocked`, `game_finished` (one per ranked player),
+  `stock_analysis_generated` (`symbol`, `verdict`, `confidence`, `model`, `duration_ms`; fresh
+  generations only, never cache hits or joins).
 - **Server, errors** (`observability/error-capture.ts`): every 5xx, attributed to the signed-in user.
 - **Server, logs** (`observability/log-transports.ts`): a second `pino-opentelemetry-transport`
   target posting to `${POSTHOG_HOST}/i/v1/logs`, independent of the collector target.

@@ -23,7 +23,7 @@ function asMarketState(raw: unknown): MarketState | undefined {
     ? (raw as MarketState)
     : undefined;
 }
-import type { StockProvider } from './interface.js';
+import type { StockFundamentals, StockProvider } from './interface.js';
 import { StockProviderError } from './interface.js';
 import type { ConfigReader } from '../config/runtime-config.js';
 import { mostRecentTradingSession } from '../services/market-calendar.js';
@@ -40,6 +40,17 @@ const SCREENER_IDS = {
  * with odd tickers, futures and crypto, which are filtered out afterwards.
  */
 const MOVERS_OVERFETCH = 3;
+
+const FUNDAMENTALS_MODULES = [
+  'summaryDetail',
+  'defaultKeyStatistics',
+  'financialData',
+  'assetProfile',
+  'calendarEvents',
+] as const;
+
+/** Longest `businessSummary` returned, ellipsis included. Keeps the analysis prompt small. */
+const BUSINESS_SUMMARY_MAX_CHARS = 600;
 
 /**
  * Maps the public range key to a (lookback, interval) pair for the Yahoo chart
@@ -71,9 +82,9 @@ function is429(err: unknown): boolean {
  * it to keep benign schema drift from failing the call. Returns `undefined` for
  * any other error so the caller maps it through the normal error path.
  *
- * Scoped to display-only calls (`searchSymbols`, `getMarketMovers`) deliberately:
- * recovering an unvalidated `getQuote` payload could feed a subtly-wrong price
- * into trade execution (business rule #1).
+ * Scoped to display- and analysis-only calls (`searchSymbols`, `getMarketMovers`,
+ * `getFundamentals`) deliberately: recovering an unvalidated `getQuote` payload
+ * could feed a subtly-wrong price into trade execution (business rule #1).
  */
 function recoverYahooValidationResult(err: unknown): unknown {
   if (
@@ -265,6 +276,38 @@ export class YahooProvider implements StockProvider {
     if (companyName !== undefined) details.companyName = companyName;
     if (marketState) details.marketState = marketState;
     return details;
+  }
+
+  /**
+   * Company fundamentals from one `quoteSummary` call. Throws `SYMBOL_NOT_FOUND`
+   * when Yahoo knows no such symbol or returns none of the requested modules,
+   * `RATE_LIMITED` on a 429, and `PROVIDER_ERROR` otherwise.
+   */
+  async getFundamentals(symbol: string): Promise<StockFundamentals> {
+    this.throwIfRateLimited();
+
+    let result: unknown;
+    try {
+      result = await this.client.quoteSummary(symbol, { modules: [...FUNDAMENTALS_MODULES] });
+    } catch (err) {
+      if (is429(err)) this.trip429();
+      if (isYahooNotFound(err)) {
+        throw new StockProviderError('SYMBOL_NOT_FOUND', `Symbol not found: ${symbol}`);
+      }
+      result = recoverYahooValidationResult(err);
+      if (result === undefined) {
+        throw new StockProviderError(
+          'PROVIDER_ERROR',
+          `Yahoo Finance fundamentals failed for ${symbol}`,
+        );
+      }
+    }
+
+    const modules = asRecord(result);
+    if (FUNDAMENTALS_MODULES.every((m) => modules[m] == null)) {
+      throw new StockProviderError('SYMBOL_NOT_FOUND', `Symbol not found: ${symbol}`);
+    }
+    return toFundamentals(modules);
   }
 
   async getHistory(symbol: string, range: StockHistoryRange): Promise<StockHistoryBar[]> {
@@ -460,4 +503,156 @@ function toDiscoverItem(raw: unknown): DiscoverItem[] {
         typeof row.regularMarketChangePercent === 'number' ? row.regularMarketChangePercent : null,
     },
   ];
+}
+
+/**
+ * Yahoo's `{ error: { code: "Not Found" } }` body surfaces as a plain `Error`
+ * (yahoo-finance2 has no `NotFoundError` class); a bare 404 is an `HTTPError`
+ * carrying the status in `code`.
+ */
+function isYahooNotFound(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  return (err as { code?: unknown }).code === 404 || /quote not found/i.test(err.message);
+}
+
+function asRecord(v: unknown): Record<string, unknown> {
+  return v !== null && typeof v === 'object' ? (v as Record<string, unknown>) : {};
+}
+
+/** A payload recovered from a failed validation can still hold Yahoo's `{ raw, fmt }` wrappers. */
+function unwrapRaw(v: unknown): unknown {
+  return v !== null && typeof v === 'object' && !(v instanceof Date) && 'raw' in v
+    ? (v as { raw: unknown }).raw
+    : v;
+}
+
+function toNum(v: unknown): number | undefined {
+  const n = unwrapRaw(v);
+  return typeof n === 'number' && Number.isFinite(n) ? n : undefined;
+}
+
+function toStr(v: unknown): string | undefined {
+  if (typeof v !== 'string') return undefined;
+  const s = v.trim();
+  return s.length > 0 ? s : undefined;
+}
+
+/**
+ * Below this a numeric date is epoch seconds, above it milliseconds: 1e11 s is
+ * the year 5138, while 1e11 ms is 1973 — older than any date Yahoo reports here.
+ */
+const EPOCH_SECONDS_CEILING = 1e11;
+
+/**
+ * Normalises a Yahoo date to ISO 8601 UTC. Validation turns epoch seconds into
+ * `Date`s, but it coerces in place and a recovered payload may have stopped
+ * partway, so raw numbers and strings are accepted too.
+ */
+function toIso(v: unknown): string | undefined {
+  const raw = unwrapRaw(v);
+  let ms: number;
+  if (raw instanceof Date) ms = raw.getTime();
+  else if (typeof raw === 'number') ms = Math.abs(raw) < EPOCH_SECONDS_CEILING ? raw * 1000 : raw;
+  else if (typeof raw === 'string' && raw.trim().length > 0) ms = Date.parse(raw);
+  else return undefined;
+  const date = new Date(ms);
+  return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
+}
+
+/** Picks the earliest earnings date from today on, else Yahoo's first. */
+function nextEarningsDate(calendar: Record<string, unknown>): string | undefined {
+  const raw = asRecord(calendar.earnings).earningsDate;
+  const dates = (Array.isArray(raw) ? raw : [])
+    .map(toIso)
+    .filter((d): d is string => d !== undefined);
+  // From the start of today, not now: a call later today is still the next one.
+  const startOfToday = new Date();
+  startOfToday.setUTCHours(0, 0, 0, 0);
+  const cutoff = startOfToday.toISOString();
+  const upcoming = dates.filter((d) => d >= cutoff).sort();
+  return upcoming[0] ?? dates[0];
+}
+
+function truncateSummary(text: string | undefined): string | undefined {
+  if (text === undefined) return undefined;
+  const flat = text.replace(/\s+/g, ' ');
+  if (flat.length <= BUSINESS_SUMMARY_MAX_CHARS) return flat;
+  const cut = flat.slice(0, BUSINESS_SUMMARY_MAX_CHARS - 1);
+  const lastSpace = cut.lastIndexOf(' ');
+  // One unbroken run longer than the limit has no word boundary to cut at.
+  return `${(lastSpace > 0 ? cut.slice(0, lastSpace) : cut).trimEnd()}…`;
+}
+
+function isUsdOrUnstated(currency: unknown): boolean {
+  const c = toStr(currency);
+  return c === undefined || c.toUpperCase() === 'USD';
+}
+
+/**
+ * Narrows a `quoteSummary` result (validated or recovered) to
+ * {@link StockFundamentals}, dropping anything missing, non-finite, or in a
+ * currency other than USD.
+ */
+function toFundamentals(modules: Record<string, unknown>): StockFundamentals {
+  const summary = asRecord(modules.summaryDetail);
+  const stats = asRecord(modules.defaultKeyStatistics);
+  const financial = asRecord(modules.financialData);
+  const profile = asRecord(modules.assetProfile);
+  const calendar = asRecord(modules.calendarEvents);
+
+  // Prices are quoted in the listing's currency and statements in the filer's,
+  // which differ for ADRs. Money in anything but USD is dropped, not mislabelled.
+  const priceUsd = isUsdOrUnstated(summary.currency);
+  const statementsUsd = isUsdOrUnstated(financial.financialCurrency);
+  // Yahoo does not say which of the two an ADR's EPS is in, so it needs both.
+  const epsUsd = priceUsd && statementsUsd;
+  const ifUsd = (usd: boolean, v: number | undefined) => (usd ? v : undefined);
+
+  // Yahoo reports debt-to-equity as a percentage (≈150 for 1.5×).
+  const debtToEquityPct = toNum(financial.debtToEquity);
+  const recommendation = toStr(financial.recommendationKey);
+
+  const fields: { [K in keyof StockFundamentals]-?: StockFundamentals[K] | undefined } = {
+    sector: toStr(profile.sector) ?? toStr(profile.sectorDisp),
+    industry: toStr(profile.industry) ?? toStr(profile.industryDisp),
+    businessSummary: truncateSummary(toStr(profile.longBusinessSummary)),
+    employees: toNum(profile.fullTimeEmployees),
+    marketCap: ifUsd(priceUsd, toNum(summary.marketCap)),
+    trailingPE: toNum(summary.trailingPE),
+    forwardPE: toNum(summary.forwardPE) ?? toNum(stats.forwardPE),
+    pegRatio: toNum(stats.pegRatio),
+    priceToBook: toNum(stats.priceToBook),
+    priceToSales: toNum(summary.priceToSalesTrailing12Months),
+    beta: toNum(summary.beta) ?? toNum(stats.beta),
+    trailingEps: ifUsd(epsUsd, toNum(stats.trailingEps)),
+    forwardEps: ifUsd(epsUsd, toNum(stats.forwardEps)),
+    dividendYield: toNum(summary.dividendYield),
+    payoutRatio: toNum(summary.payoutRatio),
+    fiftyTwoWeekLow: ifUsd(priceUsd, toNum(summary.fiftyTwoWeekLow)),
+    fiftyTwoWeekHigh: ifUsd(priceUsd, toNum(summary.fiftyTwoWeekHigh)),
+    fiftyDayAverage: ifUsd(priceUsd, toNum(summary.fiftyDayAverage)),
+    twoHundredDayAverage: ifUsd(priceUsd, toNum(summary.twoHundredDayAverage)),
+    totalRevenue: ifUsd(statementsUsd, toNum(financial.totalRevenue)),
+    revenueGrowth: toNum(financial.revenueGrowth),
+    earningsGrowth: toNum(financial.earningsGrowth),
+    grossMargins: toNum(financial.grossMargins),
+    operatingMargins: toNum(financial.operatingMargins),
+    profitMargins: toNum(financial.profitMargins) ?? toNum(stats.profitMargins),
+    returnOnEquity: toNum(financial.returnOnEquity),
+    freeCashflow: ifUsd(statementsUsd, toNum(financial.freeCashflow)),
+    totalDebt: ifUsd(statementsUsd, toNum(financial.totalDebt)),
+    totalCash: ifUsd(statementsUsd, toNum(financial.totalCash)),
+    debtToEquity: debtToEquityPct === undefined ? undefined : debtToEquityPct / 100,
+    currentRatio: toNum(financial.currentRatio),
+    shortPercentOfFloat: toNum(stats.shortPercentOfFloat),
+    // `none` is Yahoo's label for "no analyst coverage", not a recommendation.
+    analystRecommendation: recommendation === 'none' ? undefined : recommendation,
+    analystTargetMean: ifUsd(priceUsd, toNum(financial.targetMeanPrice)),
+    analystCount: toNum(financial.numberOfAnalystOpinions),
+    nextEarningsDate: nextEarningsDate(calendar),
+    exDividendDate: toIso(calendar.exDividendDate) ?? toIso(summary.exDividendDate),
+  };
+  return Object.fromEntries(
+    Object.entries(fields).filter(([, v]) => v !== undefined),
+  ) as StockFundamentals;
 }

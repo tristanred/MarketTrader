@@ -13,6 +13,7 @@ import { RuntimeConfig } from '../../src/config/runtime-config.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import type { UsageTracker } from '../../src/limits/usage-tracker.js';
+import type { LlmClient } from '../../src/providers/llm/interface.js';
 
 const __dir = path.dirname(fileURLToPath(import.meta.url));
 const migrationsFolder = path.join(__dir, '../../drizzle/sqlite');
@@ -43,6 +44,11 @@ export interface TestAppOptions {
   limits?: { disabled?: boolean };
   /** Inject to inspect what the app's usage hooks recorded. */
   usageTracker?: UsageTracker;
+  /**
+   * LLM for stock analysis. Off (null) unless a test injects a fake, so a
+   * developer's `OPENROUTER_API_KEY` can never make the suite call the network.
+   */
+  llmClient?: LlmClient | null;
 }
 
 export async function createTestApp(
@@ -85,6 +91,7 @@ export async function createTestAppWithDb(
     runtimeConfig: config,
     limits: options.limits ?? { disabled: true },
     ...(options.usageTracker ? { usageTracker: options.usageTracker } : {}),
+    llmClient: options.llmClient ?? null,
   });
   return { app, db, config };
 }

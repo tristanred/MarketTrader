@@ -19,6 +19,7 @@ export const LIMIT_KEYS = [
   'watchlistItems',
   'wsConnections',
   'registrationsPerIp',
+  'stockAnalyses',
 ] as const;
 
 /** Identifier of one enforced limit; the union of {@link LIMIT_KEYS}. */

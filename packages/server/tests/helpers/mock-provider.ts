@@ -7,6 +7,9 @@ import type {
 } from '@markettrader/shared';
 import type { StockProvider } from '../../src/providers/index.js';
 import { StockProviderError } from '../../src/providers/index.js';
+import type { StockFundamentals } from '../../src/providers/interface.js';
+
+type ProviderErrorCode = 'SYMBOL_NOT_FOUND' | 'PROVIDER_ERROR' | 'RATE_LIMITED';
 
 /**
  * In-memory StockProvider used by integration tests.
@@ -14,11 +17,45 @@ import { StockProviderError } from '../../src/providers/index.js';
  * In addition to fixed quotes, supports:
  *  - `setError(symbol, code)` — make `getQuote(symbol)` throw a StockProviderError
  *  - `setStale(symbol, ageMs)` — return a quote whose `fetchedAt` is N ms in the past with `stale:true`
+ *  - `setFundamentals(symbol, f)` / `setFundamentalsError(symbol, code)` — control
+ *    `getFundamentals` independently of quotes. Pass `{ fundamentals: false }` for a
+ *    provider without the method.
  */
 export class MockStockProvider implements StockProvider {
   private quotes = new Map<string, StockQuote>();
-  private errors = new Map<string, 'SYMBOL_NOT_FOUND' | 'PROVIDER_ERROR' | 'RATE_LIMITED'>();
+  private errors = new Map<string, ProviderErrorCode>();
   private stale = new Map<string, number>();
+  private fundamentals = new Map<string, StockFundamentals>();
+  private fundamentalsErrors = new Map<string, ProviderErrorCode>();
+  fundamentalsCalls = 0;
+
+  readonly getFundamentals?: (symbol: string) => Promise<StockFundamentals>;
+
+  constructor(options: { fundamentals?: boolean } = {}) {
+    if (options.fundamentals !== false) {
+      this.getFundamentals = async (symbol) => {
+        this.fundamentalsCalls += 1;
+        const errCode = this.fundamentalsErrors.get(symbol);
+        if (errCode) throw new StockProviderError(errCode, `mock ${errCode}`);
+        return (
+          this.fundamentals.get(symbol) ?? {
+            sector: 'Technology',
+            industry: 'Software',
+            marketCap: 1_000_000_000,
+            trailingPE: 20,
+          }
+        );
+      };
+    }
+  }
+
+  setFundamentals(symbol: string, fundamentals: StockFundamentals): void {
+    this.fundamentals.set(symbol, fundamentals);
+  }
+
+  setFundamentalsError(symbol: string, code: ProviderErrorCode): void {
+    this.fundamentalsErrors.set(symbol, code);
+  }
 
   setQuote(symbol: string, quote: Partial<StockQuote> = {}): void {
     this.quotes.set(symbol, {
@@ -31,7 +68,7 @@ export class MockStockProvider implements StockProvider {
     });
   }
 
-  setError(symbol: string, code: 'SYMBOL_NOT_FOUND' | 'PROVIDER_ERROR' | 'RATE_LIMITED'): void {
+  setError(symbol: string, code: ProviderErrorCode): void {
     this.errors.set(symbol, code);
   }
 
@@ -52,6 +89,9 @@ export class MockStockProvider implements StockProvider {
     this.quotes.clear();
     this.errors.clear();
     this.stale.clear();
+    this.fundamentals.clear();
+    this.fundamentalsErrors.clear();
+    this.fundamentalsCalls = 0;
   }
 
   async getQuote(symbol: string): Promise<StockQuote> {

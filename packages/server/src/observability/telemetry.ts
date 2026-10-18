@@ -73,6 +73,27 @@ function buildInstruments() {
     limitsDenied: meter.createCounter('markettrader.limits.denied', {
       description: 'Requests, frames and connections refused by a usage limit, by limit key',
     }),
+
+    analysisRequests: meter.createCounter('markettrader.analysis.requests', {
+      description: 'Stock-analysis requests, by outcome (cache/shared/generated/failed/refusal reason)',
+    }),
+    analysisDuration: meter.createHistogram('markettrader.analysis.duration', {
+      description: 'Stock-analysis generation time, inputs and LLM call together',
+      unit: 'ms',
+    }),
+    llmRequests: meter.createCounter('markettrader.llm.requests', {
+      description: 'Upstream LLM calls, by outcome',
+    }),
+    llmDuration: meter.createHistogram('markettrader.llm.duration', {
+      description: 'Upstream LLM call latency',
+      unit: 'ms',
+    }),
+    llmTokens: meter.createCounter('markettrader.llm.tokens', {
+      description: 'Tokens consumed by LLM calls, by direction (prompt/completion)',
+    }),
+    analysisBreakerTrips: meter.createCounter('markettrader.analysis.breaker.trips', {
+      description: 'Times stock analysis was paused for everyone, by upstream reason',
+    }),
   };
 }
 

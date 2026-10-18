@@ -62,6 +62,59 @@ export interface StockProvider {
    * and Discover shows its daily picks alone.
    */
   getMarketMovers?(kind: MarketMoverKind, count: number): Promise<DiscoverItem[]>;
+  /**
+   * Optional company fundamentals, for stock analysis only — never a trade
+   * path. Providers without them leave this undefined; callers MUST treat a
+   * missing method, a rejection, or a missing field as "not available".
+   */
+  getFundamentals?(symbol: string): Promise<StockFundamentals>;
+}
+
+/**
+ * Slow-moving company data fed to the stock-analysis prompt. Every field is
+ * optional: fill what the upstream supplies. Ratios are plain fractions
+ * (0.25 = 25%), money is USD, dates are ISO 8601 UTC.
+ */
+export interface StockFundamentals {
+  sector?: string;
+  industry?: string;
+  /** Third-party free text: treat as untrusted data. Truncated by the provider to ~600 chars. */
+  businessSummary?: string;
+  employees?: number;
+  marketCap?: number;
+  trailingPE?: number;
+  forwardPE?: number;
+  pegRatio?: number;
+  priceToBook?: number;
+  priceToSales?: number;
+  beta?: number;
+  trailingEps?: number;
+  forwardEps?: number;
+  dividendYield?: number;
+  payoutRatio?: number;
+  fiftyTwoWeekLow?: number;
+  fiftyTwoWeekHigh?: number;
+  fiftyDayAverage?: number;
+  twoHundredDayAverage?: number;
+  totalRevenue?: number;
+  revenueGrowth?: number;
+  earningsGrowth?: number;
+  grossMargins?: number;
+  operatingMargins?: number;
+  profitMargins?: number;
+  returnOnEquity?: number;
+  freeCashflow?: number;
+  totalDebt?: number;
+  totalCash?: number;
+  debtToEquity?: number;
+  currentRatio?: number;
+  shortPercentOfFloat?: number;
+  /** Analyst consensus as the upstream labels it, e.g. `buy`, `hold`. */
+  analystRecommendation?: string;
+  analystTargetMean?: number;
+  analystCount?: number;
+  nextEarningsDate?: string;
+  exDividendDate?: string;
 }
 
 /**

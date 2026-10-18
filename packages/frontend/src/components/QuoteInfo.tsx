@@ -5,6 +5,11 @@ import { useStockDetails, useStockSearch } from '@/api/stocks';
 import { useMarketStatus } from '@/api/market-status';
 import { useLiveStore } from '@/stores/liveStore';
 import { usePortfolio } from '@/api/trades';
+import { AnalyzeButton } from '@/components/analysis/AnalyzeButton';
+import { AnalysisPanel } from '@/components/analysis/AnalysisPanel';
+import { CARD_LABEL_CLASS } from '@/components/analysis/styles';
+import { useStockAnalysis } from '@/components/analysis/useStockAnalysis';
+import { capture } from '@/lib/posthog';
 import { ChartCanvas, RANGES } from '@/components/StockChart';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { cn, formatCompactNumber, formatPct, formatUSD, tradingViewUrl } from '@/lib/utils';
@@ -45,6 +50,15 @@ export function QuoteInfo({
   const livePrice = useLiveStore((s) => s.pricesBySymbol[symbol]?.price);
   const marketStatus = useMarketStatus();
   const portfolio = usePortfolio(gameId ?? '');
+  const analysis = useStockAnalysis(symbol);
+
+  const requestAnalysis = () => {
+    capture('stock_analysis_requested', {
+      symbol,
+      surface: variant === 'full' ? 'symbol_page' : 'quote_dialog',
+    });
+    analysis.start();
+  };
 
   const data = details.data;
   const displayPrice = livePrice ?? data?.price;
@@ -121,9 +135,9 @@ export function QuoteInfo({
         </div>
       )}
 
-      {/* Meta row: exchange chip + name (left) · live state + timestamp (right) */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
+      {/* Meta row: exchange chip + name (left) · timestamp + Analyze (right) */}
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex min-h-7 items-center gap-2">
           <span className="inline-flex items-center gap-1.5 rounded-full bg-accent-bg px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wider text-accent">
             <span
               className={cn(
@@ -137,9 +151,16 @@ export function QuoteInfo({
             {data?.companyName ?? symbol}
           </span>
         </div>
-        <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.14em] text-muted">
-          <span>Last updated {lastUpdatedLabel}</span>
-          {data?.stale && <span className="text-loss">· Delayed</span>}
+        <div className="flex flex-wrap items-start justify-end gap-x-3 gap-y-2">
+          <div className="flex h-7 items-center gap-2 text-[10px] uppercase tracking-[0.14em] text-muted">
+            <span>Last updated {lastUpdatedLabel}</span>
+            {data?.stale && <span className="text-loss">· Delayed</span>}
+          </div>
+          <AnalyzeButton
+            status={analysis.status.data ?? null}
+            pending={analysis.busy}
+            onAnalyze={requestAnalysis}
+          />
         </div>
       </div>
 
@@ -193,6 +214,16 @@ export function QuoteInfo({
         <ChartCanvas symbol={symbol} range={range} gameId={gameId} wheelZoom={false} />
       </div>
 
+      {analysis.phase.kind !== 'idle' && (
+        <AnalysisPanel
+          symbol={symbol}
+          phase={analysis.phase}
+          alwaysStacked={variant === 'compact'}
+          onDismiss={analysis.dismiss}
+          onRetry={requestAnalysis}
+        />
+      )}
+
       {holding && <PositionCard holding={holding} />}
 
       <VolumeBar day={data?.dayVolume} avg={data?.avgVolume} />
@@ -236,9 +267,7 @@ function PositionCard({ holding }: { holding: HoldingForCard }) {
   const gain = holding.unrealizedPnL >= 0;
   return (
     <div className="rounded-md border border-hairline-strong bg-panel p-4">
-      <div className="mb-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted">
-        Your position
-      </div>
+      <div className={cn(CARD_LABEL_CLASS, 'mb-3')}>Your position</div>
       <div className="grid grid-cols-3 gap-4">
         <Stat label="Shares" value={String(holding.quantity)} />
         <Stat label="Avg cost" value={formatUSD(holding.avgCostBasis)} />

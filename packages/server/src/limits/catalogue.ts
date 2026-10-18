@@ -159,6 +159,15 @@ export const LIMIT_CATALOGUE = {
     label: 'Account registration',
     per: 'per day from this network',
   },
+  stockAnalyses: {
+    kind: 'quota',
+    configKey: 'LIMIT_STOCK_ANALYSES_PER_DAY',
+    windowMs: DAY,
+    probation: true,
+    overridable: true,
+    label: 'Stock analysis',
+    per: 'per day',
+  },
 } as const satisfies { [K in LimitKey]: LimitDescriptor };
 
 /** True for a known limit key; prototype names like `toString` are rejected. */

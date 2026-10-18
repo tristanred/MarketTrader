@@ -18,6 +18,8 @@ if the audience reaches the EU) starts from an accurate list rather than an arch
 | Limit overrides and their notes | `user_limit_overrides` | Per-user limit exceptions (notes are free text an admin writes about a user) | Until cleared or the account is deleted | Admins |
 | Admin actions on a user | `admin_audit_log` | Accountability for admin writes | Indefinite | Admins |
 | Trading activity | `trades`, `portfolios`, `game_players`, `portfolio_snapshots`, achievements tables | The game | Until the game or account is deleted | Members of the same game |
+| Stocks a user asked to have analysed, and when | `stock_analyses.generated_by` together with `symbol` and `created_at` (one row per generation that reached the model, `ok` or `failed`) | Per-user analysis quota (`LIMIT_STOCK_ANALYSES_PER_DAY`); the global generation ceiling | `ANALYSIS_RETENTION_DAYS` (default 30), then pruned hourly. Account deletion sets `generated_by` to NULL, and the row stays as an anonymous shared cache entry | Admins see only a count: `used` for `stockAnalyses` on `/admin/users/:id/limits`. No API returns another user's rows. The analysis text is shared with everyone, but never who requested it |
+| Stock-analysis analytics | PostHog events keyed by `users.id`: server `stock_analysis_generated` (`symbol`, `verdict`, `confidence`, `model`, `duration_ms`; `observability/analytics.ts`) and browser `stock_analysis_requested` (`symbol`, `surface`; `components/QuoteInfo.tsx`) | Product analytics | PostHog project retention | PostHog project members |
 | Request IP and URL in logs | pino request logs (`remoteAddress`); shipped to the OTLP collector and, at `warn`+, to PostHog Logs | Operations, debugging | Per the collector/PostHog retention settings (outside this repo) | Operators |
 | Analytics identity | PostHog person: `distinctId = users.id`, properties `username`, `groups` (`lib/posthog.ts` identify; server events in `observability/analytics.ts`) | Product analytics | PostHog project retention | PostHog project members |
 | Session replay | PostHog replay (browser) | Debugging UX and errors | PostHog project retention | PostHog project members |
@@ -25,3 +27,8 @@ if the audience reaches the EU) starts from an accurate list rather than an arch
 | Refresh token | HttpOnly cookie on the user's device; not stored server-side | Session | 7 days | The user's browser |
 
 **Not collected:** email address, real name, payment data, precise location.
+
+**Third-party processors receiving no personal data:** OpenRouter (stock analysis, ADR-019) gets
+only public market data for one symbol: the quote, price history features, fundamentals, and the
+company profile. The request carries no user id, username, client IP, or `user` field
+(`providers/llm/openrouter.ts`). OpenRouter sees the server's IP, not the player's.

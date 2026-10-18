@@ -104,6 +104,42 @@ export async function oldestJoinSince(
   return row?.at ? toIsoUtc(row.at) : null;
 }
 
+/** `userId`'s successful analyses since `since`. Failures never count: a model failure costs the user nothing. */
+function chargedAnalysesOf(userId: string, since: string) {
+  const { stockAnalyses } = schema;
+  return and(
+    eq(stockAnalyses.generatedBy, userId),
+    eq(stockAnalyses.status, 'ok'),
+    gte(stockAnalyses.createdAt, since),
+  );
+}
+
+/** Successful stock analyses `userId` generated at or after `since` ({@link toSqlTimestamp} format). */
+export async function countStockAnalysesSince(
+  db: Reader,
+  userId: string,
+  since: string,
+): Promise<number> {
+  const [row] = await db
+    .select({ n: count() })
+    .from(schema.stockAnalyses)
+    .where(chargedAnalysesOf(userId, since));
+  return Number(row?.n ?? 0);
+}
+
+/** ISO UTC time of `userId`'s oldest counted analysis (see {@link countStockAnalysesSince}); null when none. */
+export async function oldestStockAnalysisSince(
+  db: Reader,
+  userId: string,
+  since: string,
+): Promise<string | null> {
+  const [row] = await db
+    .select({ at: min(schema.stockAnalyses.createdAt) })
+    .from(schema.stockAnalyses)
+    .where(chargedAnalysesOf(userId, since));
+  return row?.at ? toIsoUtc(row.at) : null;
+}
+
 /** Seats the user holds in games that are still running (same lag caveat as {@link countActiveGamesOwned}). */
 export async function countActiveGamesJoined(
   db: Reader,

@@ -155,6 +155,13 @@
       "when": 1792103969072,
       "tag": "0021_usage_rollup",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1792281294356,
+      "tag": "0022_stock_analyses",
+      "breakpoints": true
     }
   ]
 }

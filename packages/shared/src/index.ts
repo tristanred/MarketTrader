@@ -9,6 +9,7 @@ export * from './types/leaderboard-history.js';
 export * from './types/limits.js';
 export * from './types/player.js';
 export * from './types/stock.js';
+export * from './types/stock-analysis.js';
 export * from './types/system-settings.js';
 export * from './types/version.js';
 export * from './types/watchlist.js';

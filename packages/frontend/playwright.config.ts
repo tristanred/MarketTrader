@@ -44,6 +44,9 @@ export default defineConfig({
         // E2E specs register many accounts from one IP and create games freely;
         // limits get their own coverage in the server suite.
         LIMITS_ENABLED: 'false',
+        // Stock analysis stays off: a developer's shell key must never make e2e
+        // spend OpenRouter budget. The enabled path is covered by the unit suites.
+        OPENROUTER_API_KEY: '',
       },
     },
     {

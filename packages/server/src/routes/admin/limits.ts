@@ -25,6 +25,7 @@ import {
   countGamesCreatedSince,
   countGamesJoinedSince,
   countRegistrationsSince,
+  countStockAnalysesSince,
   windowStart,
 } from '../../limits/quota-counts.js';
 import {
@@ -184,6 +185,8 @@ export function adminLimitsRoutes(
           windowStart('registrationsPerIp', now.getTime()),
         );
       }
+      case 'stockAnalyses':
+        return countStockAnalysesSince(db, userId, windowStart('stockAnalyses', now.getTime()));
     }
   }
 

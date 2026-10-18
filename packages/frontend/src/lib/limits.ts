@@ -31,6 +31,13 @@ export function formatRetryAfter(seconds: number): string {
   return `in ${n} second${n === 1 ? '' : 's'}`;
 }
 
+/** Seconds from `now` until `iso`, or null when the time is unknown or already past. */
+export function secondsUntil(iso: string | null, now = Date.now()): number | null {
+  if (iso === null) return null;
+  const ms = new Date(iso).getTime() - now;
+  return Number.isFinite(ms) && ms > 0 ? ms / 1000 : null;
+}
+
 /**
  * One readable sentence (or three) for a limit refusal: what was hit, when to
  * retry, and — for accounts still on probation — why their limit is lower.

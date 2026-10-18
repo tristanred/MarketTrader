@@ -651,3 +651,42 @@ export const limitDenialsHourly = sqliteTable(
     index('limit_denials_hourly_hour_idx').on(t.hourStart),
   ],
 );
+
+/**
+ * Append-only record of every LLM stock-analysis attempt that reached the model.
+ * It is both the shared cache (newest `ok` row per symbol, prompt version and
+ * configured model) and the quota ledger: a user's `ok` rows count toward their
+ * daily allowance, and every row counts toward the global generation ceiling.
+ */
+export const stockAnalyses = sqliteTable(
+  'stock_analyses',
+  {
+    id: text('id')
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    symbol: text('symbol').notNull(),
+    /** The configured `ANALYSIS_MODEL` — the cache key. A router may answer with another model. */
+    model: text('model').notNull(),
+    /** Model that actually answered, as OpenRouter reported it. Display only. */
+    reportedModel: text('reported_model'),
+    promptVersion: integer('prompt_version').notNull(),
+    status: text('status', { enum: ['ok', 'failed'] }).notNull(),
+    errorCode: text('error_code'),
+    /** Null after the requester's account is deleted; the row stays valid as shared cache. */
+    generatedBy: text('generated_by').references(() => users.id, { onDelete: 'set null' }),
+    /** JSON `{ verdict, confidence, summary, bullPoints, bearPoints }`; null when failed. Re-validated on read. */
+    result: text('result'),
+    priceAtAnalysis: real('price_at_analysis').notNull(),
+    promptTokens: integer('prompt_tokens'),
+    completionTokens: integer('completion_tokens'),
+    durationMs: integer('duration_ms').notNull(),
+    createdAt: text('created_at')
+      .default(sql`(datetime('now'))`)
+      .notNull(),
+  },
+  (t) => [
+    index('stock_analyses_cache_idx').on(t.symbol, t.promptVersion, t.model, t.createdAt),
+    index('stock_analyses_user_idx').on(t.generatedBy, t.createdAt),
+    index('stock_analyses_created_idx').on(t.createdAt),
+  ],
+);

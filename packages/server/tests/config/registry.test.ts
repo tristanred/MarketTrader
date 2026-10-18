@@ -44,7 +44,7 @@ describe('CONFIG_REGISTRY', () => {
         .filter((key) => isConfigKey(key) && descriptorFor(key)[flag] === true)
         .sort();
     expect(flagged('secret')).toEqual(
-      ['ALPACA_API_KEY_ID', 'ALPACA_API_SECRET_KEY', 'JWT_SECRET', 'POSTHOG_KEY'],
+      ['ALPACA_API_KEY_ID', 'ALPACA_API_SECRET_KEY', 'JWT_SECRET', 'OPENROUTER_API_KEY', 'POSTHOG_KEY'],
     );
     expect(flagged('redactUrl')).toEqual(
       ['DATABASE_URL', 'OTEL_EXPORTER_OTLP_ENDPOINT', 'POSTHOG_HOST'],

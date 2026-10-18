@@ -404,3 +404,90 @@ Two rates are not on the plugin:
 - **Registration IPs are stored.** `users.registration_ip` is personal data; `docs/pii-inventory.md` lists it with everything else the system keeps about people.
 
 **See also:** `docs/design.md` → User limits; `docs/pii-inventory.md`.
+
+---
+
+## ADR-019: Server-Side LLM Stock Analysis Through OpenRouter
+
+**Date:** 2026-10-17
+**Status:** Accepted
+**Amends:** ADR-018 (one quota is counted outside the insert's transaction)
+
+**Decision:** An **Analyze** button on the quote view asks an LLM for a position-independent BUY / HOLD / SELL verdict on a stock. The call goes from the server to OpenRouter (default model `openrouter/free`, live option `ANALYSIS_MODEL`) and never from the browser. The prompt carries no player data, so one result serves every user. It is cached per symbol for `ANALYSIS_CACHE_TTL_MS` (default one day). Each user may generate `LIMIT_STOCK_ANALYSES_PER_DAY` fresh analyses (default 10); viewing a cached one is free. The feature is off unless `OPENROUTER_API_KEY` is set, and always off under `NODE_ENV=test`: `createLlmClient` returns null, like PostHog, so a developer's key can never make the suite spend budget.
+
+**OpenRouter is a new external data processor.** It receives only public market data: the quote, day stats, a computed summary of a year of daily bars, Yahoo fundamentals, and the company profile. The request has no user id, username, IP, or `user` field. OpenRouter sees the server's IP and nothing about the player. `OPENROUTER_API_KEY` joins the `SecretEnvLeak` query's secret list. `LlmError` messages carry only a status and an error code, never the upstream body, headers, or key.
+
+**One append-only table, `stock_analyses`, is both the shared cache and the quota ledger.** It holds one row per attempt that reached the model, `ok` or `failed`. Following ADR-018, quotas count source rows and there is no counter table:
+
+| Question | Rows counted |
+|---|---|
+| Cache hit | Newest `ok` row for (`symbol`, `prompt_version`, configured `model`) inside the TTL |
+| User quota (`stockAnalyses`) | `ok` rows with `generated_by` = the user in the last 24 h. Failures never cost the user |
+| Global ceiling | **All** rows in the last 24 h, plus generations in flight. Each one spent an upstream request |
+
+The key uses the **configured** model, not the one that answered. A live probe of `openrouter/free` on 2026-10-17 reported a different backing model in the response's `model` field on each call, so a key on the reported model would never hit. `reported_model` is stored for display and spans only. Bumping `PROMPT_VERSION` (`services/stock-analysis/prompt.ts`) invalidates the cache with no migration. The `stock-analysis-prune` worker deletes rows hourly, past `max(ANALYSIS_RETENTION_DAYS, TTL, 24 h)`, so it can never delete a live cache entry or refund a quota.
+
+**The global ceiling sits outside the limits resolver on purpose.** `ANALYSIS_MAX_GENERATIONS_PER_DAY` (default 50) is a spend backstop, not a per-user limit. It binds admins, overridden users, and `LIMITS_ENABLED=false`, and the privileged-IP multiplier does not raise it. It plays the role `PRICE_POLLER_MAX_SYMBOLS` plays for the poller. 50 is OpenRouter's daily cap on free models for an account with less than $10 of credits; with $10 or more the cap is 1000. A refusal is 503 `ANALYSIS_CAPACITY` with `Retry-After` set to when the oldest row ages out.
+
+**A slow generation answers 202 and the client polls.** The same smoke test sent the real prompt (about 1450 prompt tokens) through `openrouter/free`. Latency ranged from 13 s to 52 s per call. In one call the router picked a reasoning model that spent 954 tokens thinking despite `effort: 'low'`, and the answer was still good. The first real request timed out at 40 s. The `/api/` location uses nginx's default 60 s `proxy_read_timeout`, so a synchronous request cannot reliably finish in time. The fix belongs in the app, not in the deployment:
+- `POST /stocks/:symbol/analysis` runs every pre-check, then starts or joins the generation and waits at most `ANALYSIS_RESPONSE_WAIT_MS` (default 25 s, admin-panel max 50 s). If the generation settles in that time, the answer is 200 or the mapped error, as before. If not, the answer is **202** `{ status: 'generating', usage }`, and the generation keeps running in the background.
+- `GET …/analysis/status` reports `generating` and `lastFailure`. `lastFailure` is a process-local, bounded record of the key's most recent failure, kept for about 5 minutes. While generating, the client polls status every ~2.5 s. When `cached` turns true it POSTs again, which is a free cache hit. When a failure appears, it shows the error inline.
+- `ANALYSIS_TIMEOUT_MS`, the deadline on the LLM call itself, is no longer tied to the proxy. Its default is 90 s and the admin-panel max is 180 s.
+
+**Per-user concurrency is fail-fast, and the quota is counted with no transaction.** This deviates from the CLAUDE.md rule "count inside the insert's transaction":
+- An in-process `busyUsers` set marks a user from the quota count until their generation settles, not merely until their HTTP request returns. A second fresh generation from that user in the meantime gets **409 `ANALYSIS_IN_PROGRESS`**. If the mark ended with the request, a user could start one background generation per 202 and overshoot their quota.
+- Count, LLM call, and insert run while the user is marked busy, not inside a database transaction. An LLM call can take up to `ANALYSIS_TIMEOUT_MS`. Held inside a transaction, it would keep SQLite's single writer (and a Postgres connection) for that long and stall every trade.
+- In one process, the per-user quota is exact, because the busy mark spans count to insert. Single-flight per key is exact too: the in-flight map is checked and set with no `await` between them. The global ceiling does not overshoot either. Its check adds every *other* busy user — each one is a leader still in its checks or with a generation running — so simultaneous leaders cannot all pass at cap − 1. That errs strict: near the cap, a request can be refused for a peer whose request turns out to be a free cache hit. All of this holds on the single-host deployment (ADR-013, ADR-018).
+
+The order of checks matters. Cache, then joining an in-flight generation for the same key (`source: 'shared'`, free), and only then the breaker, the busy check, and the quotas. A user at their limit, or during an outage, still sees cached results. A same-user request for a symbol that is already in flight joins it instead of getting a 409.
+
+**The LLM client is generic and lives under `providers/llm/`.** `LlmClient.complete({ model, systemPrompt, userPrompt, jsonSchema, maxOutputTokens, timeoutMs, signal })` knows nothing about stocks. `OpenRouterClient` is its only implementation, and it maps every failure to one `LlmError { code, scope, retryAfterMs, reachedModel }`, including the errors OpenRouter reports inside an HTTP 200. A later LLM feature reuses the client unchanged. Model output is untrusted: a tolerant JSON extraction, then Zod. The JSON Schema sent upstream is only a hint.
+
+**Transport is the official `@openrouter/sdk`, confined to `providers/llm/`** (CodeQL `llm-sdk-confinement`, which also covers `openai` and `@anthropic-ai/sdk`). It replaced a hand-written `fetch` client, for typed requests and errors and for app attribution. Its defaults are wrong for this use in four places, and the client overrides each one:
+- **Retries off** (`retryConfig: { strategy: 'none' }`). The default backs off on every 5xx for up to an hour, and each retry spends free-tier budget the cooldown and the breaker already ration.
+- **Attribution needs a referer.** OpenRouter keys an app on `HTTP-Referer`; a title alone (`X-OpenRouter-Title`, or the legacy `X-Title` the first client sent) showed as "Unknown" in the dashboard. The client sends `appTitle: 'MarketTrader'` and `httpReferer: CORS_ORIGIN`, the frontend's public URL, which production already refuses to leave at the dev default.
+- **The SDK reads `process.env` itself.** `server: 'production'` is pinned so `OPENROUTER_BASE_URL` cannot redirect the key, and a silent `debugLogger` stops `OPENROUTER_DEBUG` from turning on its console logger, which prints secrets.
+- **Validation is strict.** The SDK rejects a 200 that misses a field or carries only an `error` object, which OpenRouter does. The client re-reads such a body raw, so classification is unchanged. A per-call `signal` overrides the SDK's `timeoutMs`, so the deadline and the shutdown signal are combined into one signal.
+
+Its postinstall script, which calls openrouter.ai to check model-name types, is disabled in `pnpm-workspace.yaml`.
+
+**Request shaping comes from the same live probe.**
+- Each request sends `reasoning: { effort: 'low' }` and `max_tokens: 4000`. With 1500 tokens and default effort, `openrouter/free` routed to a reasoning model that spent the whole budget thinking and returned `content: null` with `finish_reason: "length"`. At low effort it answered clean JSON in about 13 s.
+- Reasoning is not excluded. Another free model (`poolside/laguna-xs-2.1:free`) returned empty `content` with `finish_reason: "stop"`, so when `content` holds no JSON the client takes the last JSON object in `reasoning`.
+- No `provider.require_parameters`: with the free router it can filter out every candidate model.
+- One request and no retries, because every retry spends another unit of the free daily budget.
+
+**A process-wide breaker pauses the feature for account-level failures** (`services/stock-analysis/breaker.ts`). Without it, every user would find the same outage by spending a request on it. Cached results keep working while it is open, and the status endpoint reports `available: false` with a `retryAt`. An upstream delay (`Retry-After`, or a spend limit's `resets_at`) wins over the default, and no pause lasts more than 24 h:
+
+| `LlmError` code | Upstream | Default pause |
+|---|---|---|
+| `AUTH` | 401, or a 403 that is neither a budget nor a moderation block (a 401 body read `{"error":{"message":"User not found.","code":401}}`) | 1 h |
+| `NO_CREDITS` | 402 | 15 min |
+| `SPEND_LIMIT` | 403 with budget metadata | until `resets_at`, else 1 h |
+| `RATE_LIMITED` | 429, or a 402 from the in-flight budget | `Retry-After`, else 60 s |
+| `BAD_REQUEST` | 400, 404 | 15 min, **for the configured model only**: changing `ANALYSIS_MODEL` lifts it |
+
+Account-wide and model-scoped pauses are tracked separately, so neither shortens or lifts the other. A 429 whose `limit_source` is `upstream_provider_shared_pool` names one free model's saturated pool, not the account. That 429 is a request-scoped `UPSTREAM_ERROR` and never trips the breaker: the router picks another model next time.
+
+Request-scoped failures (`TIMEOUT`, `TRUNCATED`, `INVALID_OUTPUT`, `REFUSED`, `UPSTREAM_ERROR`) write a `failed` row when the model was reached. They put that key on a 60 s cooldown (`FAILURE_COOLDOWN_MS`) for every user, and they charge nobody. Trips are counted by `markettrader.analysis.breaker.trips{reason}`.
+
+**Alternatives considered:**
+- **Two tables (a cache and a usage ledger)** — rejected. They record the same event twice and can drift. One row per attempt answers all three counting questions.
+- **Reserving a `pending` row before the call** — rejected. It would make the quota atomic across processes, but a crash mid-call leaves a row that charges the user and blocks the key until something sweeps it. On one process the busy set gives the same exactness with nothing to clean up.
+- **Queueing a user's second request on `KeyedLock`** — rejected. A queued request would wait for the first generation, then run its own, far past nginx's 60 s read timeout. The client would see a 504 while the server still spent the call.
+- **Raising `proxy_read_timeout` on `/api/`** — rejected. It is deployment configuration outside this repo, it applies to every API route, and it is fragile: any other proxy in the path brings its own idle timeout, and a slower model breaks it again.
+- **Staying synchronous with a short LLM timeout** — rejected. Slow free models would fail, not just answer late, and each failure still spends a unit of the daily budget.
+- **Pinning a fast, specific model** — not a design fix. An operator can do it through `ANALYSIS_MODEL`, but the design must hold up on the free router's latency.
+- **Pushing the result over SSE or the WebSocket** — rejected. It needs more machinery than polling a cheap status endpoint every few seconds, and both WebSocket routes carry game and price events, not per-user results.
+- **Calling OpenRouter from the browser** — rejected. It exposes the key, or forces a per-user OAuth flow, and puts the cache, the quota, and the ceiling outside the server's control. It would also add an origin to the CSP.
+- **Web-search grounding** (`:online` models, plugins) — rejected for now. It costs more per call, and its results are nondeterministic, so a shared day-long cache would freeze one arbitrary search.
+
+**Consequences:**
+- **Process-local state.** The busy set, the in-flight map, `lastFailure`, the breaker, and the ceiling's in-flight term live in one process. A restart closes the breaker and drops in-flight calls. Their rows are never written, so they cost the user nothing.
+- **No stale fallback.** While the breaker is open, an analysis whose TTL has passed is not served as stale. The user sees "temporarily unavailable" until it closes.
+- **Behavioural data is stored.** `stock_analyses.generated_by` together with `symbol` records which stocks a user asked about. Retention is `ANALYSIS_RETENTION_DAYS` (default 30), and account deletion sets `generated_by` to NULL so the row stays as shared cache. `docs/pii-inventory.md` lists it.
+- **Deployment.** The host needs `OPENROUTER_API_KEY` in its service environment and outbound HTTPS to `openrouter.ai`. No proxy route, timeout, CSP, or `/relay` change is needed, as long as `ANALYSIS_RESPONSE_WAIT_MS` stays under the proxy's `proxy_read_timeout`.
+
+**Revisit when:** the deployment runs more than one server process (the busy set, single-flight, `lastFailure`, the breaker, and the ceiling then need a shared store or `pending`-row reservations), or the default moves to a paid model (the ceiling becomes a cost control and should probably be priced in tokens, not calls).
+
+**See also:** `docs/design.md` → Stock analysis; `docs/superpowers/specs/2026-10-17-stock-analysis-design.md`.

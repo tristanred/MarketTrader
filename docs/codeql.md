@@ -76,7 +76,7 @@ Status is as of the commit that introduced the pack. "Holds" means zero results.
 | Query id | Invariant | Status |
 |---|---|---|
 | `access-token-leak` | Access/refresh tokens travel only in the Authorization header, the WS subprotocol offer, the refresh cookie or the auth response — never logs, telemetry, close reasons, URLs, web storage or the `handleProtocols` echo | Holds |
-| `secret-env-leak` | `JWT_SECRET`, Alpaca keys, `POSTHOG_KEY`, `DATABASE_URL` reach only their consuming client | Holds |
+| `secret-env-leak` | `JWT_SECRET`, Alpaca keys, `OPENROUTER_API_KEY`, `POSTHOG_KEY`, `DATABASE_URL` reach only their consuming client | Holds |
 | `plaintext-password-leak` | Passwords reach only argon2 (and the seeded admin password only its one `console.log`) | Holds |
 | `refresh-token-leak` | The refresh token is delivered only via `setCookie('refreshToken', …)` | Holds |
 | `refresh-cookie-not-httponly` | The refresh cookie is set with `httpOnly: true` | Holds |
@@ -146,6 +146,7 @@ Status is as of the commit that introduced the pack. "Holds" means zero results.
 | `vite-env-read-confinement` | `VITE_POSTHOG_*`/`VITE_OTEL_*` each read in one module | Holds |
 | `stock-data-library-confinement` | Market-data libraries only under `providers/` | Holds |
 | `server-outbound-http-confinement` | Raw outbound HTTP only in `providers/` and `observability/` | Holds |
+| `llm-sdk-confinement` | LLM SDKs (`@openrouter/sdk`, `openai`, `@anthropic-ai/sdk`) only under `providers/llm/` | Holds |
 | `otel-import-confinement` | OTel SDK packages only in `observability/otel.ts` | Holds |
 | `frontend-otel-static-import` | The frontend OTel module is only loaded with dynamic `import()` | Holds |
 | `build-global-confinement` | Build-time globals only in `build-info.ts`, behind `typeof` on the server | Holds |

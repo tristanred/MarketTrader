@@ -1,11 +1,16 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { eq } from 'drizzle-orm';
-import { CachedProvider } from '../../src/providers/cached-provider.js';
+import {
+  CachedProvider,
+  FUNDAMENTALS_CACHE_MAX_ENTRIES,
+  FUNDAMENTALS_CACHE_TTL_MS,
+} from '../../src/providers/cached-provider.js';
 import { StockProviderError } from '../../src/providers/index.js';
 import { createTestDb } from '../helpers/app.js';
 import { schema } from '../../src/db/index.js';
 import type { Db } from '../../src/db/index.js';
 import type { StockProvider } from '../../src/providers/index.js';
+import type { StockFundamentals } from '../../src/providers/interface.js';
 import type {
   StockDetails,
   StockHistoryBar,
@@ -421,5 +426,94 @@ describe('CachedProvider.getMarketMovers', () => {
     ]);
     await cached.getMarketMovers?.('losers', 5);
     expect(calls).toBe(2);
+  });
+});
+
+describe('CachedProvider.getFundamentals', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /** Wraps a fake whose fundamentals come from `impl`; `calls` records every upstream symbol. */
+  async function withFundamentals(
+    impl: (symbol: string) => Promise<StockFundamentals>,
+  ): Promise<{ cached: CachedProvider; calls: string[] }> {
+    const calls: string[] = [];
+    const inner = new FakeInner() as FakeInner & Pick<StockProvider, 'getFundamentals'>;
+    inner.getFundamentals = (symbol) => {
+      calls.push(symbol);
+      return impl(symbol);
+    };
+    const db = await createTestDb();
+    return { cached: new CachedProvider(db, inner, RuntimeConfig.fromEnvironment()), calls };
+  }
+
+  it('is absent when the wrapped provider has no fundamentals', async () => {
+    const db = await createTestDb();
+    const cached = new CachedProvider(db, new FakeInner(), RuntimeConfig.fromEnvironment());
+    expect(cached.getFundamentals).toBeUndefined();
+  });
+
+  it('serves a repeat within the TTL from memory and refetches after it', async () => {
+    const { cached, calls } = await withFundamentals(async (symbol) => ({ sector: symbol }));
+    const now = Date.now();
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(now);
+
+    expect(await cached.getFundamentals?.('AAPL')).toEqual({ sector: 'AAPL' });
+    clock.mockReturnValue(now + FUNDAMENTALS_CACHE_TTL_MS - 1);
+    expect(await cached.getFundamentals?.('AAPL')).toEqual({ sector: 'AAPL' });
+    expect(calls).toEqual(['AAPL']);
+
+    clock.mockReturnValue(now + FUNDAMENTALS_CACHE_TTL_MS);
+    await cached.getFundamentals?.('AAPL');
+    expect(calls).toEqual(['AAPL', 'AAPL']);
+  });
+
+  it('does not cache failures', async () => {
+    let fail = true;
+    const { cached, calls } = await withFundamentals(async () => {
+      if (fail) throw new StockProviderError('RATE_LIMITED', 'mock');
+      return { sector: 'Technology' };
+    });
+
+    await expect(cached.getFundamentals?.('AAPL')).rejects.toMatchObject({ code: 'RATE_LIMITED' });
+    fail = false;
+    expect(await cached.getFundamentals?.('AAPL')).toEqual({ sector: 'Technology' });
+    expect(calls).toEqual(['AAPL', 'AAPL']);
+  });
+
+  it(`evicts the oldest symbol past ${FUNDAMENTALS_CACHE_MAX_ENTRIES} entries`, async () => {
+    const { cached, calls } = await withFundamentals(async (symbol) => ({ sector: symbol }));
+    for (let i = 0; i < FUNDAMENTALS_CACHE_MAX_ENTRIES; i++) {
+      await cached.getFundamentals?.(`S${i}`);
+    }
+
+    await cached.getFundamentals?.(`S${FUNDAMENTALS_CACHE_MAX_ENTRIES}`);
+    calls.length = 0;
+    await cached.getFundamentals?.('S1');
+    expect(calls).toEqual([]);
+    await cached.getFundamentals?.('S0');
+    expect(calls).toEqual(['S0']);
+  });
+
+  it('refreshing an expired symbol at the cap does not evict a live one', async () => {
+    const { cached, calls } = await withFundamentals(async (symbol) => ({ sector: symbol }));
+    const now = Date.now();
+    const later = now + FUNDAMENTALS_CACHE_TTL_MS;
+    // LIVE is the oldest insertion but still fresh at `later`; EXPIRED is not.
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(later);
+    await cached.getFundamentals?.('LIVE');
+    clock.mockReturnValue(now);
+    await cached.getFundamentals?.('EXPIRED');
+    clock.mockReturnValue(later);
+    for (let i = 2; i < FUNDAMENTALS_CACHE_MAX_ENTRIES; i++) {
+      await cached.getFundamentals?.(`S${i}`);
+    }
+
+    calls.length = 0;
+    await cached.getFundamentals?.('EXPIRED');
+    expect(calls).toEqual(['EXPIRED']);
+    await cached.getFundamentals?.('LIVE');
+    expect(calls).toEqual(['EXPIRED']);
   });
 });

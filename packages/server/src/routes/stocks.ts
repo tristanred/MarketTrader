@@ -7,8 +7,10 @@ import type { StockProvider } from '../providers/index.js';
 import { RANGE_BAR_SECONDS, StockProviderError } from '../providers/index.js';
 import type { ConfigReader } from '../config/runtime-config.js';
 import { setRetryAfter } from './retry-after.js';
+import { sendStockProviderError } from './stock-provider-error.js';
 
-const symbolParamsSchema = z.object({
+/** `:symbol` route param: 1–10 chars, upper-cased. Shared with the stock-analysis routes. */
+export const symbolParamsSchema = z.object({
   symbol: z.string().min(1).max(10).transform((s) => s.toUpperCase()),
 });
 const searchQuerySchema = z.object({ q: z.string().min(1).max(50) });
@@ -115,14 +117,7 @@ export function stockRoutes(_db: Db, provider: StockProvider, config: ConfigRead
         const details = await provider.getDetails(request.params.symbol);
         return reply.status(200).send(details);
       } catch (err) {
-        if (err instanceof StockProviderError) {
-          if (err.code === 'SYMBOL_NOT_FOUND') return reply.status(404).send({ error: err.message });
-          if (err.code === 'RATE_LIMITED') {
-            setRetryAfter(reply, config);
-            return reply.status(429).send({ code: err.code, message: err.message });
-          }
-          return reply.status(502).send({ error: err.message });
-        }
+        if (err instanceof StockProviderError) return sendStockProviderError(reply, err, config);
         throw err;
       }
     });
@@ -139,14 +134,7 @@ export function stockRoutes(_db: Db, provider: StockProvider, config: ConfigRead
         const quote = await provider.getQuote(request.params.symbol);
         return reply.status(200).send(quote);
       } catch (err) {
-        if (err instanceof StockProviderError) {
-          if (err.code === 'SYMBOL_NOT_FOUND') return reply.status(404).send({ error: err.message });
-          if (err.code === 'RATE_LIMITED') {
-            setRetryAfter(reply, config);
-            return reply.status(429).send({ code: err.code, message: err.message });
-          }
-          return reply.status(502).send({ error: err.message });
-        }
+        if (err instanceof StockProviderError) return sendStockProviderError(reply, err, config);
         throw err;
       }
     });

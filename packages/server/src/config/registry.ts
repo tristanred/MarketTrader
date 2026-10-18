@@ -7,6 +7,7 @@ import {
   VALID_MARKET_STATUS_PROVIDERS,
   VALID_NODE_ENVS,
   VALID_PROVIDERS,
+  validateModelSlug,
   wasSetInEnvironment,
 } from '../env.js';
 
@@ -52,6 +53,7 @@ export interface RestartDescriptor extends DescriptorBase {
 export type ConfigDescriptor = LiveDescriptor | RestartDescriptor;
 
 const PROVIDER_BOOT = 'The provider client is constructed once at startup.';
+const LLM_BOOT = 'The LLM client is constructed once at startup.';
 const OTEL_BOOT = 'The OpenTelemetry SDK and log transport start before the app is built.';
 const POSTHOG_BOOT = 'The PostHog client and log transport start before the app is built.';
 
@@ -171,6 +173,37 @@ export const CONFIG_REGISTRY = {
     description: 'Stale trades using a cached price older than this are rejected anyway.',
   },
 
+  // ── stock analysis ──────────────────────────────────────────────────────
+  OPENROUTER_API_KEY: {
+    category: 'analysis', kind: 'string', secret: true, mutability: 'restart',
+    description: 'OpenRouter API key. Unset turns stock analysis off and hides the Analyze button.',
+    restartReason: LLM_BOOT,
+  },
+  ANALYSIS_MODEL: {
+    category: 'analysis', kind: 'string', mutability: 'live', validate: validateModelSlug,
+    description: 'OpenRouter model id. Part of the cache key: a change starts a fresh cache.',
+  },
+  ANALYSIS_CACHE_TTL_MS: {
+    category: 'analysis', kind: 'integer', unit: 'ms', mutability: 'live', min: MINUTE, max: 7 * DAY,
+    description: 'How long one analysis is shared with every user before it is regenerated.',
+  },
+  ANALYSIS_TIMEOUT_MS: {
+    category: 'analysis', kind: 'integer', unit: 'ms', mutability: 'live', min: 5 * SECOND, max: 3 * MINUTE,
+    description: 'Abort an LLM call after this long. Runs in the background past the HTTP response, so it is not bound by the proxy.',
+  },
+  ANALYSIS_RESPONSE_WAIT_MS: {
+    category: 'analysis', kind: 'integer', unit: 'ms', mutability: 'live', min: SECOND, max: 50 * SECOND,
+    description: 'How long an analyze request waits before answering 202 and letting the client poll. Keep under the proxy read timeout (nginx default 60 s).',
+  },
+  ANALYSIS_MAX_GENERATIONS_PER_DAY: {
+    category: 'analysis', kind: 'integer', mutability: 'live', min: 1, max: 100_000,
+    description: 'LLM calls allowed in any rolling 24 hours, failures included. Binds admins too.',
+  },
+  ANALYSIS_RETENTION_DAYS: {
+    category: 'analysis', kind: 'integer', mutability: 'live', min: 8, max: 365,
+    description: 'Days analysis rows are kept. Must outlive the cache TTL and the 24 h quota window.',
+  },
+
   // ── market hours ────────────────────────────────────────────────────────
   MARKET_STATUS_PROVIDER: {
     category: 'market-hours', kind: 'enum', options: VALID_MARKET_STATUS_PROVIDERS, mutability: 'restart',
@@ -247,7 +280,7 @@ export const CONFIG_REGISTRY = {
   LIMITS_ENABLED: {
     category: 'limits', kind: 'boolean', mutability: 'live',
     description:
-      'Master switch for per-user limits. Off lifts every limit below; the fixed per-IP caps on login, register and stock lookups stay.',
+      'Master switch for per-user limits. Off lifts every limit below; the fixed per-IP caps on login, register and stock lookups stay, as does the global ANALYSIS_MAX_GENERATIONS_PER_DAY.',
   },
   LIMITS_MATURITY_DAYS: {
     category: 'limits', kind: 'integer', mutability: 'live', min: 0, max: 365,
@@ -313,6 +346,10 @@ export const CONFIG_REGISTRY = {
   LIMIT_REGISTRATIONS_PER_IP_PER_DAY: {
     category: 'limits', kind: 'integer', mutability: 'live', min: 1, max: 10_000,
     description: 'Accounts that may be registered from one IP in any rolling 24 hours.',
+  },
+  LIMIT_STOCK_ANALYSES_PER_DAY: {
+    category: 'limits', kind: 'integer', mutability: 'live', min: 1, max: 1_000,
+    description: 'Fresh stock analyses one user may generate in any rolling 24 hours. Viewing a cached one is free.',
   },
 
   // ── websocket ───────────────────────────────────────────────────────────

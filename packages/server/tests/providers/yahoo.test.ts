@@ -339,3 +339,265 @@ describe('YahooProvider.getMarketMovers', () => {
     });
   });
 });
+
+describe('YahooProvider.getFundamentals', () => {
+  function withQuoteSummary(quoteSummary: unknown): YahooProvider {
+    const provider = new YahooProvider(RuntimeConfig.fromEnvironment());
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (provider as any).client = { quoteSummary };
+    return provider;
+  }
+
+  const DAY_MS = 86_400_000;
+
+  function fullSummary() {
+    return {
+      summaryDetail: {
+        currency: 'USD',
+        marketCap: 3_000_000_000_000,
+        trailingPE: 30.5,
+        forwardPE: 27.1,
+        beta: 1.2,
+        dividendYield: 0.0045,
+        payoutRatio: 0.15,
+        fiftyTwoWeekLow: 160,
+        fiftyTwoWeekHigh: 240,
+        fiftyDayAverage: 220,
+        twoHundredDayAverage: 205,
+        priceToSalesTrailing12Months: 7.8,
+        exDividendDate: new Date('2026-08-11T00:00:00Z'),
+      },
+      defaultKeyStatistics: {
+        forwardPE: 99,
+        beta: 99,
+        profitMargins: 0.99,
+        pegRatio: 2.1,
+        priceToBook: 45.2,
+        trailingEps: 6.5,
+        forwardEps: 7.3,
+        shortPercentOfFloat: 0.007,
+      },
+      financialData: {
+        financialCurrency: 'USD',
+        totalRevenue: 390_000_000_000,
+        revenueGrowth: 0.06,
+        earningsGrowth: 0.11,
+        grossMargins: 0.46,
+        operatingMargins: 0.31,
+        profitMargins: 0.24,
+        returnOnEquity: 1.5,
+        freeCashflow: 100_000_000_000,
+        totalDebt: 100_000_000_000,
+        totalCash: 65_000_000_000,
+        debtToEquity: 151.9,
+        currentRatio: 0.87,
+        recommendationKey: 'buy',
+        targetMeanPrice: 250,
+        numberOfAnalystOpinions: 38,
+      },
+      assetProfile: {
+        sector: 'Technology',
+        industry: 'Consumer Electronics',
+        longBusinessSummary: 'Apple Inc. designs smartphones.',
+        fullTimeEmployees: 164_000,
+      },
+      calendarEvents: {
+        earnings: { earningsDate: [new Date(Date.now() + 10 * DAY_MS)] },
+        exDividendDate: new Date('2026-08-12T00:00:00Z'),
+      },
+    };
+  }
+
+  it('maps every module field, preferring summaryDetail/financialData to key stats', async () => {
+    const summary = fullSummary();
+    const quoteSummary = vi.fn().mockResolvedValue(summary);
+    const f = await withQuoteSummary(quoteSummary).getFundamentals('AAPL');
+
+    expect(quoteSummary).toHaveBeenCalledWith('AAPL', {
+      modules: [
+        'summaryDetail',
+        'defaultKeyStatistics',
+        'financialData',
+        'assetProfile',
+        'calendarEvents',
+      ],
+    });
+    expect(f).toEqual({
+      sector: 'Technology',
+      industry: 'Consumer Electronics',
+      businessSummary: 'Apple Inc. designs smartphones.',
+      employees: 164_000,
+      marketCap: 3_000_000_000_000,
+      trailingPE: 30.5,
+      forwardPE: 27.1,
+      pegRatio: 2.1,
+      priceToBook: 45.2,
+      priceToSales: 7.8,
+      beta: 1.2,
+      trailingEps: 6.5,
+      forwardEps: 7.3,
+      dividendYield: 0.0045,
+      payoutRatio: 0.15,
+      fiftyTwoWeekLow: 160,
+      fiftyTwoWeekHigh: 240,
+      fiftyDayAverage: 220,
+      twoHundredDayAverage: 205,
+      totalRevenue: 390_000_000_000,
+      revenueGrowth: 0.06,
+      earningsGrowth: 0.11,
+      grossMargins: 0.46,
+      operatingMargins: 0.31,
+      profitMargins: 0.24,
+      returnOnEquity: 1.5,
+      freeCashflow: 100_000_000_000,
+      totalDebt: 100_000_000_000,
+      totalCash: 65_000_000_000,
+      debtToEquity: expect.closeTo(1.519, 10),
+      currentRatio: 0.87,
+      shortPercentOfFloat: 0.007,
+      analystRecommendation: 'buy',
+      analystTargetMean: 250,
+      analystCount: 38,
+      nextEarningsDate: summary.calendarEvents.earnings.earningsDate[0]!.toISOString(),
+      exDividendDate: '2026-08-12T00:00:00.000Z',
+    });
+  });
+
+  it('falls back to key statistics and drops missing, non-finite, and blank values', async () => {
+    const f = await withQuoteSummary(
+      vi.fn().mockResolvedValue({
+        summaryDetail: { trailingPE: Number.NaN, marketCap: Infinity },
+        defaultKeyStatistics: { forwardPE: 20, beta: 0.9, profitMargins: 0.1 },
+        financialData: { recommendationKey: 'none' },
+        assetProfile: { sector: '  ', industry: 'Banks' },
+      }),
+    ).getFundamentals('JPM');
+
+    expect(f).toEqual({ industry: 'Banks', forwardPE: 20, beta: 0.9, profitMargins: 0.1 });
+  });
+
+  it('drops money in a non-USD currency but keeps the currency-free ratios', async () => {
+    const summary = fullSummary();
+    summary.financialData.financialCurrency = 'TWD';
+    const f = await withQuoteSummary(vi.fn().mockResolvedValue(summary)).getFundamentals('TSM');
+
+    expect(f.totalRevenue).toBeUndefined();
+    expect(f.freeCashflow).toBeUndefined();
+    expect(f.totalDebt).toBeUndefined();
+    expect(f.totalCash).toBeUndefined();
+    expect(f.trailingEps).toBeUndefined();
+    expect(f.marketCap).toBe(3_000_000_000_000);
+    expect(f.grossMargins).toBe(0.46);
+
+    summary.summaryDetail.currency = 'EUR';
+    const g = await withQuoteSummary(vi.fn().mockResolvedValue(summary)).getFundamentals('ASML.AS');
+    expect(g.marketCap).toBeUndefined();
+    expect(g.fiftyTwoWeekHigh).toBeUndefined();
+    expect(g.analystTargetMean).toBeUndefined();
+    expect(g.trailingPE).toBe(30.5);
+  });
+
+  it('truncates a long business summary on a word boundary with an ellipsis', async () => {
+    const long = Array.from({ length: 200 }, (_, i) => `word${i}`).join(' \n ');
+    const f = await withQuoteSummary(
+      vi.fn().mockResolvedValue({ assetProfile: { longBusinessSummary: long } }),
+    ).getFundamentals('AAPL');
+
+    expect(f.businessSummary!.length).toBeLessThanOrEqual(600);
+    expect(f.businessSummary!.endsWith('…')).toBe(true);
+    expect(f.businessSummary).toMatch(/^word0 word1 /);
+    expect(f.businessSummary).toMatch(/ word\d+…$/);
+  });
+
+  it('normalises Date, epoch s/ms, ISO strings and {raw} wrappers to ISO UTC', async () => {
+    const iso = '2026-11-05T21:00:00.000Z';
+    const ms = Date.parse(iso);
+    const cases: unknown[] = [new Date(ms), ms / 1000, ms, iso, { raw: ms / 1000, fmt: 'x' }];
+    for (const exDividendDate of cases) {
+      const f = await withQuoteSummary(
+        vi.fn().mockResolvedValue({ calendarEvents: { exDividendDate, earnings: {} } }),
+      ).getFundamentals('AAPL');
+      expect(f.exDividendDate).toBe(iso);
+    }
+
+    const garbage = await withQuoteSummary(
+      vi.fn().mockResolvedValue({ calendarEvents: { exDividendDate: 'soon', earnings: {} } }),
+    ).getFundamentals('AAPL');
+    expect(garbage.exDividendDate).toBeUndefined();
+  });
+
+  it('picks the earliest earnings date that is not in the past, else the first', async () => {
+    const past = new Date(Date.now() - 30 * DAY_MS);
+    const near = new Date(Date.now() + 5 * DAY_MS);
+    const far = new Date(Date.now() + 9 * DAY_MS);
+    const withEarnings = (earningsDate: Date[]) =>
+      withQuoteSummary(vi.fn().mockResolvedValue({ calendarEvents: { earnings: { earningsDate } } }));
+
+    const upcoming = await withEarnings([past, far, near]).getFundamentals('AAPL');
+    expect(upcoming.nextEarningsDate).toBe(near.toISOString());
+
+    const older = new Date(Date.now() - 60 * DAY_MS);
+    const allPast = await withEarnings([past, older]).getFundamentals('AAPL');
+    expect(allPast.nextEarningsDate).toBe(past.toISOString());
+  });
+
+  it('recovers a half-coerced payload from FailedYahooValidationError', async () => {
+    const earnings = Math.floor((Date.now() + 3 * DAY_MS) / 1000);
+    const validationErr = Object.assign(new Error('Failed Yahoo Schema validation'), {
+      name: 'FailedYahooValidationError',
+      result: {
+        summaryDetail: { marketCap: { raw: 5e9, fmt: '5B' }, trailingPE: {}, currency: 'USD' },
+        financialData: { totalRevenue: 1e9, financialCurrency: 'USD' },
+        calendarEvents: { earnings: { earningsDate: [earnings] }, exDividendDate: {} },
+      },
+    });
+    const provider = withQuoteSummary(vi.fn().mockRejectedValue(validationErr));
+    const f = await provider.getFundamentals('AAPL');
+
+    expect(f).toEqual({
+      marketCap: 5e9,
+      totalRevenue: 1e9,
+      nextEarningsDate: new Date(earnings * 1000).toISOString(),
+    });
+  });
+
+  it('maps a validation error without a recoverable result to PROVIDER_ERROR', async () => {
+    const validationErr = Object.assign(new Error('Failed Yahoo Schema validation'), {
+      name: 'FailedYahooValidationError',
+      result: null,
+    });
+    await expect(
+      withQuoteSummary(vi.fn().mockRejectedValue(validationErr)).getFundamentals('AAPL'),
+    ).rejects.toMatchObject({ code: 'PROVIDER_ERROR' });
+  });
+
+  it('maps a 429 to RATE_LIMITED and trips the backoff', async () => {
+    const quoteSummary = vi.fn().mockRejectedValue(new Error('Too Many Requests'));
+    const provider = withQuoteSummary(quoteSummary);
+    await expect(provider.getFundamentals('AAPL')).rejects.toMatchObject({ code: 'RATE_LIMITED' });
+    await expect(provider.getFundamentals('MSFT')).rejects.toMatchObject({ code: 'RATE_LIMITED' });
+    expect(quoteSummary).toHaveBeenCalledTimes(1);
+  });
+
+  it('maps an unknown symbol to SYMBOL_NOT_FOUND', async () => {
+    const notFound = new Error('Quote not found for symbol: ZZZZ');
+    await expect(
+      withQuoteSummary(vi.fn().mockRejectedValue(notFound)).getFundamentals('ZZZZ'),
+    ).rejects.toMatchObject({ code: 'SYMBOL_NOT_FOUND' });
+
+    const http404 = Object.assign(new Error('Not Found'), { name: 'HTTPError', code: 404 });
+    await expect(
+      withQuoteSummary(vi.fn().mockRejectedValue(http404)).getFundamentals('ZZZZ'),
+    ).rejects.toMatchObject({ code: 'SYMBOL_NOT_FOUND' });
+
+    await expect(
+      withQuoteSummary(vi.fn().mockResolvedValue({})).getFundamentals('ZZZZ'),
+    ).rejects.toMatchObject({ code: 'SYMBOL_NOT_FOUND' });
+  });
+
+  it('maps other failures to PROVIDER_ERROR', async () => {
+    await expect(
+      withQuoteSummary(vi.fn().mockRejectedValue(new Error('boom'))).getFundamentals('AAPL'),
+    ).rejects.toMatchObject({ code: 'PROVIDER_ERROR' });
+  });
+});

@@ -2,8 +2,8 @@
 export interface LlmRequest {
   /** Upstream model id, e.g. `openrouter/free`. */
   model: string;
-  system: string;
-  user: string;
+  systemPrompt: string;
+  userPrompt: string;
   /** JSON Schema the answer must match. Advisory: not every model honours it. */
   jsonSchema: { name: string; schema: Record<string, unknown> };
   /** Covers reasoning tokens too, so it must leave room for a reasoning model to answer. */

@@ -75,7 +75,7 @@ routes/stock-analysis.ts          HTTP, Zod params, error → status mapping
 ```
 
 - **`fetch` lives only in `providers/llm/`** — `ServerOutboundHttpConfinement.ql` allows `providers/` and `observability/` only.
-- **The LLM client is generic** (`complete({ model, system, user, jsonSchema, maxOutputTokens, timeoutMs })` → `{ content: unknown, reportedModel, usage, finishReason }`). Model output is validated with Zod in the service. A future LLM feature reuses the client unchanged; tests substitute a `FakeLlmClient` injected through `buildApp({ llmClient })` (`undefined` = from env, `null` = disabled).
+- **The LLM client is generic** (`complete({ model, systemPrompt, userPrompt, jsonSchema, maxOutputTokens, timeoutMs })` → `{ content: unknown, reportedModel, usage, finishReason }`). Model output is validated with Zod in the service. A future LLM feature reuses the client unchanged; tests substitute a `FakeLlmClient` injected through `buildApp({ llmClient })` (`undefined` = from env, `null` = disabled).
 
 ### Data model — `stock_analyses` (both dialects)
 

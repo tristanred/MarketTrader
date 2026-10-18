@@ -8,8 +8,8 @@ const APP_URL = 'https://markettrader.example';
 
 const request: LlmRequest = {
   model: 'openrouter/free',
-  system: 'system prompt',
-  user: 'user prompt',
+  systemPrompt: 'system prompt',
+  userPrompt: 'user prompt',
   jsonSchema: { name: 'stock_analysis', schema: { type: 'object' } },
   maxOutputTokens: 4000,
   timeoutMs: 5_000,

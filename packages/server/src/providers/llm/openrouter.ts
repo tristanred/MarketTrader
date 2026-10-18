@@ -113,8 +113,8 @@ function chatRequest(req: LlmRequest): ChatRequest {
   return {
     model: req.model,
     messages: [
-      { role: 'system', content: req.system },
-      { role: 'user', content: req.user },
+      { role: 'system', content: req.systemPrompt },
+      { role: 'user', content: req.userPrompt },
     ],
     temperature: req.temperature ?? 0.2,
     maxTokens: req.maxOutputTokens,

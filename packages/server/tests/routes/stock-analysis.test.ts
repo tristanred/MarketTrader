@@ -119,7 +119,7 @@ describe('stock analysis routes', () => {
       const [row] = await rows();
       expect(row).toMatchObject({ symbol: 'AAPL', status: 'ok', generatedBy: u.userId, model: 'openrouter/free' });
       expect(llm.calls[0]!.model).toBe('openrouter/free');
-      expect(llm.calls[0]!.user).toContain('Analyze AAPL');
+      expect(llm.calls[0]!.userPrompt).toContain('Analyze AAPL');
     });
 
     it('serves every later request from the shared cache for free, even at the limit', async () => {
@@ -186,22 +186,22 @@ describe('stock analysis routes', () => {
       vi.spyOn(provider, 'getDetails').mockRejectedValue(new Error('down'));
       const res = await analyze(u.token, 'IBM');
       expect(res.statusCode).toBe(200);
-      expect(llm.calls[0]!.user).toContain('<missing>details, price_history, fundamentals, company_profile</missing>');
+      expect(llm.calls[0]!.userPrompt).toContain('<missing>details, price_history, fundamentals, company_profile</missing>');
     });
 
     it('feeds fundamentals when the provider has them', async () => {
       const u = await user();
       provider.setFundamentals('CRM', { sector: 'Software', trailingPE: 44.2 });
       await analyze(u.token, 'CRM');
-      expect(llm.calls[0]!.user).toContain('"trailingPE":44.2');
-      expect(llm.calls[0]!.user).toContain('Sector: Software');
+      expect(llm.calls[0]!.userPrompt).toContain('"trailingPE":44.2');
+      expect(llm.calls[0]!.userPrompt).toContain('Sector: Software');
     });
 
     it('tolerates a failing fundamentals call', async () => {
       const u = await user();
       provider.setFundamentalsError('SHOP', 'PROVIDER_ERROR');
       expect((await analyze(u.token, 'SHOP')).statusCode).toBe(200);
-      expect(llm.calls[0]!.user).toContain('fundamentals, company_profile</missing>');
+      expect(llm.calls[0]!.userPrompt).toContain('fundamentals, company_profile</missing>');
     });
   });
 

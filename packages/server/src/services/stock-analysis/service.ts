@@ -403,8 +403,8 @@ export class StockAnalysisService {
     try {
       const completion = await llm.complete({
         model: attempt.model,
-        system: prompt.system,
-        user: prompt.user,
+        systemPrompt: prompt.system,
+        userPrompt: prompt.user,
         jsonSchema: ANALYSIS_JSON_SCHEMA,
         maxOutputTokens: MAX_OUTPUT_TOKENS,
         timeoutMs: this.deps.config.get('ANALYSIS_TIMEOUT_MS'),

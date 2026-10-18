@@ -9,6 +9,19 @@ vi.mock('@/api/stocks', () => ({
 vi.mock('@/api/market-status', () => ({ useMarketStatus: () => ({ data: undefined }) }));
 vi.mock('@/api/trades', () => ({ usePortfolio: () => ({ data: undefined }) }));
 vi.mock('@/components/StockChart', () => ({ ChartCanvas: () => null, RANGES: [] }));
+// `reset` must keep one identity across renders, as react-query's does.
+const analyzeMutation = vi.hoisted(() => ({
+  mutate: () => {},
+  mutateAsync: () => new Promise(() => {}),
+  reset: () => {},
+  isPending: false,
+  data: undefined,
+  error: null,
+}));
+vi.mock('@/api/stock-analysis', () => ({
+  useStockAnalysisStatus: () => ({ data: undefined }),
+  useAnalyzeStock: () => analyzeMutation,
+}));
 
 describe('QuoteInfo TradingView link', () => {
   it('opens the symbol on TradingView in a new tab', () => {

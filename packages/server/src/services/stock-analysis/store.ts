@@ -4,7 +4,7 @@ import type { Db } from '../../db/index.js';
 import { schema } from '../../db/index.js';
 import { toIsoUtc } from '../../limits/account.js';
 import type { Reader } from '../../limits/quota-counts.js';
-import { storedResultSchema, type AnalysisResult } from './schema.js';
+import { modelOutputSchema, type AnalysisResult } from './schema.js';
 
 /** What makes two analyses interchangeable: same stock, same prompt, same configured model. */
 export interface AnalysisKey {
@@ -83,14 +83,17 @@ export async function oldestAttemptSince(db: Reader, since: string): Promise<str
   return row?.at ? toIsoUtc(row.at) : null;
 }
 
-/** One attempt to record. `result` is set exactly when `status` is `ok`. */
+/**
+ * One attempt to record. `result` is set exactly when `status` is `ok`; the usage
+ * fields are known only when the model answered.
+ */
 export type AttemptRecord = AnalysisKey & {
   generatedBy: string;
-  reportedModel: string | null;
   priceAtAnalysis: number;
-  promptTokens: number | null;
-  completionTokens: number | null;
   durationMs: number;
+  reportedModel?: string | null;
+  promptTokens?: number | null;
+  completionTokens?: number | null;
 } & ({ status: 'ok'; result: AnalysisResult } | { status: 'failed'; errorCode: string });
 
 /** Inserts one attempt and returns its ISO creation time. */
@@ -102,10 +105,10 @@ export async function recordAttempt(db: Db, rec: AttemptRecord): Promise<string>
       model: rec.model,
       promptVersion: rec.promptVersion,
       generatedBy: rec.generatedBy,
-      reportedModel: rec.reportedModel,
+      reportedModel: rec.reportedModel ?? null,
       priceAtAnalysis: rec.priceAtAnalysis,
-      promptTokens: rec.promptTokens,
-      completionTokens: rec.completionTokens,
+      promptTokens: rec.promptTokens ?? null,
+      completionTokens: rec.completionTokens ?? null,
       durationMs: rec.durationMs,
       status: rec.status,
       result: rec.status === 'ok' ? JSON.stringify(rec.result) : null,
@@ -122,7 +125,7 @@ export async function pruneAttemptsBefore(db: Db, cutoff: string): Promise<void>
 
 function parseResult(json: string): AnalysisResult | undefined {
   try {
-    const parsed = storedResultSchema.safeParse(JSON.parse(json));
+    const parsed = modelOutputSchema.safeParse(JSON.parse(json));
     return parsed.success ? parsed.data : undefined;
   } catch {
     return undefined;

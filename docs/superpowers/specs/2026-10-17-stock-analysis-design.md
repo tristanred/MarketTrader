@@ -143,7 +143,7 @@ Single-flight map, lock and cap arithmetic are process-local — exact on the si
   - `verdict` — enum
   - `confidence` — int 0–100
   - `summary` — ≤ 600 chars
-  - `bull_points` / `bear_points` — 1–5 items, ≤ 200 chars each
+  - `bullPoints` / `bearPoints` — 1–5 items, ≤ 200 chars each (camelCase, so the stored row needs no mapping)
 - **Request:**
   - `response_format: json_schema`. **No** `provider.require_parameters`: with the free router it can filter out every candidate model and turn into a 503.
   - `temperature 0.2`; `max_tokens` around 1500, so a reasoning model doesn't end empty with `finish_reason: length`.

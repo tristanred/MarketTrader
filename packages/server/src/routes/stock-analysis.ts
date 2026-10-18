@@ -1,11 +1,6 @@
-import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
-import type {
-  AnalysisErrorBody,
-  StockAnalysisPending,
-  StockAnalysisResponse,
-  StockAnalysisStatus,
-} from '@markettrader/shared';
+import type { StockAnalysisPending, StockAnalysisResponse, StockAnalysisStatus } from '@markettrader/shared';
 import type { ConfigReader } from '../config/runtime-config.js';
 import { withPrivilegedIp } from '../limits/rate.js';
 import { StockProviderError } from '../providers/index.js';
@@ -14,7 +9,7 @@ import {
   type AnalysisCaller,
   type StockAnalysisService,
 } from '../services/stock-analysis/service.js';
-import { setRetryAfter } from './retry-after.js';
+import { sendStockProviderError } from './stock-provider-error.js';
 import { symbolParamsSchema } from './stocks.js';
 
 /**
@@ -67,18 +62,13 @@ export function stockAnalysisRoutes(service: StockAnalysisService, config: Confi
             callerOf(request),
             request.params.symbol,
           );
-          // 202: the model is still working; the client polls the status route.
           return reply.status('status' in body ? 202 : 200).send(body);
         } catch (err) {
-          if (err instanceof AnalysisError) return sendAnalysisError(reply, err);
-          if (err instanceof StockProviderError) {
-            if (err.code === 'SYMBOL_NOT_FOUND') return reply.status(404).send({ error: err.message });
-            if (err.code === 'RATE_LIMITED') {
-              setRetryAfter(reply, config);
-              return reply.status(429).send({ code: err.code, message: err.message });
-            }
-            return reply.status(502).send({ error: err.message });
+          if (err instanceof AnalysisError) {
+            if (err.retryAfterSeconds !== undefined) reply.header('Retry-After', err.retryAfterSeconds);
+            return reply.status(err.status).send(err.toBody());
           }
+          if (err instanceof StockProviderError) return sendStockProviderError(reply, err, config);
           throw err;
         }
       },
@@ -90,14 +80,4 @@ function callerOf(request: FastifyRequest): AnalysisCaller {
   // `authenticate` sets the account on every request that reaches a handler.
   if (!request.account) throw new Error('stock-analysis route reached without an account');
   return { ip: request.ip, account: request.account };
-}
-
-function sendAnalysisError(reply: FastifyReply, err: AnalysisError) {
-  if (err.retryAfterSeconds !== undefined) reply.header('Retry-After', err.retryAfterSeconds);
-  const body: AnalysisErrorBody = {
-    error: err.message,
-    code: err.code,
-    ...(err.retryAfterSeconds !== undefined ? { retryAfterSeconds: err.retryAfterSeconds } : {}),
-  };
-  return reply.status(err.status).send(body);
 }

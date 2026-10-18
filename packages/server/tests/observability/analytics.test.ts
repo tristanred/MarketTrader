@@ -10,6 +10,7 @@ import * as schema from '../../src/db/schema.sqlite.js';
 import { createTestDb } from '../helpers/app.js';
 import { MockStockProvider } from '../helpers/mock-provider.js';
 import { MockMarketStatusProvider } from '../helpers/mock-market-status.js';
+import { FakeLlmClient } from '../helpers/fake-llm.js';
 
 /**
  * Server-side analytics is wired through the domain event bus, so these tests
@@ -88,6 +89,7 @@ describe('server-side analytics through the event bus', () => {
       loginThrottle: { disabled: true },
       leaderboardThrottleMs: 0,
       analytics: fake.client,
+      llmClient: new FakeLlmClient(),
     });
   });
   afterAll(async () => {
@@ -95,6 +97,20 @@ describe('server-side analytics through the event bus', () => {
   });
   beforeEach(() => {
     captured.length = 0;
+  });
+
+  it('captures a stock analysis generation once, and nothing for a cache hit', async () => {
+    await db.delete(schema.stockAnalyses);
+    const { token, userId } = await register(app, uniq());
+    const headers = { authorization: `Bearer ${token}` };
+    await app.inject({ method: 'POST', url: '/stocks/TSLA/analysis', headers });
+    await app.inject({ method: 'POST', url: '/stocks/TSLA/analysis', headers });
+
+    await vi.waitFor(() => expect(eventsNamed(captured, 'stock_analysis_generated')).toHaveLength(1));
+    expect(eventsNamed(captured, 'stock_analysis_generated')[0]).toMatchObject({
+      distinctId: userId,
+      properties: { symbol: 'TSLA', verdict: 'BUY', model: 'openrouter/free' },
+    });
   });
 
   it('captures game creation and the creator joining, keyed by user id', async () => {

@@ -104,26 +104,26 @@ export async function oldestJoinSince(
   return row?.at ? toIsoUtc(row.at) : null;
 }
 
-/**
- * Successful stock analyses `userId` generated at or after `since` ({@link toSqlTimestamp}
- * format). Failed attempts are excluded: a model failure never costs the user an analysis.
- */
+/** `userId`'s successful analyses since `since`. Failures never count: a model failure costs the user nothing. */
+function chargedAnalysesOf(userId: string, since: string) {
+  const { stockAnalyses } = schema;
+  return and(
+    eq(stockAnalyses.generatedBy, userId),
+    eq(stockAnalyses.status, 'ok'),
+    gte(stockAnalyses.createdAt, since),
+  );
+}
+
+/** Successful stock analyses `userId` generated at or after `since` ({@link toSqlTimestamp} format). */
 export async function countStockAnalysesSince(
   db: Reader,
   userId: string,
   since: string,
 ): Promise<number> {
-  const { stockAnalyses } = schema;
   const [row] = await db
     .select({ n: count() })
-    .from(stockAnalyses)
-    .where(
-      and(
-        eq(stockAnalyses.generatedBy, userId),
-        eq(stockAnalyses.status, 'ok'),
-        gte(stockAnalyses.createdAt, since),
-      ),
-    );
+    .from(schema.stockAnalyses)
+    .where(chargedAnalysesOf(userId, since));
   return Number(row?.n ?? 0);
 }
 
@@ -133,17 +133,10 @@ export async function oldestStockAnalysisSince(
   userId: string,
   since: string,
 ): Promise<string | null> {
-  const { stockAnalyses } = schema;
   const [row] = await db
-    .select({ at: min(stockAnalyses.createdAt) })
-    .from(stockAnalyses)
-    .where(
-      and(
-        eq(stockAnalyses.generatedBy, userId),
-        eq(stockAnalyses.status, 'ok'),
-        gte(stockAnalyses.createdAt, since),
-      ),
-    );
+    .select({ at: min(schema.stockAnalyses.createdAt) })
+    .from(schema.stockAnalyses)
+    .where(chargedAnalysesOf(userId, since));
   return row?.at ? toIsoUtc(row.at) : null;
 }
 

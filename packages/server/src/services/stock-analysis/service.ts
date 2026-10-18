@@ -1,6 +1,7 @@
-import { SpanStatusCode } from '@opentelemetry/api';
+import { SpanStatusCode, type Span } from '@opentelemetry/api';
 import type { FastifyBaseLogger } from 'fastify';
 import type {
+  AnalysisErrorBody,
   AnalysisErrorCode,
   AnalysisFailure,
   AnalysisSource,
@@ -27,12 +28,12 @@ import {
   windowStart,
 } from '../../limits/quota-counts.js';
 import type { StockProvider } from '../../providers/interface.js';
-import { LlmError, type LlmClient } from '../../providers/llm/interface.js';
+import { LlmError, type LlmClient, type LlmCompletion } from '../../providers/llm/interface.js';
 import { meters, tracer } from '../../observability/telemetry.js';
 import { AnalysisBreaker } from './breaker.js';
 import { computeFeatures } from './features.js';
-import { buildAnalysisPrompt, PROMPT_VERSION } from './prompt.js';
-import { ANALYSIS_JSON_SCHEMA, modelOutputSchema, toResult } from './schema.js';
+import { buildAnalysisPrompt, PROMPT_VERSION, type AnalysisInput } from './prompt.js';
+import { ANALYSIS_JSON_SCHEMA, modelOutputSchema, type AnalysisResult } from './schema.js';
 import {
   countAttemptsSince,
   findFreshAnalysis,
@@ -40,9 +41,11 @@ import {
   oldestAttemptSince,
   recordAttempt,
   type AnalysisKey,
+  type AttemptRecord,
 } from './store.js';
 
-const DAY_MS = 24 * 60 * 60_000;
+/** The global ceiling's rolling window. Not the quota's: it bounds upstream spend, not a user. */
+const CEILING_WINDOW_MS = 24 * 60 * 60_000;
 /** After a failed attempt, the same analysis is not retried for this long — by anyone. */
 export const FAILURE_COOLDOWN_MS = 60_000;
 /** Matches the registry max of `ANALYSIS_RESPONSE_WAIT_MS`: under nginx's default 60 s read timeout. */
@@ -64,6 +67,15 @@ export class AnalysisError extends Error {
   ) {
     super(message);
     this.name = 'AnalysisError';
+  }
+
+  /** The response body, also what a polling client reads as `lastFailure`. */
+  toBody(): AnalysisErrorBody {
+    return {
+      error: this.message,
+      code: this.code,
+      ...(this.retryAfterSeconds === undefined ? {} : { retryAfterSeconds: this.retryAfterSeconds }),
+    };
   }
 }
 
@@ -104,7 +116,7 @@ export class StockAnalysisService {
   /** How background generations ended, for clients that got a 202 and are polling. */
   private readonly recentFailures = new Map<string, AnalysisFailure>();
   private readonly shutdown = new AbortController();
-  readonly breaker = new AnalysisBreaker();
+  private readonly breaker = new AnalysisBreaker();
 
   constructor(private readonly deps: StockAnalysisDeps) {}
 
@@ -126,7 +138,7 @@ export class StockAnalysisService {
     try {
       const llm = this.deps.llm;
       if (!llm) throw disabled();
-      // Validates the symbol before anything is spent; an unknown one is a cheap 404.
+      // Before anything is spent, so an unknown symbol is a cheap 404.
       const quote = await this.deps.provider.getQuote(symbol);
       const resolved = await this.resolve(caller, this.keyFor(symbol), quote, llm);
       const usage = await this.usage(caller);
@@ -159,10 +171,11 @@ export class StockAnalysisService {
     const key = this.keyFor(symbol);
     const now = Date.now();
     const cached = (await findFreshAnalysis(this.deps.db, key, this.cacheCutoff(now))) !== undefined;
-    const pausedUntil = this.breaker.openUntil(key.model, now) ?? (await this.capacityFreesAt(now));
+    const ceiling = await this.ceiling(now, this.busyUsers.size);
+    const pausedUntil = this.breaker.openUntil(key.model, now) ?? (ceiling.full ? ceiling.freesAt : undefined);
     return {
       enabled: true,
-      available: pausedUntil === undefined,
+      available: pausedUntil === undefined && !ceiling.full,
       retryAt: pausedUntil === undefined ? null : new Date(pausedUntil).toISOString(),
       cached,
       generating: this.inFlight.has(flightKeyOf(key)),
@@ -171,7 +184,7 @@ export class StockAnalysisService {
     };
   }
 
-  /** The caller's allowance of fresh analyses in the rolling 24 h window. */
+  /** The caller's allowance of fresh analyses in the rolling quota window. */
   async usage(caller: AnalysisCaller, now: number = Date.now()): Promise<AnalysisUsage> {
     const resolved = await this.deps.limits.resolver.resolve(caller, 'stockAnalyses');
     const since = windowStart('stockAnalyses', now);
@@ -183,7 +196,9 @@ export class StockAnalysisService {
       used,
       remaining: resolved.max === null ? null : Math.max(0, resolved.max - used),
       probation: resolved.probation,
-      nextSlotAt: oldest ? new Date(Date.parse(oldest) + DAY_MS).toISOString() : null,
+      nextSlotAt: oldest
+        ? new Date(Date.parse(oldest) + LIMIT_CATALOGUE.stockAnalyses.windowMs).toISOString()
+        : null,
     };
   }
 
@@ -193,16 +208,15 @@ export class StockAnalysisService {
     await Promise.allSettled([...this.inFlight.values()]);
   }
 
+  /** Decides what this request gets: the cache, someone's running generation, or a new one. */
   private async resolve(
     caller: AnalysisCaller,
     key: AnalysisKey,
     quote: StockQuote,
     llm: LlmClient,
   ): Promise<Resolved> {
-    const { db, limits, config } = this.deps;
     const flightKey = flightKeyOf(key);
-
-    const hit = await findFreshAnalysis(db, key, this.cacheCutoff(Date.now()));
+    const hit = await findFreshAnalysis(this.deps.db, key, this.cacheCutoff(Date.now()));
     if (hit) return { kind: 'done', analysis: hit, source: 'cache' };
     const joined = this.inFlight.get(flightKey);
     if (joined) return this.awaitBounded(joined, 'shared');
@@ -212,55 +226,16 @@ export class StockAnalysisService {
 
     const userId = caller.account.id;
     if (this.busyUsers.has(userId)) {
-      throw new AnalysisError(
-        'ANALYSIS_IN_PROGRESS',
-        409,
-        'An analysis you started is still running.',
-      );
+      throw new AnalysisError('ANALYSIS_IN_PROGRESS', 409, 'An analysis you started is still running.');
     }
     this.busyUsers.add(userId);
     // Once a generation starts it owns the busy mark and releases it when it settles.
     let handedOff = false;
     try {
-      const now = Date.now();
-      const since = windowStart('stockAnalyses', now);
-      await limits.enforcer.enforceFor(
-        caller,
-        'stockAnalyses',
-        () => countStockAnalysesSince(db, userId, since),
-        {
-          retryAfter: async () =>
-            secondsUntilWindowFrees(
-              await oldestStockAnalysisSince(db, userId, since),
-              LIMIT_CATALOGUE.stockAnalyses.windowMs,
-              now,
-            ),
-        },
-      );
-
-      const attempts = await countAttemptsSince(db, toSqlTimestamp(new Date(now - DAY_MS)));
-      // Every other busy user is a leader either still in these checks or with a
-      // generation running — counting them (not just started flights) keeps
-      // simultaneous leaders from all passing at cap − 1. It errs on the strict side.
-      const otherLeaders = this.busyUsers.size - 1;
-      if (attempts + otherLeaders >= config.get('ANALYSIS_MAX_GENERATIONS_PER_DAY')) {
-        const freesAt = await this.capacityFreesAt(now, true);
-        throw new AnalysisError(
-          'ANALYSIS_CAPACITY',
-          503,
-          "Today's analysis capacity is used up.",
-          freesAt === undefined ? undefined : secondsUntil(freesAt, now),
-        );
-      }
-
-      const last = await latestAttempt(db, key);
-      if (last?.status === 'failed') {
-        const retryAt = Date.parse(last.createdAt) + FAILURE_COOLDOWN_MS;
-        if (retryAt > now) throw unavailable(retryAt, now);
-      }
+      await this.admit(caller, key);
 
       // The awaits above let another request finish or start this analysis.
-      const fresh = await findFreshAnalysis(db, key, this.cacheCutoff(Date.now()));
+      const fresh = await findFreshAnalysis(this.deps.db, key, this.cacheCutoff(Date.now()));
       if (fresh) return { kind: 'done', analysis: fresh, source: 'cache' };
       // No await between this check and starting the flight, so two leaders cannot both start.
       const raced = this.inFlight.get(flightKey);
@@ -272,6 +247,52 @@ export class StockAnalysisService {
     } finally {
       if (!handedOff) this.busyUsers.delete(userId);
     }
+  }
+
+  /** Throws unless the caller may spend a generation now: their quota, the global ceiling, the cooldown. */
+  private async admit(caller: AnalysisCaller, key: AnalysisKey): Promise<void> {
+    const { db, limits } = this.deps;
+    const userId = caller.account.id;
+    const now = Date.now();
+    const since = windowStart('stockAnalyses', now);
+    await limits.enforcer.enforceFor(caller, 'stockAnalyses', () => countStockAnalysesSince(db, userId, since), {
+      retryAfter: async () =>
+        secondsUntilWindowFrees(
+          await oldestStockAnalysisSince(db, userId, since),
+          LIMIT_CATALOGUE.stockAnalyses.windowMs,
+          now,
+        ),
+    });
+
+    // The caller holds a busy mark; every other one is a leader mid-check or generating.
+    const ceiling = await this.ceiling(now, this.busyUsers.size - 1);
+    if (ceiling.full) {
+      throw new AnalysisError(
+        'ANALYSIS_CAPACITY',
+        503,
+        "Today's analysis capacity is used up.",
+        ceiling.freesAt === undefined ? undefined : secondsUntil(ceiling.freesAt, now),
+      );
+    }
+
+    const last = await latestAttempt(db, key);
+    if (last?.status === 'failed') {
+      const retryAt = Date.parse(last.createdAt) + FAILURE_COOLDOWN_MS;
+      if (retryAt > now) throw unavailable(retryAt, now);
+    }
+  }
+
+  /**
+   * Whether the global ceiling is reached, counting `otherLeaders` generations not
+   * yet recorded — so simultaneous leaders cannot all pass at cap − 1. It errs strict:
+   * a leader whose request turns out to be a free cache hit still counted.
+   */
+  private async ceiling(now: number, otherLeaders: number): Promise<{ full: boolean; freesAt?: number }> {
+    const since = toSqlTimestamp(new Date(now - CEILING_WINDOW_MS));
+    const attempts = await countAttemptsSince(this.deps.db, since);
+    if (attempts + otherLeaders < this.deps.config.get('ANALYSIS_MAX_GENERATIONS_PER_DAY')) return { full: false };
+    const oldest = await oldestAttemptSince(this.deps.db, since);
+    return oldest ? { full: true, freesAt: Date.parse(oldest) + CEILING_WINDOW_MS } : { full: true };
   }
 
   /** Starts a generation that outlives any one request: it registers itself, and cleans up when it settles. */
@@ -316,10 +337,7 @@ export class StockAnalysisService {
   }
 
   private rememberFailure(flightKey: string, err: unknown): void {
-    const body =
-      err instanceof AnalysisError
-        ? { error: err.message, code: err.code, ...retryField(err.retryAfterSeconds) }
-        : { error: couldNotGenerate, code: 'ANALYSIS_FAILED' as const };
+    const body = err instanceof AnalysisError ? err.toBody() : failed().toBody();
     // Re-inserting moves the key to the newest position, so eviction drops the oldest.
     this.recentFailures.delete(flightKey);
     this.recentFailures.set(flightKey, { ...body, failedAt: new Date().toISOString() });
@@ -339,12 +357,7 @@ export class StockAnalysisService {
     return failure;
   }
 
-  private generate(
-    key: AnalysisKey,
-    quote: StockQuote,
-    userId: string,
-    llm: LlmClient,
-  ): Promise<StockAnalysis> {
+  private generate(key: AnalysisKey, quote: StockQuote, userId: string, llm: LlmClient): Promise<StockAnalysis> {
     const startedAt = Date.now();
     return tracer.startActiveSpan(
       'analysis.generate',
@@ -352,44 +365,10 @@ export class StockAnalysisService {
       async (span) => {
         try {
           const input = await this.collectInput(key.symbol, quote);
-          const prompt = buildAnalysisPrompt(input);
           span.setAttribute('analysis.inputs', inputsPresent(input));
+          const attempt = { ...key, generatedBy: userId, priceAtAnalysis: quote.price, startedAt };
 
-          const base = {
-            ...key,
-            generatedBy: userId,
-            priceAtAnalysis: quote.price,
-          };
-          let completion;
-          try {
-            completion = await llm.complete({
-              model: key.model,
-              system: prompt.system,
-              user: prompt.user,
-              jsonSchema: ANALYSIS_JSON_SCHEMA,
-              maxOutputTokens: MAX_OUTPUT_TOKENS,
-              timeoutMs: this.deps.config.get('ANALYSIS_TIMEOUT_MS'),
-              signal: this.shutdown.signal,
-            });
-          } catch (err) {
-            if (!(err instanceof LlmError)) throw err;
-            if (err.scope === 'feature') this.trip(err, key.model);
-            if (err.reportedModel) span.setAttribute('analysis.reported_model', err.reportedModel);
-            if (err.reachedModel) {
-              // Info, not warn: free models fail often and PostHog bills logs by volume.
-              this.deps.logger?.info(
-                { code: err.code, reportedModel: err.reportedModel, detail: err.message },
-                'stock analysis generation failed',
-              );
-              await this.recordFailure(
-                { ...base, reportedModel: err.reportedModel, durationMs: Date.now() - startedAt },
-                err.code,
-              );
-            }
-            throw toAnalysisError(err, this.breaker.openUntil(key.model));
-          }
-          if (completion.reportedModel) span.setAttribute('analysis.reported_model', completion.reportedModel);
-
+          const completion = await this.callModel(llm, input, attempt, span);
           const usage = {
             reportedModel: completion.reportedModel,
             promptTokens: completion.usage?.promptTokens ?? null,
@@ -397,40 +376,10 @@ export class StockAnalysisService {
           };
           const parsed = modelOutputSchema.safeParse(completion.content);
           if (!parsed.success) {
-            await this.recordFailure(
-              { ...base, ...usage, durationMs: Date.now() - startedAt },
-              'INVALID_OUTPUT',
-            );
-            throw new AnalysisError('ANALYSIS_FAILED', 502, couldNotGenerate);
+            await this.recordFailure({ ...attempt, ...usage }, 'INVALID_OUTPUT');
+            throw failed();
           }
-
-          const result = toResult(parsed.data);
-          const durationMs = Date.now() - startedAt;
-          const generatedAt = await recordAttempt(this.deps.db, {
-            ...base,
-            ...usage,
-            durationMs,
-            status: 'ok',
-            result,
-          });
-          meters.analysisDuration.record(durationMs, { outcome: 'ok' });
-          void this.deps.bus?.emit({
-            type: 'analysis.generated',
-            userId,
-            symbol: key.symbol,
-            verdict: result.verdict,
-            confidence: result.confidence,
-            model: key.model,
-            durationMs,
-            generatedAt,
-          });
-          return {
-            symbol: key.symbol,
-            ...result,
-            generatedAt,
-            reportedModel: completion.reportedModel,
-            priceAtAnalysis: quote.price,
-          };
+          return await this.persist({ ...attempt, ...usage }, parsed.data);
         } catch (err) {
           meters.analysisDuration.record(Date.now() - startedAt, { outcome: 'error' });
           span.recordException(err instanceof Error ? err : new Error(String(err)));
@@ -443,34 +392,90 @@ export class StockAnalysisService {
     );
   }
 
+  /** The LLM call. A failure trips the breaker when account-level and is recorded when it reached a model. */
+  private async callModel(
+    llm: LlmClient,
+    input: AnalysisInput,
+    attempt: PendingAttempt,
+    span: Span,
+  ): Promise<LlmCompletion> {
+    const prompt = buildAnalysisPrompt(input);
+    try {
+      const completion = await llm.complete({
+        model: attempt.model,
+        system: prompt.system,
+        user: prompt.user,
+        jsonSchema: ANALYSIS_JSON_SCHEMA,
+        maxOutputTokens: MAX_OUTPUT_TOKENS,
+        timeoutMs: this.deps.config.get('ANALYSIS_TIMEOUT_MS'),
+        signal: this.shutdown.signal,
+      });
+      if (completion.reportedModel) span.setAttribute('analysis.reported_model', completion.reportedModel);
+      return completion;
+    } catch (err) {
+      if (!(err instanceof LlmError)) throw err;
+      if (err.scope === 'feature') this.trip(err, attempt.model);
+      if (err.reportedModel) span.setAttribute('analysis.reported_model', err.reportedModel);
+      if (err.reachedModel) {
+        // Info, not warn: free models fail often and PostHog bills logs by volume.
+        this.deps.logger?.info(
+          { code: err.code, reportedModel: err.reportedModel, detail: err.message },
+          'stock analysis generation failed',
+        );
+        await this.recordFailure({ ...attempt, reportedModel: err.reportedModel }, err.code);
+      }
+      throw toAnalysisError(err, this.breaker.openUntil(attempt.model));
+    }
+  }
+
+  /** Records the successful attempt — the row that charges the user and fills the cache. */
+  private async persist(attempt: PendingAttempt & UsageFields, result: AnalysisResult): Promise<StockAnalysis> {
+    const { startedAt, ...record } = attempt;
+    const durationMs = Date.now() - startedAt;
+    const generatedAt = await recordAttempt(this.deps.db, { ...record, durationMs, status: 'ok', result });
+    meters.analysisDuration.record(durationMs, { outcome: 'ok' });
+    void this.deps.bus?.emit({
+      type: 'analysis.generated',
+      userId: attempt.generatedBy,
+      symbol: attempt.symbol,
+      verdict: result.verdict,
+      confidence: result.confidence,
+      model: attempt.model,
+      durationMs,
+      generatedAt,
+    });
+    return {
+      symbol: attempt.symbol,
+      ...result,
+      generatedAt,
+      reportedModel: attempt.reportedModel ?? null,
+      priceAtAnalysis: attempt.priceAtAnalysis,
+    };
+  }
+
   /** Quote is required; every other input is best-effort, since a missing one only lowers confidence. */
-  private async collectInput(symbol: string, quote: StockQuote) {
+  private async collectInput(symbol: string, quote: StockQuote): Promise<AnalysisInput> {
     const { provider } = this.deps;
     const [details, history, fundamentals] = await Promise.allSettled([
       provider.getDetails(symbol),
       provider.getHistory(symbol, '1y'),
-      provider.getFundamentals ? provider.getFundamentals(symbol) : Promise.reject(new Error('unsupported')),
+      provider.getFundamentals?.(symbol),
     ]);
+    const bars = settled(history);
     return {
       symbol,
       asOf: new Date().toISOString(),
       quote,
-      details: details.status === 'fulfilled' ? details.value : undefined,
-      features: history.status === 'fulfilled' ? computeFeatures(history.value) : undefined,
-      fundamentals: fundamentals.status === 'fulfilled' ? fundamentals.value : undefined,
+      details: settled(details),
+      features: bars && computeFeatures(bars),
+      fundamentals: settled(fundamentals),
     };
   }
 
-  private async recordFailure(attempt: FailedAttempt, errorCode: string): Promise<void> {
+  private async recordFailure(attempt: PendingAttempt & Partial<UsageFields>, errorCode: string): Promise<void> {
+    const { startedAt, ...record } = attempt;
     try {
-      await recordAttempt(this.deps.db, {
-        reportedModel: null,
-        promptTokens: null,
-        completionTokens: null,
-        ...attempt,
-        status: 'failed',
-        errorCode,
-      });
+      await recordAttempt(this.deps.db, { ...record, durationMs: Date.now() - startedAt, status: 'failed', errorCode });
     } catch (err) {
       // Losing the failure row only weakens the cooldown and the ceiling; the
       // caller still gets the real error rather than this one.
@@ -490,19 +495,6 @@ export class StockAnalysisService {
     }
   }
 
-  /** When the global ceiling frees a slot, or undefined when it is not reached. */
-  private async capacityFreesAt(now: number, reached = false): Promise<number | undefined> {
-    const since = toSqlTimestamp(new Date(now - DAY_MS));
-    if (!reached) {
-      const attempts = await countAttemptsSince(this.deps.db, since);
-      if (attempts + this.inFlight.size < this.deps.config.get('ANALYSIS_MAX_GENERATIONS_PER_DAY')) {
-        return undefined;
-      }
-    }
-    const oldest = await oldestAttemptSince(this.deps.db, since);
-    return oldest ? Date.parse(oldest) + DAY_MS : undefined;
-  }
-
   private keyFor(symbol: string): AnalysisKey {
     return { symbol, model: this.deps.config.get('ANALYSIS_MODEL'), promptVersion: PROMPT_VERSION };
   }
@@ -515,28 +507,26 @@ export class StockAnalysisService {
 /** How a request ended: with an analysis, or still generating when the wait ran out. */
 type Resolved = { kind: 'done'; analysis: StockAnalysis; source: AnalysisSource } | { kind: 'pending' };
 
+/** The parts of an attempt row known before the model answers, plus when it started. */
+type PendingAttempt = Pick<AttemptRecord, 'symbol' | 'model' | 'promptVersion' | 'generatedBy' | 'priceAtAnalysis'> & {
+  startedAt: number;
+};
+type UsageFields = Required<Pick<AttemptRecord, 'reportedModel' | 'promptTokens' | 'completionTokens'>>;
+
 function flightKeyOf(key: AnalysisKey): string {
   return `${key.symbol}|${key.promptVersion}|${key.model}`;
 }
 
-function retryField(seconds: number | undefined): { retryAfterSeconds?: number } {
-  return seconds === undefined ? {} : { retryAfterSeconds: seconds };
+function settled<T>(result: PromiseSettledResult<T>): T | undefined {
+  return result.status === 'fulfilled' ? result.value : undefined;
 }
-
-/** A failed attempt to record; usage fields are known only when the model answered. */
-type FailedAttempt = AnalysisKey & {
-  generatedBy: string;
-  priceAtAnalysis: number;
-  durationMs: number;
-  reportedModel?: string | null;
-  promptTokens?: number | null;
-  completionTokens?: number | null;
-};
-
-const couldNotGenerate = "Couldn't generate an analysis. This didn't use one of your analyses.";
 
 function disabled(): AnalysisError {
   return new AnalysisError('ANALYSIS_DISABLED', 503, 'Stock analysis is not configured on this server.');
+}
+
+function failed(message = "Couldn't generate an analysis. This didn't use one of your analyses."): AnalysisError {
+  return new AnalysisError('ANALYSIS_FAILED', 502, message);
 }
 
 function unavailable(until: number, now: number = Date.now()): AnalysisError {
@@ -563,14 +553,12 @@ function toAnalysisError(err: LlmError, pausedUntil: number | undefined): Analys
       "The analysis took too long. Try again in a minute — it didn't use one of your analyses.",
     );
   }
-  if (err.code === 'REFUSED') {
-    return new AnalysisError('ANALYSIS_FAILED', 502, 'The model declined to analyze this stock.');
-  }
-  return new AnalysisError('ANALYSIS_FAILED', 502, couldNotGenerate);
+  if (err.code === 'REFUSED') return failed('The model declined to analyze this stock.');
+  return failed();
 }
 
 /** Which optional inputs reached the prompt, for the span: e.g. `details,history`. */
-function inputsPresent(input: { details?: unknown; features?: unknown; fundamentals?: unknown }): string {
+function inputsPresent(input: AnalysisInput): string {
   return (
     [input.details && 'details', input.features && 'history', input.fundamentals && 'fundamentals']
       .filter(Boolean)
@@ -579,22 +567,17 @@ function inputsPresent(input: { details?: unknown; features?: unknown; fundament
 }
 
 /** Closed set for the `outcome` metric attribute. */
+const ERROR_OUTCOMES: Record<AnalysisErrorCode, string> = {
+  ANALYSIS_DISABLED: 'disabled',
+  ANALYSIS_UNAVAILABLE: 'unavailable',
+  ANALYSIS_CAPACITY: 'capacity',
+  ANALYSIS_IN_PROGRESS: 'in_progress',
+  ANALYSIS_FAILED: 'failed',
+  ANALYSIS_TIMEOUT: 'failed',
+};
+
 function outcomeOf(err: unknown): string {
-  if (err instanceof AnalysisError) {
-    switch (err.code) {
-      case 'ANALYSIS_DISABLED':
-        return 'disabled';
-      case 'ANALYSIS_UNAVAILABLE':
-        return 'unavailable';
-      case 'ANALYSIS_CAPACITY':
-        return 'capacity';
-      case 'ANALYSIS_IN_PROGRESS':
-        return 'in_progress';
-      case 'ANALYSIS_FAILED':
-      case 'ANALYSIS_TIMEOUT':
-        return 'failed';
-    }
-  }
+  if (err instanceof AnalysisError) return ERROR_OUTCOMES[err.code];
   if (err instanceof LimitExceededError) return 'limited';
   return 'error';
 }

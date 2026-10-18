@@ -47,10 +47,4 @@ export class AnalysisBreaker {
     const until = Math.max(this.accountUntil, modelUntil);
     return until > now ? until : undefined;
   }
-
-  /** Closes the breaker; for tests and an admin reset. */
-  reset(): void {
-    this.accountUntil = 0;
-    this.modelPause = undefined;
-  }
 }

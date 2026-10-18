@@ -57,7 +57,8 @@ export class OpenRouterClient implements LlmClient {
           }
           return completion;
         } catch (err) {
-          outcome = err instanceof LlmError ? outcomeFor(err) : 'upstream_error';
+          // LlmErrorCode is a closed union, so the attribute stays bounded.
+          outcome = err instanceof LlmError ? err.code.toLowerCase() : 'upstream_error';
           span.recordException(err instanceof Error ? err : new Error(String(err)));
           span.setStatus({ code: SpanStatusCode.ERROR });
           throw err;
@@ -272,30 +273,3 @@ function errorName(err: unknown): string {
   return err instanceof Error ? err.name : 'unknown';
 }
 
-/** Closed set for the `outcome` metric attribute. */
-function outcomeFor(err: LlmError): string {
-  switch (err.code) {
-    case 'AUTH':
-      return 'auth';
-    case 'NO_CREDITS':
-      return 'no_credits';
-    case 'SPEND_LIMIT':
-      return 'spend_limit';
-    case 'RATE_LIMITED':
-      return 'rate_limited';
-    case 'BAD_REQUEST':
-      return 'bad_request';
-    case 'REFUSED':
-      return 'refused';
-    case 'UPSTREAM_ERROR':
-      return 'upstream_error';
-    case 'TIMEOUT':
-      return 'timeout';
-    case 'TRUNCATED':
-      return 'truncated';
-    case 'INVALID_OUTPUT':
-      return 'invalid_output';
-    case 'ABORTED':
-      return 'aborted';
-  }
-}

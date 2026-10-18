@@ -10,11 +10,11 @@ import type {
 import { createTestAppWithDb, registerAdmin } from '../helpers/app.js';
 import { ageAccount, registerUser } from '../helpers/users.js';
 import { MockStockProvider } from '../helpers/mock-provider.js';
-import { FakeLlmClient, completion, deferred, validAnswer } from '../helpers/fake-llm.js';
+import { FakeLlmClient, completion, validAnswer } from '../helpers/fake-llm.js';
 import { RuntimeConfig } from '../../src/config/runtime-config.js';
 import { schema } from '../../src/db/index.js';
+import { toSqlTimestamp } from '../../src/limits/quota-counts.js';
 import { LlmError } from '../../src/providers/llm/interface.js';
-import type { AnalyticsClient } from '../../src/observability/posthog.js';
 
 type Db = Awaited<ReturnType<typeof createTestAppWithDb>>['db'];
 
@@ -224,7 +224,7 @@ describe('stock analysis routes', () => {
     it('frees a slot once the oldest analysis leaves the 24 h window', async () => {
       const u = await user();
       for (const s of ['B1', 'B2', 'B3']) await analyze(u.token, s);
-      const old = new Date(Date.now() - 25 * 3_600_000).toISOString().replace('T', ' ').slice(0, 19);
+      const old = toSqlTimestamp(new Date(Date.now() - 25 * 3_600_000));
       const [first] = await rows();
       await db.update(schema.stockAnalyses).set({ createdAt: old }).where(eq(schema.stockAnalyses.id, first!.id));
       expect((await analyze(u.token, 'B4')).statusCode).toBe(200);
@@ -378,41 +378,37 @@ describe('stock analysis routes', () => {
 
   describe('concurrency', () => {
     it('runs one generation for concurrent requests on one symbol and charges only the leader', async () => {
+      config.set('ANALYSIS_RESPONSE_WAIT_MS', 1_000);
       const a = await user();
       const b = await user();
-      const gate = deferred<void>();
-      llm.queue(async () => {
-        await gate.promise;
-        return completion(validAnswer());
-      });
+      const release = llm.hold();
       const first = analyze(a.token, 'P1');
       await vi.waitFor(() => expect(llm.calls).toHaveLength(1));
-      const second = analyze(b.token, 'P1');
-      // Let the second request reach the in-flight join before releasing the model.
-      await new Promise((r) => setTimeout(r, 20));
-      gate.resolve();
+      // Held past the wait, the joiner answers 202 without a second model call.
+      const second = await analyze(b.token, 'P1');
+      expect(second.statusCode).toBe(202);
+      expect(second.json()).toMatchObject({ usage: { used: 0 } });
+      // The leader outlived the same wait; its outcome shows in the ledger.
+      expect((await first).statusCode).toBe(202);
+      release();
 
-      const [ra, rb] = await Promise.all([first, second]);
-      expect(ra.json<StockAnalysisResponse>().source).toBe('generated');
-      expect(rb.json<StockAnalysisResponse>().source).toBe('shared');
-      expect(rb.json<StockAnalysisResponse>().usage.used).toBe(0);
+      await vi.waitFor(async () => expect(await rows()).toHaveLength(1));
+      const [row] = await rows();
+      expect(row).toMatchObject({ status: 'ok', generatedBy: a.userId });
       expect(llm.calls).toHaveLength(1);
-      expect(await rows()).toHaveLength(1);
+      expect((await status(b.token, 'P1')).json<StockAnalysisStatus>().usage.used).toBe(0);
+      expect((await status(a.token, 'P1')).json<StockAnalysisStatus>().usage.used).toBe(1);
     });
 
     it('refuses a second fresh analysis from the same user while one runs, with 409', async () => {
       const u = await user();
-      const gate = deferred<void>();
-      llm.queue(async () => {
-        await gate.promise;
-        return completion(validAnswer());
-      });
+      const release = llm.hold();
       const first = analyze(u.token, 'Q1');
       await vi.waitFor(() => expect(llm.calls).toHaveLength(1));
       const second = await analyze(u.token, 'Q2');
       expect(second.statusCode).toBe(409);
       expect(second.json<AnalysisErrorBody>().code).toBe('ANALYSIS_IN_PROGRESS');
-      gate.resolve();
+      release();
       expect((await first).statusCode).toBe(200);
       expect((await analyze(u.token, 'Q2')).statusCode).toBe(200);
     });
@@ -421,32 +417,19 @@ describe('stock analysis routes', () => {
       config.set('ANALYSIS_MAX_GENERATIONS_PER_DAY', 1);
       const a = await user();
       const b = await user();
-      const gate = deferred<void>();
-      llm.queue(async () => {
-        await gate.promise;
-        return completion(validAnswer());
-      });
+      const release = llm.hold();
       const first = analyze(a.token, 'R1');
       await vi.waitFor(() => expect(llm.calls).toHaveLength(1));
       expect((await analyze(b.token, 'R2')).json<AnalysisErrorBody>().code).toBe('ANALYSIS_CAPACITY');
-      gate.resolve();
+      release();
       await first;
     });
 
     describe('slow generations (202 + polling)', () => {
-      function gated(outcome: () => Promise<ReturnType<typeof completion>>) {
-        const gate = deferred<void>();
-        llm.queue(async () => {
-          await gate.promise;
-          return outcome();
-        });
-        return gate;
-      }
-
       it('answers 202 when the model is slow, then serves the result from the cache', async () => {
         config.set('ANALYSIS_RESPONSE_WAIT_MS', 1_000);
         const u = await user();
-        const gate = gated(async () => completion(validAnswer({ verdict: 'SELL' })));
+        const release = llm.hold(async () => completion(validAnswer({ verdict: 'SELL' })));
 
         const first = await analyze(u.token, 'T1');
         expect(first.statusCode).toBe(202);
@@ -457,7 +440,7 @@ describe('stock analysis routes', () => {
           lastFailure: null,
         });
 
-        gate.resolve();
+        release();
         await vi.waitFor(async () =>
           expect((await status(u.token, 'T1')).json<StockAnalysisStatus>()).toMatchObject({
             generating: false,
@@ -478,7 +461,7 @@ describe('stock analysis routes', () => {
         config.set('ANALYSIS_RESPONSE_WAIT_MS', 1_000);
         config.set('LIMIT_STOCK_ANALYSES_PER_DAY', 1);
         const u = await user();
-        const gate = gated(async () => completion(validAnswer()));
+        const release = llm.hold();
 
         expect((await analyze(u.token, 'U1')).statusCode).toBe(202);
         // Without the busy mark this would pass the quota count (no ok row yet) and overspend.
@@ -486,7 +469,7 @@ describe('stock analysis routes', () => {
         expect(second.statusCode).toBe(409);
         expect(second.json<AnalysisErrorBody>().code).toBe('ANALYSIS_IN_PROGRESS');
 
-        gate.resolve();
+        release();
         await vi.waitFor(async () =>
           expect((await status(u.token, 'U1')).json<StockAnalysisStatus>().cached).toBe(true),
         );
@@ -497,12 +480,12 @@ describe('stock analysis routes', () => {
       it('reports a background failure through status', async () => {
         config.set('ANALYSIS_RESPONSE_WAIT_MS', 1_000);
         const u = await user();
-        const gate = gated(async () => {
+        const release = llm.hold(async () => {
           throw new LlmError('TIMEOUT', 'slow', { reachedModel: true });
         });
 
         expect((await analyze(u.token, 'V1')).statusCode).toBe(202);
-        gate.resolve();
+        release();
         await vi.waitFor(async () =>
           expect((await status(u.token, 'V1')).json<StockAnalysisStatus>().generating).toBe(false),
         );
@@ -521,11 +504,11 @@ describe('stock analysis routes', () => {
         expect((await analyze(a.token, 'W1')).statusCode).toBe(502);
         expect((await status(a.token, 'W1')).json<StockAnalysisStatus>().lastFailure).not.toBeNull();
 
-        const gate = gated(async () => completion(validAnswer()));
+        const release = llm.hold();
         expect((await analyze(a.token, 'W1')).statusCode).toBe(202);
         expect((await status(a.token, 'W1')).json<StockAnalysisStatus>().lastFailure).toBeNull();
         expect((await analyze(b.token, 'W1')).statusCode).toBe(202);
-        gate.resolve();
+        release();
         await vi.waitFor(async () =>
           expect((await status(b.token, 'W1')).json<StockAnalysisStatus>().cached).toBe(true),
         );
@@ -533,59 +516,27 @@ describe('stock analysis routes', () => {
       });
     });
 
-    it('rejects joiners with the leader’s failure', async () => {
+    it('reports the leader’s failure to a joiner through status', async () => {
+      config.set('ANALYSIS_RESPONSE_WAIT_MS', 1_000);
       const a = await user();
       const b = await user();
-      const gate = deferred<void>();
-      llm.queue(async () => {
-        await gate.promise;
+      const release = llm.hold(async () => {
         throw new LlmError('INVALID_OUTPUT', 'bad', { reachedModel: true });
       });
       const first = analyze(a.token, 'S1');
       await vi.waitFor(() => expect(llm.calls).toHaveLength(1));
-      const second = analyze(b.token, 'S1');
-      await new Promise((r) => setTimeout(r, 20));
-      gate.resolve();
-      const [ra, rb] = await Promise.all([first, second]);
-      expect(ra.statusCode).toBe(502);
-      expect(rb.statusCode).toBe(502);
+      expect((await analyze(b.token, 'S1')).statusCode).toBe(202);
+      expect((await first).statusCode).toBe(202);
+      release();
+      await vi.waitFor(async () =>
+        expect((await status(b.token, 'S1')).json<StockAnalysisStatus>().generating).toBe(false),
+      );
+      for (const token of [a.token, b.token]) {
+        expect((await status(token, 'S1')).json<StockAnalysisStatus>()).toMatchObject({
+          cached: false,
+          lastFailure: { code: 'ANALYSIS_FAILED' },
+        });
+      }
     });
-  });
-});
-
-describe('stock analysis analytics', () => {
-  it('captures stock_analysis_generated on a generation only', async () => {
-    const events: Array<{ event: string; properties?: Record<string, unknown> }> = [];
-    const analytics = {
-      capture: (e: { event: string; properties?: Record<string, unknown> }) => events.push(e),
-      shutdown: async () => {},
-    };
-    const { createTestDb } = await import('../helpers/app.js');
-    const { buildApp } = await import('../../src/app.js');
-    const db = await createTestDb();
-    await db.delete(schema.stockAnalyses);
-    const app = await buildApp({
-      logger: false,
-      db,
-      provider: new MockStockProvider(),
-      disablePoller: true,
-      disableRateLimit: true,
-      loginThrottle: { disabled: true },
-      limits: { disabled: true },
-      analytics: analytics as unknown as AnalyticsClient,
-      llmClient: new FakeLlmClient(),
-    });
-    try {
-      const u = await registerUser(app, unique('tracked'));
-      const headers = { authorization: `Bearer ${u.token}` };
-      await app.inject({ method: 'POST', url: '/stocks/TSLA/analysis', headers });
-      await app.inject({ method: 'POST', url: '/stocks/TSLA/analysis', headers });
-      await vi.waitFor(() => expect(events.some((e) => e.event === 'stock_analysis_generated')).toBe(true));
-      const generated = events.filter((e) => e.event === 'stock_analysis_generated');
-      expect(generated).toHaveLength(1);
-      expect(generated[0]!.properties).toMatchObject({ symbol: 'TSLA', verdict: 'BUY', model: 'openrouter/free' });
-    } finally {
-      await app.close();
-    }
   });
 });

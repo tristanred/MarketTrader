@@ -9,5 +9,6 @@ import { OpenRouterClient } from './openrouter.js';
  */
 export function createLlmClient(): LlmClient | null {
   if (env.OPENROUTER_API_KEY === '' || env.NODE_ENV === 'test') return null;
-  return new OpenRouterClient(env.OPENROUTER_API_KEY);
+  // The frontend origin is the app's public URL (production refuses the dev default).
+  return new OpenRouterClient({ apiKey: env.OPENROUTER_API_KEY, appUrl: env.CORS_ORIGIN });
 }

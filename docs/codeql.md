@@ -146,6 +146,7 @@ Status is as of the commit that introduced the pack. "Holds" means zero results.
 | `vite-env-read-confinement` | `VITE_POSTHOG_*`/`VITE_OTEL_*` each read in one module | Holds |
 | `stock-data-library-confinement` | Market-data libraries only under `providers/` | Holds |
 | `server-outbound-http-confinement` | Raw outbound HTTP only in `providers/` and `observability/` | Holds |
+| `llm-sdk-confinement` | LLM SDKs (`@openrouter/sdk`, `openai`, `@anthropic-ai/sdk`) only under `providers/llm/` | Holds |
 | `otel-import-confinement` | OTel SDK packages only in `observability/otel.ts` | Holds |
 | `frontend-otel-static-import` | The frontend OTel module is only loaded with dynamic `import()` | Holds |
 | `build-global-confinement` | Build-time globals only in `build-info.ts`, behind `typeof` on the server | Holds |

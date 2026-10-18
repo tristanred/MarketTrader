@@ -1,8 +1,10 @@
 import { describe, it, expect } from 'vitest';
+import type { Fetcher } from '@openrouter/sdk';
 import { OpenRouterClient, extractJson, parseRetryAfter } from '../../src/providers/llm/openrouter.js';
 import { LlmError, type LlmRequest } from '../../src/providers/llm/interface.js';
 
 const KEY = 'sk-or-v1-test-key-do-not-leak';
+const APP_URL = 'https://markettrader.example';
 
 const request: LlmRequest = {
   model: 'openrouter/free',
@@ -20,23 +22,46 @@ function json(status: number, body: unknown, headers: Record<string, string> = {
   });
 }
 
+/** A complete chat completion, as the SDK's response schema expects it. */
 function ok(content: unknown, extra: Record<string, unknown> = {}): Response {
   return json(200, {
+    id: 'gen-1',
+    object: 'chat.completion',
+    created: 1_760_000_000,
     model: 'nvidia/nemotron:free',
-    choices: [{ finish_reason: 'stop', message: { content } }],
-    usage: { prompt_tokens: 111, completion_tokens: 222 },
+    system_fingerprint: null,
+    choices: [{ index: 0, finish_reason: 'stop', message: { role: 'assistant', content } }],
+    usage: { prompt_tokens: 111, completion_tokens: 222, total_tokens: 333 },
     ...extra,
   });
 }
 
-function clientReturning(res: Response | (() => Promise<Response>)) {
-  const seen: Array<{ url: string; init: RequestInit }> = [];
-  const fetchImpl = (async (url: string | URL | Request, init?: RequestInit) => {
-    seen.push({ url: String(url), init: init ?? {} });
-    return typeof res === 'function' ? res() : res;
-  }) as typeof fetch;
-  return { client: new OpenRouterClient(KEY, fetchImpl), seen };
+function clientWith(fetcher: Fetcher): OpenRouterClient {
+  return new OpenRouterClient({ apiKey: KEY, appUrl: APP_URL, fetcher });
 }
+
+/** The SDK hands its fetcher a `Request`; normalise either calling form. */
+function requestOf(input: Parameters<Fetcher>[0], init?: RequestInit): Request {
+  return input instanceof Request ? input : new Request(input, init);
+}
+
+function clientReturning(res: Response | (() => Promise<Response>)) {
+  const seen: Request[] = [];
+  const client = clientWith(async (input, init) => {
+    seen.push(requestOf(input, init).clone());
+    return typeof res === 'function' ? res() : res;
+  });
+  return { client, seen };
+}
+
+/** A fetcher that never answers and rejects when its request is aborted — even before it was called. */
+const hangingFetcher: Fetcher = (input, init) => {
+  const signal = requestOf(input, init).signal;
+  return new Promise<Response>((_, reject) => {
+    if (signal.aborted) reject(signal.reason);
+    signal.addEventListener('abort', () => reject(signal.reason));
+  });
+};
 
 async function failure(res: Response | (() => Promise<Response>), req: LlmRequest = request): Promise<LlmError> {
   const { client } = clientReturning(res);
@@ -55,9 +80,8 @@ describe('OpenRouterClient request', () => {
 
     expect(seen).toHaveLength(1);
     expect(seen[0]!.url).toBe('https://openrouter.ai/api/v1/chat/completions');
-    const headers = seen[0]!.init.headers as Record<string, string>;
-    expect(headers['Authorization']).toBe(`Bearer ${KEY}`);
-    const body = JSON.parse(String(seen[0]!.init.body)) as Record<string, unknown>;
+    expect(seen[0]!.headers.get('authorization')).toBe(`Bearer ${KEY}`);
+    const body = JSON.parse(await seen[0]!.text()) as Record<string, unknown>;
     expect(body).toMatchObject({
       model: 'openrouter/free',
       max_tokens: 4000,
@@ -70,6 +94,51 @@ describe('OpenRouterClient request', () => {
       { role: 'system', content: 'system prompt' },
       { role: 'user', content: 'user prompt' },
     ]);
+  });
+
+  // OpenRouter keys an app on HTTP-Referer; a title alone showed as "Unknown".
+  it('attributes the call to the app with a referer and a title', async () => {
+    const { client, seen } = clientReturning(ok('{"verdict":"BUY"}'));
+    await client.complete(request);
+    expect(seen[0]!.headers.get('http-referer')).toBe(APP_URL);
+    expect(seen[0]!.headers.get('x-openrouter-title')).toBe('MarketTrader');
+  });
+
+  it('makes one attempt even when the upstream fails with a 5xx', async () => {
+    let calls = 0;
+    const client = clientWith(async () => {
+      calls += 1;
+      return json(503, { error: { code: 503, message: 'down' } });
+    });
+    await client.complete(request).catch(() => undefined);
+    expect(calls).toBe(1);
+  });
+
+  it('ignores OPENROUTER_BASE_URL in the environment', async () => {
+    const previous = process.env['OPENROUTER_BASE_URL'];
+    process.env['OPENROUTER_BASE_URL'] = 'https://attacker.example/api/v1';
+    try {
+      const { client, seen } = clientReturning(ok('{"verdict":"BUY"}'));
+      await client.complete(request);
+      expect(new URL(seen[0]!.url).host).toBe('openrouter.ai');
+    } finally {
+      if (previous === undefined) delete process.env['OPENROUTER_BASE_URL'];
+      else process.env['OPENROUTER_BASE_URL'] = previous;
+    }
+  });
+
+  it('reads a 200 the SDK rejects from its raw body', async () => {
+    // Missing fields the SDK's schema requires (id, created, role…), as some providers send.
+    const res = json(200, {
+      model: 'vendor/sparse:free',
+      choices: [{ finish_reason: 'stop', message: { content: '{"verdict":"SELL"}' } }],
+      usage: { prompt_tokens: 5, completion_tokens: 6 },
+    });
+    await expect(clientReturning(res).client.complete(request)).resolves.toEqual({
+      content: { verdict: 'SELL' },
+      reportedModel: 'vendor/sparse:free',
+      usage: { promptTokens: 5, completionTokens: 6 },
+    });
   });
 
   it('returns parsed content, the reported model, and token usage', async () => {
@@ -221,34 +290,35 @@ describe('OpenRouterClient failures inside a 200', () => {
 
 describe('OpenRouterClient transport failures', () => {
   it('maps its own deadline to TIMEOUT', async () => {
-    const fetchImpl = ((_url: unknown, init?: RequestInit) =>
-      new Promise<Response>((_, reject) => {
-        init?.signal?.addEventListener('abort', () => reject(init.signal?.reason));
-      })) as typeof fetch;
-    const client = new OpenRouterClient(KEY, fetchImpl);
-    const err = await client.complete({ ...request, timeoutMs: 20 }).catch((e: unknown) => e);
+    const err = await clientWith(hangingFetcher)
+      .complete({ ...request, timeoutMs: 20 })
+      .catch((e: unknown) => e);
     expect(err).toBeInstanceOf(LlmError);
     expect((err as LlmError).code).toBe('TIMEOUT');
     expect((err as LlmError).reachedModel).toBe(true);
   });
 
   it('maps a caller abort to ABORTED', async () => {
-    const fetchImpl = ((_url: unknown, init?: RequestInit) =>
-      new Promise<Response>((_, reject) => {
-        init?.signal?.addEventListener('abort', () => reject(init.signal?.reason));
-      })) as typeof fetch;
     const controller = new AbortController();
-    const pending = new OpenRouterClient(KEY, fetchImpl).complete({ ...request, signal: controller.signal });
+    const pending = clientWith(hangingFetcher).complete({ ...request, signal: controller.signal });
     controller.abort();
     const err = await pending.catch((e: unknown) => e);
     expect((err as LlmError).code).toBe('ABORTED');
   });
 
   it('maps a network failure to UPSTREAM_ERROR that never reached a model', async () => {
-    const fetchImpl = (() => Promise.reject(new TypeError('fetch failed'))) as typeof fetch;
-    const err = await new OpenRouterClient(KEY, fetchImpl).complete(request).catch((e: unknown) => e);
+    const err = await clientWith(() => Promise.reject(new TypeError('fetch failed')))
+      .complete(request)
+      .catch((e: unknown) => e);
     expect((err as LlmError).code).toBe('UPSTREAM_ERROR');
     expect((err as LlmError).reachedModel).toBe(false);
+  });
+
+  it('never puts the key in a transport error message', async () => {
+    const err = await clientWith(() => Promise.reject(new TypeError(`connect failed ${KEY}`)))
+      .complete(request)
+      .catch((e: unknown) => e);
+    expect((err as LlmError).message).not.toContain(KEY);
   });
 });
 

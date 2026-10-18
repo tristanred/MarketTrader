@@ -262,7 +262,8 @@ Switch via `STOCK_PROVIDER=alpaca` env var.
 
 The Analyze button's BUY / HOLD / SELL verdict comes from OpenRouter, server-side only (ADR-019, `docs/design.md` → Stock analysis).
 
-- **All LLM HTTP goes through `LlmClient` in `providers/llm/`.** Never `fetch` an LLM from a service or route. The client is generic (no stock types), so the next LLM feature reuses it.
+- **All LLM calls go through `LlmClient` in `providers/llm/`.** Its transport is `@openrouter/sdk`, imported nowhere else (CodeQL `llm-sdk-confinement`). The client is generic (no stock types), so the next LLM feature reuses it.
+- **Keep the SDK's overrides** in `OpenRouterClient`: retries off (each retry spends free-tier budget), `httpReferer` set (without it the dashboard shows the app as "Unknown"), `server` pinned and a silent `debugLogger` (the SDK otherwise honours `OPENROUTER_BASE_URL` and `OPENROUTER_DEBUG`, and the latter logs the key).
 - **`ANALYSIS_MAX_GENERATIONS_PER_DAY` is deliberately outside the limits resolver.** It is the spend backstop that binds admins, overrides and `LIMITS_ENABLED=false`, as `PRICE_POLLER_MAX_SYMBOLS` does for the poller. Never remove it on the grounds that the per-user `stockAnalyses` quota exists.
 - **Cache hits and joins on an in-flight generation never consume quota** and run before every limit check, so a user at their limit or during an outage still sees cached results. Only `ok` rows in `stock_analyses` count toward the user quota; the global ceiling counts every row.
 - **Bump `PROMPT_VERSION` (`services/stock-analysis/prompt.ts`) when the prompt or the output schema changes meaning.** It is part of the cache key. The prompt snapshot test fails until you update it, which is the reminder.

@@ -63,7 +63,9 @@ Production env validation (`validateProductionEnv()` in `packages/server/src/env
 - Put the key in the server's environment (`.env` here, or the service environment on a non-Docker host).
 - Allow outbound HTTPS from the server to `openrouter.ai`.
 
-No proxy route, timeout, CSP, or `/relay` change is needed. The browser only talks to `/api/`, and the server makes the LLM call. Free models can take close to a minute to answer (13–52 s in testing), too close to the 60 s `proxy_read_timeout` nginx applies by default on `/api/`. So `POST /stocks/:symbol/analysis` waits at most `ANALYSIS_RESPONSE_WAIT_MS` (default 25 s), then answers 202 and lets the client poll while the generation finishes in the background. `ANALYSIS_TIMEOUT_MS`, the deadline on the call itself, is not bound by the proxy. **`ANALYSIS_RESPONSE_WAIT_MS` must stay under the proxy's `proxy_read_timeout`**, both the container `nginx.conf` and any proxy in front of it. The admin panel refuses values over 50 s, but the environment variable is not range-checked.
+Calls are attributed to the app in the OpenRouter dashboard through `HTTP-Referer`, which the server takes from `CORS_ORIGIN`. Production already requires that to be the real frontend URL. Leave `OPENROUTER_BASE_URL` and `OPENROUTER_DEBUG` unset; the client ignores both anyway.
+
+No proxy route, timeout, CSP, or `/relay` change is needed. The browser only talks to `/api/`, and the server makes the LLM call. Free models can take close to a minute to answer (13–52 s in testing), too close to the 60 s `proxy_read_timeout` nginx applies by default on `/api/`. So `POST /stocks/:symbol/analysis` waits at most `ANALYSIS_RESPONSE_WAIT_MS` (default 25 s), then answers 202 and lets the client poll while the generation finishes in the background. `ANALYSIS_TIMEOUT_MS`, the deadline on the call itself, is not bound by the proxy. **`ANALYSIS_RESPONSE_WAIT_MS` must stay under the proxy's `proxy_read_timeout`**, both the container `nginx.conf` and any proxy in front of it. The admin panel refuses values over 50 s, and the service caps an environment value at 50 s too.
 
 ## 4. Bring up the stack
 

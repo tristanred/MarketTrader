@@ -1,8 +1,9 @@
 import { SpanStatusCode } from '@opentelemetry/api';
+import { HTTPClient, OpenRouter, type Fetcher } from '@openrouter/sdk';
+import type { ChatRequest, ChatResult } from '@openrouter/sdk/models';
+import { InvalidRequestError, OpenRouterError, SDKValidationError } from '@openrouter/sdk/models/errors';
 import { meters, tracer } from '../../observability/telemetry.js';
 import { LlmError, type LlmClient, type LlmCompletion, type LlmRequest } from './interface.js';
-
-const ENDPOINT = 'https://openrouter.ai/api/v1/chat/completions';
 
 /** Shape of an OpenRouter error object, top-level or inside a choice. Every field is untrusted. */
 interface UpstreamError {
@@ -11,34 +12,52 @@ interface UpstreamError {
   metadata?: unknown;
 }
 
-interface ChatResponse {
+/** A completion reduced to what classification reads, from the SDK's result or from a raw body. */
+interface Answer {
   model?: unknown;
   error?: UpstreamError;
-  choices?: Array<{
-    finish_reason?: unknown;
-    error?: UpstreamError;
-    message?: { content?: unknown; reasoning?: unknown };
-  }>;
-  usage?: { prompt_tokens?: unknown; completion_tokens?: unknown };
+  choice?: { finishReason?: unknown; error?: UpstreamError; content?: unknown; reasoning?: unknown };
+  usage?: { promptTokens?: unknown; completionTokens?: unknown };
 }
 
+/** How {@link OpenRouterClient} identifies itself. */
+export interface OpenRouterClientOptions {
+  apiKey: string;
+  /**
+   * The app's public URL, sent as `HTTP-Referer`. OpenRouter keys app attribution
+   * on it: a title without it shows as "Unknown" in the dashboard.
+   */
+  appUrl: string;
+  /** Replaces the network for tests. */
+  fetcher?: Fetcher;
+}
+
+const APP_TITLE = 'MarketTrader';
+
+// The SDK otherwise turns on a console logger when OPENROUTER_DEBUG is set, and
+// its own docs warn that logger prints secrets — the API key among them.
+const SILENT_LOGGER = { group: () => {}, groupEnd: () => {}, log: () => {} };
+
 /**
- * {@link LlmClient} for OpenRouter's OpenAI-compatible chat completions API.
- * Classifies every documented failure, including the ones OpenRouter reports
- * inside an HTTP 200. Makes exactly one request per call: a retry would spend
- * another unit of a free-tier daily budget.
+ * {@link LlmClient} on the official `@openrouter/sdk`. Classifies every
+ * documented failure, including the ones OpenRouter reports inside an HTTP 200.
+ * Makes exactly one request per call: a retry would spend another unit of a
+ * free-tier daily budget, so the SDK's own retries are off.
  */
 export class OpenRouterClient implements LlmClient {
-  private readonly headers: Record<string, string>;
-  private readonly fetchImpl: typeof fetch;
+  private readonly sdk: OpenRouter;
 
-  constructor(apiKey: string, fetchImpl: typeof fetch = fetch) {
-    this.headers = {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-      'X-Title': 'MarketTrader',
-    };
-    this.fetchImpl = fetchImpl;
+  constructor(opts: OpenRouterClientOptions) {
+    this.sdk = new OpenRouter({
+      apiKey: opts.apiKey,
+      appTitle: APP_TITLE,
+      httpReferer: opts.appUrl,
+      // Pinned, so an OPENROUTER_BASE_URL in the environment cannot redirect the key.
+      server: 'production',
+      retryConfig: { strategy: 'none' },
+      debugLogger: SILENT_LOGGER,
+      ...(opts.fetcher ? { httpClient: new HTTPClient({ fetcher: opts.fetcher }) } : {}),
+    });
   }
 
   complete(req: LlmRequest): Promise<LlmCompletion> {
@@ -73,37 +92,24 @@ export class OpenRouterClient implements LlmClient {
 
   private async send(req: LlmRequest): Promise<LlmCompletion> {
     const timeout = AbortSignal.timeout(req.timeoutMs);
+    // A per-call signal overrides the SDK's timeoutMs, so the deadline rides on the signal.
     const signal = req.signal ? AbortSignal.any([timeout, req.signal]) : timeout;
-    let res: Response;
-    let body: ChatResponse | undefined;
+    let answer: Answer;
     try {
-      res = await this.fetchImpl(ENDPOINT, {
-        method: 'POST',
-        headers: this.headers,
-        body: JSON.stringify(requestBody(req)),
-        signal,
-      });
-      body = await readJson(res);
+      const result = await this.sdk.chat.send({ chatRequest: chatRequest(req) }, { signal });
+      answer = 'choices' in result ? answerFromResult(result) : {};
     } catch (err) {
       if (timeout.aborted) {
         throw new LlmError('TIMEOUT', `OpenRouter call exceeded ${req.timeoutMs} ms`, { reachedModel: true });
       }
       if (req.signal?.aborted) throw new LlmError('ABORTED', 'OpenRouter call aborted', { reachedModel: false });
-      // Network failure before any response: nothing reached a model.
-      throw new LlmError('UPSTREAM_ERROR', `OpenRouter request failed (${errorName(err)})`, {
-        reachedModel: false,
-      });
+      answer = recover(err);
     }
-
-    if (!res.ok) {
-      throw classifyHttpError(res.status, body?.error, parseRetryAfter(res.headers.get('retry-after')));
-    }
-    if (!body) throw new LlmError('INVALID_OUTPUT', 'OpenRouter returned a non-JSON body', { reachedModel: true });
-    return parseCompletion(body);
+    return parseAnswer(answer);
   }
 }
 
-function requestBody(req: LlmRequest): Record<string, unknown> {
+function chatRequest(req: LlmRequest): ChatRequest {
   return {
     model: req.model,
     messages: [
@@ -111,10 +117,10 @@ function requestBody(req: LlmRequest): Record<string, unknown> {
       { role: 'user', content: req.user },
     ],
     temperature: req.temperature ?? 0.2,
-    max_tokens: req.maxOutputTokens,
-    response_format: {
+    maxTokens: req.maxOutputTokens,
+    responseFormat: {
       type: 'json_schema',
-      json_schema: { name: req.jsonSchema.name, strict: true, schema: req.jsonSchema.schema },
+      jsonSchema: { name: req.jsonSchema.name, strict: true, schema: req.jsonSchema.schema },
     },
     // A free router often lands on a reasoning model, which at default effort spends the
     // whole token budget thinking and returns no content (finish_reason "length").
@@ -123,12 +129,103 @@ function requestBody(req: LlmRequest): Record<string, unknown> {
   };
 }
 
-async function readJson(res: Response): Promise<ChatResponse | undefined> {
-  const text = await res.text();
-  if (text.trim() === '') return undefined;
+/**
+ * Turns an SDK failure into an {@link Answer} or throws the {@link LlmError} for it.
+ * The SDK validates a 200 strictly, and OpenRouter reports some failures — or omits
+ * a field — inside one, so a rejected 2xx is re-read from its raw body.
+ */
+function recover(err: unknown): Answer {
+  if (err instanceof OpenRouterError) {
+    const body = parseJsonObject(err.body);
+    if (err.statusCode >= 200 && err.statusCode < 300) {
+      if (!body) throw new LlmError('INVALID_OUTPUT', 'OpenRouter returned a non-JSON body', { reachedModel: true });
+      return answerFromRaw(body);
+    }
+    const error = body?.['error'];
+    throw classifyHttpError(
+      err.statusCode,
+      error !== null && typeof error === 'object' ? (error as UpstreamError) : undefined,
+      parseRetryAfter(err.headers.get('retry-after')),
+    );
+  }
+  // The SDK parses a JSON-typed body without catching, so a gateway's HTML page surfaces as this.
+  if (err instanceof SyntaxError) {
+    throw new LlmError('INVALID_OUTPUT', 'OpenRouter returned a non-JSON body', { reachedModel: true });
+  }
+  if (err instanceof InvalidRequestError || err instanceof SDKValidationError) {
+    // Our request failed the SDK's own schema: a bug or a bad model id, never transient.
+    throw new LlmError('BAD_REQUEST', `OpenRouter request rejected by the SDK (${errorName(err)})`, {
+      reachedModel: false,
+    });
+  }
+  // Connection failure before any response: nothing reached a model.
+  throw new LlmError('UPSTREAM_ERROR', `OpenRouter request failed (${errorName(err)})`, { reachedModel: false });
+}
+
+function answerFromResult(result: ChatResult): Answer {
+  const choice = result.choices[0];
+  return {
+    model: result.model,
+    ...(choice
+      ? {
+          choice: {
+            finishReason: choice.finishReason,
+            content: textOf(choice.message.content),
+            reasoning: choice.message.reasoning,
+          },
+        }
+      : {}),
+    ...(result.usage
+      ? { usage: { promptTokens: result.usage.promptTokens, completionTokens: result.usage.completionTokens } }
+      : {}),
+  };
+}
+
+/** The raw, snake_case body of a 200 the SDK would not accept. Every field is untrusted. */
+function answerFromRaw(body: Record<string, unknown>): Answer {
+  const choices = body['choices'];
+  const first: unknown = Array.isArray(choices) ? choices[0] : undefined;
+  const choice = first !== null && typeof first === 'object' ? (first as Record<string, unknown>) : undefined;
+  const message = asRecord(choice?.['message']);
+  const usage = asRecord(body['usage']);
+  return {
+    model: body['model'],
+    ...(asRecord(body['error']) ? { error: body['error'] as UpstreamError } : {}),
+    ...(choice
+      ? {
+          choice: {
+            finishReason: choice['finish_reason'],
+            ...(asRecord(choice['error']) ? { error: choice['error'] as UpstreamError } : {}),
+            content: textOf(message?.['content']),
+            reasoning: message?.['reasoning'],
+          },
+        }
+      : {}),
+    ...(usage ? { usage: { promptTokens: usage['prompt_tokens'], completionTokens: usage['completion_tokens'] } } : {}),
+  };
+}
+
+/** Message content as text: a string, or the text parts of a content array. */
+function textOf(content: unknown): string {
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content)) return '';
+  return content
+    .map((part: unknown) => {
+      const text = asRecord(part)?.['text'];
+      return typeof text === 'string' ? text : '';
+    })
+    .join('');
+}
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+function parseJsonObject(text: string): Record<string, unknown> | undefined {
   try {
-    const parsed: unknown = JSON.parse(text);
-    return parsed !== null && typeof parsed === 'object' ? (parsed as ChatResponse) : undefined;
+    return asRecord(JSON.parse(text));
   } catch {
     return undefined;
   }
@@ -181,33 +278,34 @@ function classifyHttpError(
   return new LlmError('UPSTREAM_ERROR', where, { reachedModel: true, retryAfterMs });
 }
 
-function parseCompletion(body: ChatResponse): LlmCompletion {
-  if (body.error) {
-    throw classifyHttpError(numericCode(body.error.code) ?? 502, body.error, undefined, true);
+function parseAnswer(answer: Answer): LlmCompletion {
+  if (answer.error) {
+    throw classifyHttpError(numericCode(answer.error.code) ?? 502, answer.error, undefined, true);
   }
-  const reportedModel = typeof body.model === 'string' && body.model !== '' ? body.model.slice(0, 120) : null;
-  const choice = body.choices?.[0];
+  const reportedModel =
+    typeof answer.model === 'string' && answer.model !== '' ? answer.model.slice(0, 120) : null;
+  const choice = answer.choice;
   if (!choice) {
     throw new LlmError('UPSTREAM_ERROR', 'OpenRouter returned no choices', { reachedModel: true, reportedModel });
   }
-  if (choice.error || choice.finish_reason === 'error') {
+  if (choice.error || choice.finishReason === 'error') {
     throw classifyHttpError(numericCode(choice.error?.code) ?? 502, choice.error, undefined, true);
   }
-  if (choice.finish_reason === 'content_filter') {
+  if (choice.finishReason === 'content_filter') {
     throw new LlmError('REFUSED', 'OpenRouter answer was filtered', { reachedModel: true, reportedModel });
   }
-  if (choice.finish_reason === 'length') {
+  if (choice.finishReason === 'length') {
     throw new LlmError('TRUNCATED', 'OpenRouter answer ran out of tokens', { reachedModel: true, reportedModel });
   }
 
-  const text = typeof choice.message?.content === 'string' ? choice.message.content : '';
-  const reasoning = typeof choice.message?.reasoning === 'string' ? choice.message.reasoning : '';
+  const text = typeof choice.content === 'string' ? choice.content : '';
+  const reasoning = typeof choice.reasoning === 'string' ? choice.reasoning : '';
   const content = extractJson(text) ?? extractJson(reasoning);
   if (content === undefined) {
     // Shape only — the content itself stays out of errors and telemetry.
     const finish =
-      typeof choice.finish_reason === 'string' && /^[a-z_]{1,20}$/.test(choice.finish_reason)
-        ? choice.finish_reason
+      typeof choice.finishReason === 'string' && /^[a-z_]{1,20}$/.test(choice.finishReason)
+        ? choice.finishReason
         : 'unknown';
     const body = text.trim() === '' ? 'empty' : `${text.length} chars`;
     const shape = `${body}, ${reasoning.length} reasoning chars, finish ${finish}`;
@@ -216,7 +314,7 @@ function parseCompletion(body: ChatResponse): LlmCompletion {
       reportedModel,
     });
   }
-  return { content, reportedModel, usage: parseUsage(body.usage) };
+  return { content, reportedModel, usage: parseUsage(answer.usage) };
 }
 
 /** Reasoning text can run to tens of thousands of chars; the answer is at its end. */
@@ -241,9 +339,9 @@ export function extractJson(text: string): unknown {
   return undefined;
 }
 
-function parseUsage(usage: ChatResponse['usage']): LlmCompletion['usage'] {
-  const prompt = usage?.prompt_tokens;
-  const completion = usage?.completion_tokens;
+function parseUsage(usage: Answer['usage']): LlmCompletion['usage'] {
+  const prompt = usage?.promptTokens;
+  const completion = usage?.completionTokens;
   return typeof prompt === 'number' && typeof completion === 'number'
     ? { promptTokens: prompt, completionTokens: completion }
     : null;

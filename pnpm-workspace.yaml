@@ -36,3 +36,7 @@ allowBuilds:
   # needed at install time: the `posthog-cli` shim fetches it on first run,
   # which only happens on a build that uploads source maps.
   '@posthog/cli': false
+  # Its postinstall calls openrouter.ai to warn when the bundled model-name types
+  # are stale. Model ids are a live config string here, so the warning is noise
+  # and the install should not depend on the network.
+  '@openrouter/sdk': false

@@ -28,6 +28,11 @@ The live test against `openrouter/free` (2026-10-17) changed four things. ADR-01
    - The breaker keeps account-wide and model-scoped pauses separately.
    - Failed attempts record the reported model, and log the answer's shape (never its content) at info.
    - Fundamentals money fields in a non-USD currency (ADRs) are dropped rather than mislabelled.
+5. **Transport is `@openrouter/sdk`**, not a hand-written `fetch` client. It is confined to
+   `providers/llm/` by the `llm-sdk-confinement` CodeQL query. The client sends `HTTP-Referer`
+   (from `CORS_ORIGIN`) as well as `appTitle`: with only a title, the dashboard showed the app as
+   "Unknown". The SDK's retries are off, and its environment-driven base URL and debug logger are
+   neutralised. ADR-019 has the details.
 
 A small **Analyze** button on the quote view asks an LLM (via OpenRouter, server-side only) for a
 position-independent **BUY / HOLD / SELL** verdict on a stock. Results are cached per symbol and

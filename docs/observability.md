@@ -155,7 +155,8 @@ preference.
     its parent HTTP span.
   - `llm.complete` (`providers/llm/openrouter.ts`), its child, with `llm.provider`, `llm.model`,
     and `llm.reported_model`. Failures record the exception, whose message carries only a status
-    and an error code. The OpenRouter `fetch` beneath it gets the usual undici span.
+    and an error code. The `@openrouter/sdk` request beneath it uses global `fetch`, so it gets
+    the usual undici span.
   - The generation's input fetches appear under `analysis.generate` as `provider.*` spans,
     including `operation=getFundamentals`.
 - **Not instrumented: the database.** There is no OTel instrumentation for `postgres`

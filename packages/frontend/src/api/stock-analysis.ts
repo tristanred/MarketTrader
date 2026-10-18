@@ -13,7 +13,7 @@ export const stockAnalysisKeys = {
 };
 
 /** Status poll while waiting on a generation that outlived its POST (a 202). */
-export const ANALYSIS_WAIT_POLL_MS = 2_500;
+const ANALYSIS_WAIT_POLL_MS = 2_500;
 const BLOCKED_STATUS_POLL_MS = 60_000;
 
 /** A POST answers 200 with the analysis, or 202 when the model is still working. */

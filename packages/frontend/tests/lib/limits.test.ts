@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { LimitExceededBody } from '@markettrader/shared';
 import { ApiError } from '@/lib/api';
-import { formatLimitMessage, formatRetryAfter, isLimitExceeded } from '@/lib/limits';
+import { formatLimitMessage, formatRetryAfter, isLimitExceeded, secondsUntil } from '@/lib/limits';
 import { extractApiMessage } from '@/lib/extractApiMessage';
 import { toastApiError } from '@/lib/toastApiError';
 import { useToastStore } from '@/components/ui/toast';
@@ -39,6 +39,23 @@ describe('formatRetryAfter', () => {
     [2 * 86_400 + 5, 'in 3 days'],
   ])('%i s → %s', (seconds, text) => {
     expect(formatRetryAfter(seconds)).toBe(text);
+  });
+});
+
+describe('secondsUntil', () => {
+  const now = Date.parse('2026-10-17T12:00:00.000Z');
+
+  it('counts the seconds to a future time', () => {
+    expect(secondsUntil('2026-10-17T12:01:30.000Z', now)).toBe(90);
+  });
+
+  it.each([
+    ['unknown', null],
+    ['now', '2026-10-17T12:00:00.000Z'],
+    ['past', '2026-10-17T11:59:00.000Z'],
+    ['unparseable', 'not a date'],
+  ])('is null for a time that is %s', (_, iso) => {
+    expect(secondsUntil(iso, now)).toBeNull();
   });
 });
 

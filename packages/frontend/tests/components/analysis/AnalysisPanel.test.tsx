@@ -1,29 +1,40 @@
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi } from 'vitest';
-import type { AnalysisErrorBody, LimitExceededBody } from '@markettrader/shared';
+import type {
+  AnalysisErrorBody,
+  LimitExceededBody,
+  StockAnalysisResponse,
+} from '@markettrader/shared';
 import { ApiError } from '@/lib/api';
-import { AnalysisPanel, type AnalysisPanelProps } from '@/components/analysis/AnalysisPanel';
-import { confidenceWord, describeAnalysisError } from '@/components/analysis/analysisCopy';
+import {
+  AnalysisPanel,
+  type AnalysisPanelPhase,
+  type AnalysisPanelProps,
+} from '@/components/analysis/AnalysisPanel';
+import { describeAnalysisError } from '@/components/analysis/analysisCopy';
 import { analysis, response, usage } from './fixtures';
 
-// `error` is the raw thrown value here, so the mapping is exercised end to end.
-function renderPanel({
-  error,
-  ...over
-}: Partial<Omit<AnalysisPanelProps, 'error'>> & { error?: unknown } = {}) {
+function renderPanel(over: Partial<AnalysisPanelProps> = {}) {
   const props: AnalysisPanelProps = {
     symbol: 'AAPL',
-    pending: false,
-    result: response(),
+    phase: done(),
     alwaysStacked: false,
     onDismiss: vi.fn(),
     onRetry: vi.fn(),
     ...over,
-    error: error === undefined || error === null ? null : describeAnalysisError(error),
   };
   render(<AnalysisPanel {...props} />);
   return props;
+}
+
+function done(result: StockAnalysisResponse = response()): AnalysisPanelPhase {
+  return { kind: 'done', result };
+}
+
+// Takes the raw thrown value, so the error mapping is exercised end to end.
+function failed(err: unknown): AnalysisPanelPhase {
+  return { kind: 'failed', view: describeAnalysisError(err) };
 }
 
 function analysisError(status: number, body: AnalysisErrorBody) {
@@ -46,14 +57,14 @@ describe('AnalysisPanel result', () => {
 
   it('never interprets model text as markup', () => {
     renderPanel({
-      result: response({ analysis: analysis({ summary: '<b>bold</b> **not markdown**' }) }),
+      phase: done(response({ analysis: analysis({ summary: '<b>bold</b> **not markdown**' }) })),
     });
     expect(screen.getByText('<b>bold</b> **not markdown**')).toBeInTheDocument();
     expect(document.querySelector('section b')).toBeNull();
   });
 
   it('lights the verdict segment of the rating rail', () => {
-    renderPanel({ result: response({ analysis: analysis({ verdict: 'SELL' }) }) });
+    renderPanel({ phase: done(response({ analysis: analysis({ verdict: 'SELL' }) })) });
     const rail = screen.getByTestId('rating-rail');
     expect(rail).toHaveAttribute('aria-hidden', 'true');
     const lit = rail.querySelectorAll('[data-lit="true"]');
@@ -63,7 +74,7 @@ describe('AnalysisPanel result', () => {
   });
 
   it('shows HOLD in the neutral strong text colour', () => {
-    renderPanel({ result: response({ analysis: analysis({ verdict: 'HOLD' }) }) });
+    renderPanel({ phase: done(response({ analysis: analysis({ verdict: 'HOLD' }) })) });
     expect(screen.getByText('HOLD')).toHaveClass('text-text-strong');
   });
 
@@ -91,10 +102,12 @@ describe('AnalysisPanel result', () => {
 
   it('omits the model when none was reported, and the count when unlimited', () => {
     renderPanel({
-      result: response({
-        analysis: analysis({ reportedModel: null }),
-        usage: usage({ limit: null, remaining: null }),
-      }),
+      phase: done(
+        response({
+          analysis: analysis({ reportedModel: null }),
+          usage: usage({ limit: null, remaining: null }),
+        }),
+      ),
     });
     expect(screen.queryByText(/Model:/)).toBeNull();
     expect(screen.queryByText(/left today/)).toBeNull();
@@ -108,13 +121,17 @@ describe('AnalysisPanel result', () => {
 });
 
 describe('AnalysisPanel pending', () => {
-  it('sweeps the rail and says how long it can take', () => {
-    renderPanel({ pending: true, result: null });
+  it.each<AnalysisPanelPhase>([
+    { kind: 'requesting', startedAt: 0 },
+    { kind: 'waiting', startedAt: 0, since: 0, joined: false },
+  ])('sweeps the rail and says how long it can take while $kind', (phase) => {
+    renderPanel({ phase });
     expect(screen.getByRole('status')).toHaveTextContent(
       'Analyzing AAPL… this can take up to a minute.',
     );
     expect(screen.getByTestId('rating-rail-sweep')).toBeInTheDocument();
     expect(screen.getByTestId('rating-rail').querySelector('[data-lit]')).toBeNull();
+    expect(screen.queryByText(/^Analyzed /)).toBeNull();
   });
 });
 
@@ -128,7 +145,7 @@ describe('AnalysisPanel errors', () => {
       probation: false,
       retryAfterSeconds: 5 * 3_600,
     };
-    renderPanel({ result: null, error: new ApiError(429, body, '429 Too Many Requests') });
+    renderPanel({ phase: failed(new ApiError(429, body, '429 Too Many Requests')) });
     expect(screen.getByRole('alert')).toHaveTextContent(
       "You've used all 10 analyses for today. You can try again in 5 hours.",
     );
@@ -144,7 +161,7 @@ describe('AnalysisPanel errors', () => {
       probation: true,
       maturityDays: 7,
     };
-    renderPanel({ result: null, error: new ApiError(429, body, '429 Too Many Requests') });
+    renderPanel({ phase: failed(new ApiError(429, body, '429 Too Many Requests')) });
     expect(screen.getByRole('alert')).toHaveTextContent(
       'New accounts have lower limits for their first 7 days.',
     );
@@ -154,8 +171,7 @@ describe('AnalysisPanel errors', () => {
     'says %s is temporary and when to retry',
     (code) => {
       renderPanel({
-        result: null,
-        error: analysisError(503, { error: 'x', code, retryAfterSeconds: 12 * 60 }),
+        phase: failed(analysisError(503, { error: 'x', code, retryAfterSeconds: 12 * 60 })),
       });
       expect(screen.getByRole('alert')).toHaveTextContent(
         'Analysis is temporarily unavailable. Try again in 12 minutes.',
@@ -165,8 +181,7 @@ describe('AnalysisPanel errors', () => {
 
   it('leaves out the retry time when the server gave none', () => {
     renderPanel({
-      result: null,
-      error: analysisError(503, { error: 'x', code: 'ANALYSIS_UNAVAILABLE' }),
+      phase: failed(analysisError(503, { error: 'x', code: 'ANALYSIS_UNAVAILABLE' })),
     });
     expect(screen.getByRole('alert')).toHaveTextContent(/^Analysis is temporarily unavailable\.$/);
   });
@@ -175,7 +190,7 @@ describe('AnalysisPanel errors', () => {
     [502, 'ANALYSIS_FAILED'],
     [504, 'ANALYSIS_TIMEOUT'],
   ] as const)('offers Try again after a %i %s', async (status, code) => {
-    const props = renderPanel({ result: null, error: analysisError(status, { error: 'x', code }) });
+    const props = renderPanel({ phase: failed(analysisError(status, { error: 'x', code })) });
     expect(screen.getByRole('alert')).toHaveTextContent(
       "Couldn't generate an analysis. This didn't use one of your analyses.",
     );
@@ -185,8 +200,7 @@ describe('AnalysisPanel errors', () => {
 
   it('says an earlier request is still running', () => {
     renderPanel({
-      result: null,
-      error: analysisError(409, { error: 'x', code: 'ANALYSIS_IN_PROGRESS' }),
+      phase: failed(analysisError(409, { error: 'x', code: 'ANALYSIS_IN_PROGRESS' })),
     });
     expect(screen.getByRole('alert')).toHaveTextContent(
       'An analysis you started is still running.',
@@ -195,29 +209,16 @@ describe('AnalysisPanel errors', () => {
 
   it('falls back to the server message for anything else', () => {
     renderPanel({
-      result: null,
-      error: new ApiError(404, { error: 'Unknown symbol: ZZZZ' }, '404 Not Found'),
+      phase: failed(new ApiError(404, { error: 'Unknown symbol: ZZZZ' }, '404 Not Found')),
     });
     const alert = screen.getByRole('alert');
     expect(alert).toHaveTextContent('Unknown symbol: ZZZZ');
     expect(within(alert.parentElement!).queryByRole('button', { name: 'Try again' })).toBeNull();
   });
 
-  it('shows the error rather than a stale result', () => {
-    renderPanel({ error: analysisError(502, { error: 'x', code: 'ANALYSIS_FAILED' }) });
+  it('shows the error with no verdict or analyzed time', () => {
+    renderPanel({ phase: failed(analysisError(502, { error: 'x', code: 'ANALYSIS_FAILED' })) });
     expect(screen.queryByText('BUY')).toBeNull();
-  });
-});
-
-describe('confidenceWord', () => {
-  it.each([
-    [0, 'Low'],
-    [39, 'Low'],
-    [40, 'Moderate'],
-    [69, 'Moderate'],
-    [70, 'High'],
-    [100, 'High'],
-  ] as const)('%i → %s', (n, word) => {
-    expect(confidenceWord(n)).toBe(word);
+    expect(screen.queryByText(/^Analyzed /)).toBeNull();
   });
 });

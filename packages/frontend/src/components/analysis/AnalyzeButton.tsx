@@ -1,8 +1,8 @@
 import { Loader2, Sparkles } from 'lucide-react';
 import type { StockAnalysisStatus } from '@markettrader/shared';
-import { formatRetryAfter } from '@/lib/limits';
 import { cn } from '@/lib/utils';
-import { analyzeButtonState, type AnalyzeButtonState } from './analysisCopy';
+import { analyzeButtonCaption, analyzeButtonState } from './analysisCopy';
+import { CHIP_BUTTON_CLASS } from './styles';
 
 export interface AnalyzeButtonProps {
   /** Null while the status is loading or failed to load; the button stays hidden until known. */
@@ -11,26 +11,6 @@ export interface AnalyzeButtonProps {
   pending: boolean;
   onAnalyze: () => void;
   className?: string;
-}
-
-function captionFor(state: AnalyzeButtonState): string | null {
-  switch (state.kind) {
-    case 'pending':
-    case 'generating':
-      return null;
-    case 'cached':
-      return 'Already analyzed — free to view';
-    case 'unavailable':
-      return state.retryInSeconds === null
-        ? 'Analysis unavailable'
-        : `Analysis unavailable · try again ${formatRetryAfter(state.retryInSeconds)}`;
-    case 'exhausted':
-      return state.resetInSeconds === null
-        ? 'Daily limit reached'
-        : `Daily limit reached · resets ${formatRetryAfter(state.resetInSeconds)}`;
-    case 'ready':
-      return state.caption;
-  }
 }
 
 /**
@@ -42,7 +22,7 @@ export function AnalyzeButton({ status, pending, onAnalyze, className }: Analyze
   if (!status || !status.enabled) return null;
 
   const state = analyzeButtonState(status, pending);
-  const caption = captionFor(state);
+  const caption = analyzeButtonCaption(state);
   const blocked = state.kind === 'unavailable' || state.kind === 'exhausted';
   const busy = pending || state.kind === 'generating';
 
@@ -54,8 +34,8 @@ export function AnalyzeButton({ status, pending, onAnalyze, className }: Analyze
         disabled={pending || blocked}
         aria-busy={busy || undefined}
         className={cn(
-          'inline-flex h-7 items-center gap-1.5 rounded-chip border border-hairline-strong px-2.5 text-xs font-medium text-accent transition-colors',
-          'hover:bg-accent-bg focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent',
+          CHIP_BUTTON_CLASS,
+          'gap-1.5 transition-colors',
           // Pending keeps the cyan so the click reads as accepted, not refused.
           busy
             ? 'bg-accent-bg'

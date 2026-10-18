@@ -7,6 +7,7 @@ import { useLiveStore } from '@/stores/liveStore';
 import { usePortfolio } from '@/api/trades';
 import { AnalyzeButton } from '@/components/analysis/AnalyzeButton';
 import { AnalysisPanel } from '@/components/analysis/AnalysisPanel';
+import { CARD_LABEL_CLASS } from '@/components/analysis/styles';
 import { useStockAnalysis } from '@/components/analysis/useStockAnalysis';
 import { capture } from '@/lib/posthog';
 import { ChartCanvas, RANGES } from '@/components/StockChart';
@@ -50,14 +51,13 @@ export function QuoteInfo({
   const marketStatus = useMarketStatus();
   const portfolio = usePortfolio(gameId ?? '');
   const analysis = useStockAnalysis(symbol);
-  const { start: startAnalysis, phase: analysisPhase } = analysis;
 
   const requestAnalysis = () => {
     capture('stock_analysis_requested', {
       symbol,
       surface: variant === 'full' ? 'symbol_page' : 'quote_dialog',
     });
-    startAnalysis();
+    analysis.start();
   };
 
   const data = details.data;
@@ -214,12 +214,10 @@ export function QuoteInfo({
         <ChartCanvas symbol={symbol} range={range} gameId={gameId} wheelZoom={false} />
       </div>
 
-      {analysisPhase.kind !== 'idle' && (
+      {analysis.phase.kind !== 'idle' && (
         <AnalysisPanel
           symbol={symbol}
-          pending={analysis.busy}
-          error={analysisPhase.kind === 'failed' ? analysisPhase.view : null}
-          result={analysisPhase.kind === 'done' ? analysisPhase.result : null}
+          phase={analysis.phase}
           alwaysStacked={variant === 'compact'}
           onDismiss={analysis.dismiss}
           onRetry={requestAnalysis}
@@ -269,9 +267,7 @@ function PositionCard({ holding }: { holding: HoldingForCard }) {
   const gain = holding.unrealizedPnL >= 0;
   return (
     <div className="rounded-md border border-hairline-strong bg-panel p-4">
-      <div className="mb-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted">
-        Your position
-      </div>
+      <div className={cn(CARD_LABEL_CLASS, 'mb-3')}>Your position</div>
       <div className="grid grid-cols-3 gap-4">
         <Stat label="Shares" value={String(holding.quantity)} />
         <Stat label="Avg cost" value={formatUSD(holding.avgCostBasis)} />

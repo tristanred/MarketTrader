@@ -6,7 +6,7 @@ import type {
 } from '@markettrader/shared';
 import { ApiError } from '@/lib/api';
 import { extractApiMessage } from '@/lib/extractApiMessage';
-import { formatLimitMessage, formatRetryAfter, isLimitExceeded } from '@/lib/limits';
+import { formatLimitMessage, formatRetryAfter, isLimitExceeded, secondsUntil } from '@/lib/limits';
 
 /** What the panel shows for a failed request, and whether a retry can help. */
 export interface AnalysisErrorView {
@@ -85,13 +85,6 @@ export function confidenceWord(confidence: number): 'Low' | 'Moderate' | 'High' 
   return 'High';
 }
 
-/** Seconds from `now` until `iso`, or null when the time is unknown or already past. */
-export function secondsUntil(iso: string | null, now = Date.now()): number | null {
-  if (iso === null) return null;
-  const ms = new Date(iso).getTime() - now;
-  return Number.isFinite(ms) && ms > 0 ? ms / 1000 : null;
-}
-
 /** "Analyzed just now", "Analyzed 12 min ago", "Analyzed 3 h ago", "Analyzed 2 d ago". */
 export function formatAnalyzedAgo(iso: string, now = Date.now()): string {
   const mins = Math.floor((now - new Date(iso).getTime()) / 60_000);
@@ -139,4 +132,25 @@ export function analyzeButtonState(
     return { kind: 'exhausted', resetInSeconds: secondsUntil(status.usage.nextSlotAt, now) };
   }
   return { kind: 'ready', caption: formatRemaining(status.usage) };
+}
+
+/** The one-line caption under the Analyze button, or null when it shows none. */
+export function analyzeButtonCaption(state: AnalyzeButtonState): string | null {
+  switch (state.kind) {
+    case 'pending':
+    case 'generating':
+      return null;
+    case 'cached':
+      return 'Already analyzed — free to view';
+    case 'unavailable':
+      return state.retryInSeconds === null
+        ? 'Analysis unavailable'
+        : `Analysis unavailable · try again ${formatRetryAfter(state.retryInSeconds)}`;
+    case 'exhausted':
+      return state.resetInSeconds === null
+        ? 'Daily limit reached'
+        : `Daily limit reached · resets ${formatRetryAfter(state.resetInSeconds)}`;
+    case 'ready':
+      return state.caption;
+  }
 }

@@ -8,8 +8,8 @@ import {
   formatAnalyzedAgo,
   formatRemaining,
 } from './analysisCopy';
-
-const LABEL = 'text-[10px] font-semibold uppercase tracking-[0.14em] text-muted';
+import { CARD_LABEL_CLASS, CHIP_BUTTON_CLASS } from './styles';
+import type { AnalysisPhase } from './useStockAnalysis';
 
 const VERDICT_TEXT: Record<AnalysisVerdict, string> = {
   BUY: 'text-gain',
@@ -17,12 +17,12 @@ const VERDICT_TEXT: Record<AnalysisVerdict, string> = {
   HOLD: 'text-text-strong',
 };
 
+/** The phases the panel is shown for; an idle click has no panel. */
+export type AnalysisPanelPhase = Exclude<AnalysisPhase, { kind: 'idle' }>;
+
 export interface AnalysisPanelProps {
   symbol: string;
-  pending: boolean;
-  /** What went wrong with the last request, or null. */
-  error: AnalysisErrorView | null;
-  result: StockAnalysisResponse | null;
+  phase: AnalysisPanelPhase;
   /**
    * Keeps bull and bear in one column at every width. The in-game dialog sits
    * in a viewport wide enough for `sm:` while being too narrow for two columns.
@@ -40,28 +40,25 @@ export interface AnalysisPanelProps {
  */
 export function AnalysisPanel({
   symbol,
-  pending,
-  error,
-  result,
+  phase,
   alwaysStacked,
   onDismiss,
   onRetry,
 }: AnalysisPanelProps) {
-  const analysis = result?.analysis;
   return (
     <section
       aria-label={`${symbol} analysis`}
       className="rounded-md border border-hairline-strong bg-panel p-4"
     >
       <div className="mb-3 flex items-center justify-between gap-3">
-        <div className={LABEL}>Analysis</div>
+        <div className={CARD_LABEL_CLASS}>Analysis</div>
         <div className="flex items-center gap-2">
-          {analysis && !pending && !error && (
+          {phase.kind === 'done' && (
             <span
               className="text-[11px] text-muted"
-              title={new Date(analysis.generatedAt).toLocaleString()}
+              title={new Date(phase.result.analysis.generatedAt).toLocaleString()}
             >
-              {formatAnalyzedAgo(analysis.generatedAt)}
+              {formatAnalyzedAgo(phase.result.analysis.generatedAt)}
             </span>
           )}
           <button
@@ -75,68 +72,83 @@ export function AnalysisPanel({
         </div>
       </div>
 
-      {pending ? (
+      <PanelBody symbol={symbol} phase={phase} alwaysStacked={alwaysStacked} onRetry={onRetry} />
+    </section>
+  );
+}
+
+function PanelBody({
+  symbol,
+  phase,
+  alwaysStacked,
+  onRetry,
+}: Omit<AnalysisPanelProps, 'onDismiss'>) {
+  switch (phase.kind) {
+    case 'requesting':
+    case 'waiting':
+      return (
         <div className="space-y-3">
           <RatingRail verdict={null} pending className="w-full sm:w-64" />
           <p role="status" className="text-sm text-muted">
             Analyzing {symbol}… this can take up to a minute.
           </p>
         </div>
-      ) : error ? (
-        <ErrorBody view={error} onRetry={onRetry} />
-      ) : analysis && result ? (
-        <div className="space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
-            <div>
-              <div
-                className={cn(
-                  'font-mono text-[28px] font-bold leading-none tracking-tight',
-                  VERDICT_TEXT[analysis.verdict],
-                )}
-              >
-                {analysis.verdict}
-              </div>
-              <div
-                className="mt-1.5 text-xs text-muted"
-                title={`Confidence ${analysis.confidence}/100`}
-              >
-                {confidenceWord(analysis.confidence)} confidence
-              </div>
-            </div>
-            <RatingRail verdict={analysis.verdict} className="w-full sm:w-64" />
-          </div>
+      );
+    case 'failed':
+      return <ErrorBody view={phase.view} onRetry={onRetry} />;
+    case 'done':
+      return <ResultBody result={phase.result} alwaysStacked={alwaysStacked} />;
+  }
+}
 
-          <p className="max-w-[68ch] text-sm leading-[1.55] text-text">{analysis.summary}</p>
-
+function ResultBody({
+  result: { analysis, usage },
+  alwaysStacked,
+}: {
+  result: StockAnalysisResponse;
+  alwaysStacked: boolean;
+}) {
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
+        <div>
           <div
-            data-testid="analysis-cases"
-            className={cn('grid grid-cols-1 gap-4', !alwaysStacked && 'sm:grid-cols-2')}
+            className={cn(
+              'font-mono text-[28px] font-bold leading-none tracking-tight',
+              VERDICT_TEXT[analysis.verdict],
+            )}
           >
-            <CaseList
-              title="Bull case"
-              glyph="▲"
-              glyphClass="text-gain"
-              points={analysis.bullPoints}
-            />
-            <CaseList
-              title="Bear case"
-              glyph="▼"
-              glyphClass="text-loss"
-              points={analysis.bearPoints}
-            />
+            {analysis.verdict}
           </div>
-
-          <div className="space-y-0.5 border-t border-hairline-strong pt-3 text-[11px] leading-relaxed text-muted">
-            <p>
-              AI-generated from market data at{' '}
-              <span className="font-mono tabular-nums">{formatUSD(analysis.priceAtAnalysis)}</span>.
-              Not financial advice.
-            </p>
-            <FooterMeta model={analysis.reportedModel} remaining={formatRemaining(result.usage)} />
+          <div
+            className="mt-1.5 text-xs text-muted"
+            title={`Confidence ${analysis.confidence}/100`}
+          >
+            {confidenceWord(analysis.confidence)} confidence
           </div>
         </div>
-      ) : null}
-    </section>
+        <RatingRail verdict={analysis.verdict} className="w-full sm:w-64" />
+      </div>
+
+      <p className="max-w-[68ch] text-sm leading-[1.55] text-text">{analysis.summary}</p>
+
+      <div
+        data-testid="analysis-cases"
+        className={cn('grid grid-cols-1 gap-4', !alwaysStacked && 'sm:grid-cols-2')}
+      >
+        <CaseList title="Bull case" glyph="▲" glyphClass="text-gain" points={analysis.bullPoints} />
+        <CaseList title="Bear case" glyph="▼" glyphClass="text-loss" points={analysis.bearPoints} />
+      </div>
+
+      <div className="space-y-0.5 border-t border-hairline-strong pt-3 text-[11px] leading-relaxed text-muted">
+        <p>
+          AI-generated from market data at{' '}
+          <span className="font-mono tabular-nums">{formatUSD(analysis.priceAtAnalysis)}</span>. Not
+          financial advice.
+        </p>
+        <FooterMeta model={analysis.reportedModel} remaining={formatRemaining(usage)} />
+      </div>
+    </div>
   );
 }
 
@@ -147,11 +159,7 @@ function ErrorBody({ view, onRetry }: { view: AnalysisErrorView; onRetry: () => 
         {view.message}
       </p>
       {view.retryable && (
-        <button
-          type="button"
-          onClick={onRetry}
-          className="inline-flex h-7 items-center rounded-chip border border-hairline-strong px-2.5 text-xs font-medium text-accent hover:bg-accent-bg focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
-        >
+        <button type="button" onClick={onRetry} className={CHIP_BUTTON_CLASS}>
           Try again
         </button>
       )}
@@ -172,7 +180,7 @@ function CaseList({
 }) {
   return (
     <div>
-      <div className={cn(LABEL, 'mb-2')}>{title}</div>
+      <div className={cn(CARD_LABEL_CLASS, 'mb-2')}>{title}</div>
       <ul className="space-y-1.5">
         {points.map((point, i) => (
           <li key={i} className="flex gap-2 text-sm leading-snug text-text">

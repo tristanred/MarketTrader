@@ -137,7 +137,8 @@ describe('/admin/limits and /admin/users/:id/limits', () => {
     expect(body.rows.find((r) => r.key === 'activeGamesJoined')!.used).toBe(1);
     expect(body.rows.find((r) => r.key === 'wsConnections')!.used).toBe(0);
     expect(body.rows.find((r) => r.key === 'registrationsPerIp')!.overridable).toBe(false);
-    expect(body.rows.map((r) => r.key)).toHaveLength(14);
+    expect(body.rows.find((r) => r.key === 'stockAnalyses')!.used).toBe(0);
+    expect(body.rows.map((r) => r.key)).toHaveLength(15);
   });
 
   // Review Focus #4: an override below current usage is reported as-is (used > max), not clamped.

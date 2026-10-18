@@ -16,6 +16,7 @@ export const LIMIT_LABELS: Record<LimitKey, string> = {
   watchlistItems: 'Items per watchlist',
   wsConnections: 'Live connections',
   registrationsPerIp: 'Registrations per IP / day',
+  stockAnalyses: 'Stock analyses / day',
 };
 
 /** Label for a denial or override key; per-IP route limits (`ip:<route>`) fall through verbatim. */

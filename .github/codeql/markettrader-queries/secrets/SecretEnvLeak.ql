@@ -1,6 +1,6 @@
 /**
  * @name Secret environment value reaches logs, telemetry, a response or an error message
- * @description JWT_SECRET, the Alpaca keys, POSTHOG_KEY and DATABASE_URL may only be handed to the client that uses them; logging, returning or embedding one in an error message discloses it to journald, the OTLP collector, PostHog or the caller.
+ * @description JWT_SECRET, the Alpaca keys, OPENROUTER_API_KEY, POSTHOG_KEY and DATABASE_URL may only be handed to the client that uses them; logging, returning or embedding one in an error message discloses it to journald, the OTLP collector, PostHog or the caller.
  * @kind problem
  * @problem.severity error
  * @id markettrader/secret-env-leak
@@ -19,7 +19,7 @@ string secretVarName() {
   result =
     [
       "JWT_SECRET", "ALPACA_API_KEY_ID", "ALPACA_API_SECRET_KEY", "ALPACA_API_KEY", "POSTHOG_KEY",
-      "DATABASE_URL"
+      "DATABASE_URL", "OPENROUTER_API_KEY"
     ]
 }
 

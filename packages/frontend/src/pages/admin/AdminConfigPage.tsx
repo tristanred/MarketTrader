@@ -21,6 +21,7 @@ const CATEGORY_LABELS: Record<ConfigCategory, string> = {
   security: 'Security & auth',
   database: 'Database',
   'stock-data': 'Stock data',
+  analysis: 'Stock analysis',
   'market-hours': 'Market hours',
   workers: 'Background workers',
   limits: 'Limits',

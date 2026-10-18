@@ -14,7 +14,8 @@ export type DomainEvent =
   | EngineTickEvent
   | PositionClosedEvent
   | HoldingsChangedEvent
-  | AchievementUnlockedEvent;
+  | AchievementUnlockedEvent
+  | AnalysisGeneratedEvent;
 
 export type DomainEventType = DomainEvent['type'];
 
@@ -155,4 +156,20 @@ export interface AchievementUnlockedEvent {
   gamePlayerId: string;
   achievementKey: string;
   unlockedAt: string;
+}
+
+/**
+ * Fired after a fresh LLM stock analysis is stored. Not game-scoped. Cache hits
+ * and shared in-flight results emit nothing: only a generation costs anything.
+ */
+export interface AnalysisGeneratedEvent {
+  type: 'analysis.generated';
+  userId: string;
+  symbol: string;
+  verdict: 'BUY' | 'HOLD' | 'SELL';
+  confidence: number;
+  /** The configured model id, not the one a router picked. */
+  model: string;
+  durationMs: number;
+  generatedAt: string;
 }

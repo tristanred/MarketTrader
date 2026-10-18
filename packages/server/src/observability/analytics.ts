@@ -98,6 +98,15 @@ export function registerAnalytics(
         });
       }
     }),
+    bus.on('analysis.generated', (e) => {
+      send(e.userId, 'stock_analysis_generated', {
+        symbol: e.symbol,
+        verdict: e.verdict,
+        confidence: e.confidence,
+        model: e.model,
+        duration_ms: e.durationMs,
+      });
+    }),
   ];
 
   return () => {

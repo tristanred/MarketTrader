@@ -48,6 +48,11 @@ import { startPendingOrdersWorker } from './workers/pending-orders.js';
 import { startPortfolioSnapshotWorker } from './workers/portfolio-snapshot.js';
 import { startDiscoverWorker } from './workers/discover.js';
 import { startUsageRollupWorker } from './workers/usage-rollup.js';
+import { startAnalysisPruneWorker } from './workers/stock-analysis-prune.js';
+import { stockAnalysisRoutes } from './routes/stock-analysis.js';
+import { StockAnalysisService } from './services/stock-analysis/service.js';
+import { createLlmClient } from './providers/llm/factory.js';
+import type { LlmClient } from './providers/llm/interface.js';
 import { attachErrorCapture } from './observability/error-capture.js';
 import { registerOtel } from './plugins/otel.js';
 import { EventBus } from './events/bus.js';
@@ -82,6 +87,8 @@ export async function buildApp(
     limits?: { disabled?: boolean };
     /** Mount the Swagger UI and OpenAPI spec at `/docs`. Defaults to off in production. */
     exposeDocs?: boolean;
+    /** LLM for stock analysis. Undefined builds one from `OPENROUTER_API_KEY`; null turns the feature off. */
+    llmClient?: LlmClient | null;
   } = {},
 ): Promise<FastifyInstance> {
   const {
@@ -97,6 +104,7 @@ export async function buildApp(
     usageTracker = new UsageTracker(),
     limits: limitOptions = {},
     exposeDocs = env.NODE_ENV !== 'production',
+    llmClient = createLlmClient(),
     ...fastifyOpts
   } = opts;
   const provider = injectedProvider ?? new CachedProvider(db, createProvider(runtimeConfig), runtimeConfig);
@@ -211,6 +219,19 @@ export async function buildApp(
   await app.register(gameRoutes(db, limits, bus));
   await app.register(publicGamesRoutes(db));
   await app.register(stockRoutes(db, provider, runtimeConfig));
+  const stockAnalysis = new StockAnalysisService({
+    db,
+    provider,
+    llm: llmClient,
+    limits,
+    config: runtimeConfig,
+    bus,
+    logger: app.log,
+  });
+  app.addHook('onClose', async () => {
+    await stockAnalysis.stop();
+  });
+  await app.register(stockAnalysisRoutes(stockAnalysis, runtimeConfig));
   await app.register(
     tradingRoutes(db, provider, marketStatusProvider, runtimeConfig, limits, registry, leaderboardThrottleMs, bus),
   );
@@ -289,6 +310,11 @@ export async function buildApp(
       await usageWorker.stop();
       // Counts gathered since the last tick; a graceful shutdown loses nothing.
       await flushUsage(db, tracker.swap());
+    });
+
+    const analysisPruneWorker = startAnalysisPruneWorker({ db, config: runtimeConfig, logger: app.log });
+    app.addHook('onClose', async () => {
+      await analysisPruneWorker.stop();
     });
 
     // Engine tick: feeds time-based achievements without external triggers.

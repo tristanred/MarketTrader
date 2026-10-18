@@ -8,7 +8,8 @@ import { RANGE_BAR_SECONDS, StockProviderError } from '../providers/index.js';
 import type { ConfigReader } from '../config/runtime-config.js';
 import { setRetryAfter } from './retry-after.js';
 
-const symbolParamsSchema = z.object({
+/** `:symbol` route param: 1–10 chars, upper-cased. Shared with the stock-analysis routes. */
+export const symbolParamsSchema = z.object({
   symbol: z.string().min(1).max(10).transform((s) => s.toUpperCase()),
 });
 const searchQuerySchema = z.object({ q: z.string().min(1).max(50) });

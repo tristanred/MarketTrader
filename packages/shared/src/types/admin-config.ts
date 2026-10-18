@@ -12,6 +12,7 @@ export type ConfigCategory =
   | 'security'
   | 'database'
   | 'stock-data'
+  | 'analysis'
   | 'market-hours'
   | 'workers'
   | 'limits'

@@ -18,6 +18,7 @@ import { meters } from '../observability/telemetry.js';
 function gameIdOf(event: DomainEvent): string | null {
   switch (event.type) {
     case 'engine.tick':
+    case 'analysis.generated':
       return null;
     case 'game.created':
     case 'game.ended':

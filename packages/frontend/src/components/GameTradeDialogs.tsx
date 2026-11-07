@@ -4,14 +4,19 @@ import { QuoteInfoDialog } from '@/components/QuoteInfoDialog';
 import { TradeOrderDialog } from '@/components/TradeOrderDialog';
 import { useQuoteDialogStore } from '@/stores/quoteDialogStore';
 
-type TradeFlags = Pick<
+type TradeContext = Pick<
   Game,
-  'allowShortSelling' | 'allowLimitOrders' | 'allowStopOrders' | 'allowBracketOrders' | 'allowGTC'
+  | 'status'
+  | 'allowShortSelling'
+  | 'allowLimitOrders'
+  | 'allowStopOrders'
+  | 'allowBracketOrders'
+  | 'allowGTC'
 >;
 
 export interface GameTradeDialogsProps {
   gameId: string;
-  game: Partial<TradeFlags>;
+  game: Partial<TradeContext>;
   /** Symbol the trade dialog opens on when it was opened without one. */
   fallbackSymbol?: string | null;
   /** Called with the symbol a player chose to trade from the quote dialog, before it opens. */
@@ -22,7 +27,8 @@ export interface GameTradeDialogsProps {
  * The quote and trade dialogs for a game page, driven by
  * {@link useQuoteDialogStore} so any `SymbolButton` or chrome on the page can
  * open them. Resets the store on unmount so an open dialog doesn't follow the
- * player to another page.
+ * player to another page. While the game is `pending` the quote dialog stays
+ * available for research but offers no way into the trade dialog.
  */
 export function GameTradeDialogs({
   gameId,
@@ -48,10 +54,14 @@ export function GameTradeDialogs({
         onOpenChange={(open) => {
           if (!open) quoteDialog.closeQuote();
         }}
-        onTradeClick={(s) => {
-          onTradeSymbol?.(s);
-          quoteDialog.openTradeOrder(s, 'buy');
-        }}
+        {...(game.status === 'pending'
+          ? {}
+          : {
+              onTradeClick: (s: string) => {
+                onTradeSymbol?.(s);
+                quoteDialog.openTradeOrder(s, 'buy');
+              },
+            })}
       />
       <TradeOrderDialog
         open={quoteDialog.tradeOrderOpen}

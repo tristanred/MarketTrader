@@ -45,13 +45,19 @@ export function pollMsUntilStarted(
   return untilStart > PENDING_GAME_POLL_MS ? PENDING_GAME_POLL_MS : STARTING_GAME_POLL_MS;
 }
 
-/** Game detail with its leaderboard. Polls only while `pending`, so the page unlocks at the start. */
+/**
+ * Game detail with its leaderboard. While `pending` it polls, and re-reads on
+ * tab focus, so the page unlocks at the start: hidden tabs skip their polls.
+ */
 export function useGame(gameId: string) {
   return useQuery({
     queryKey: gameKeys.detail(gameId),
     queryFn: () => apiFetch<GameWithLeaderboard>(`/games/${gameId}`),
     enabled: !!gameId,
     refetchInterval: (query) => pollMsUntilStarted(query.state.data),
+    // 'always', not true: `staleTime` would otherwise hold back a player who
+    // returns moments after the last read, leaving the page locked until the next poll.
+    refetchOnWindowFocus: (query) => (query.state.data?.status === 'pending' ? 'always' : false),
   });
 }
 

@@ -73,11 +73,25 @@ describe('StatusStrip', () => {
 
   it('shows DAY n / N + game name when given gameContext', () => {
     const { ui } = wrap(
-      <StatusStrip gameContext={{ name: 'Friday Night', dayCurrent: 4, dayTotal: 14, gameId: 'g1' }} />,
+      <StatusStrip
+        gameContext={{ name: 'Friday Night', status: 'active', dayCurrent: 4, dayTotal: 14, gameId: 'g1' }}
+      />,
     );
     render(ui);
     expect(screen.getByText(/DAY 4 \/ 14/)).toBeInTheDocument();
     expect(screen.getByText(/Friday Night/)).toBeInTheDocument();
+  });
+
+  it('says NOT STARTED instead of a day count before the game starts', () => {
+    const { ui } = wrap(
+      <StatusStrip
+        gameContext={{ name: 'Friday Night', status: 'pending', dayCurrent: 1, dayTotal: 14, gameId: 'g1' }}
+      />,
+    );
+    render(ui);
+    expect(screen.getByText(/NOT STARTED/)).toBeInTheDocument();
+    expect(screen.getByText(/Friday Night/)).toBeInTheDocument();
+    expect(screen.queryByText(/DAY 1/)).not.toBeInTheDocument();
   });
 
   it('replaces the LIVE pill with RECONNECTING while a socket is backing off', () => {

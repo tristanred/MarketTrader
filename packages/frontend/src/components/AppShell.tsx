@@ -27,6 +27,7 @@ export function AppShell() {
       ? {
           gameId,
           name: game.data.name,
+          status: game.data.status,
           ...getDayCounter(game.data.startDate, game.data.endDate, new Date()),
         }
       : undefined;

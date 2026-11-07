@@ -99,6 +99,14 @@ test.describe('Game page before the start', () => {
     await expect.poll(() => banner(playerPage).textContent()).not.toBe(first);
   });
 
+  test('does not claim a day count', async ({ playerPage, makeGame, apiClient, playerUser }) => {
+    const game = await makeGame({ startDate: inFromNow(HOUR_MS), endDate: inFromNow(2 * HOUR_MS) });
+    await openArenaOnAapl(playerPage, apiClient, playerUser.accessToken, game.id);
+
+    await expect(playerPage.getByText(`NOT STARTED · ${game.name}`)).toBeVisible();
+    await expect(playerPage.getByText(/DAY \d+ \/ \d+/)).toHaveCount(0);
+  });
+
   test('disables BUY and SELL', async ({ playerPage, makeGame, apiClient, playerUser }) => {
     const game = await makeGame({ startDate: inFromNow(HOUR_MS), endDate: inFromNow(2 * HOUR_MS) });
     await openArenaOnAapl(playerPage, apiClient, playerUser.accessToken, game.id);
@@ -135,6 +143,7 @@ test.describe('Game page before the start', () => {
     await expect(buy(playerPage)).toBeDisabled();
     await expect(buy(playerPage)).toBeEnabled({ timeout: 25_000 });
     await expect(banner(playerPage)).toHaveCount(0);
+    await expect(playerPage.getByText(`DAY 1 / 1 · ${game.name}`)).toBeVisible();
 
     await buy(playerPage).click();
     await playerPage.getByRole('dialog').getByRole('button', { name: 'Buy 1 AAPL' }).click();

@@ -41,6 +41,32 @@ const OVERFLOW_PROBE = `(() => {
 })()`;
 
 test.describe('Arena layout across viewport widths', () => {
+  test('the start banner of a pending game never scrolls the page horizontally', async ({
+    pageAs,
+    playerUser,
+    makeGame,
+    apiClient,
+  }) => {
+    const hour = 60 * 60 * 1000;
+    const game = await makeGame({
+      startDate: new Date(Date.now() + hour).toISOString(),
+      endDate: new Date(Date.now() + 2 * hour).toISOString(),
+    });
+    await apiClient.post(`/games/${game.id}/join`, {
+      headers: { Authorization: `Bearer ${playerUser.accessToken}` },
+    });
+
+    const page = await pageAs(playerUser);
+    await page.setViewportSize(PHONE);
+    await page.goto(`/games/${game.id}`);
+    await expect(page.getByRole('region', { name: 'Game start' })).toBeVisible();
+
+    for (const width of WIDTHS) {
+      await page.setViewportSize({ width, height: PHONE.height });
+      expect(await page.evaluate(OVERFLOW_PROBE), `overflow at ${width}px`).toEqual([]);
+    }
+  });
+
   test('the arena page never scrolls horizontally', async ({
     pageAs,
     playerUser,

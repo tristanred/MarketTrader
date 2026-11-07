@@ -20,6 +20,7 @@ User picks a username and password. JWT token returned. No email required (MVP).
 ### 2. Create a game
 - Set a name, start date, end date, and starting balance (e.g. $100,000)
 - Game status: `pending` until start date, `active` during the trading window, `ended` after end date
+- While `pending`, members can open the game page to research symbols and see who has joined. It shows when the game starts with a countdown, and the Buy/Sell buttons stay disabled. The page polls `GET /games/:id` and unlocks by itself when the server reports `active`; the server still refuses early trades with `GAME_NOT_ACTIVE`
 - Choose public (listed for everyone) or private (invite-only); public is the default
 - Share the invite link from the game info modal
 

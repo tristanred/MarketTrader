@@ -1,4 +1,30 @@
+import type { APIRequestContext, Page } from '@playwright/test';
 import { test, expect } from '../fixtures/base';
+
+/** Joins `gameId`, opens its arena and selects AAPL so the quote strip has its trade buttons. */
+async function openArenaOnAapl(
+  page: Page,
+  apiClient: APIRequestContext,
+  accessToken: string,
+  gameId: string,
+) {
+  const headers = { Authorization: `Bearer ${accessToken}` };
+  const list = await (
+    await apiClient.post('/watchlists', { headers, data: { name: `arena_${Date.now()}` } })
+  ).json();
+  await apiClient.post(`/watchlists/${list.id}/items`, { headers, data: { symbol: 'AAPL' } });
+  const join = await apiClient.post(`/games/${gameId}/join`, { headers });
+  expect(join.ok(), `join: ${await join.text()}`).toBeTruthy();
+
+  await page.goto(`/games/${gameId}`);
+  await page.getByRole('button', { name: 'Select AAPL' }).click();
+}
+
+function inFromNow(ms: number) {
+  return new Date(Date.now() + ms).toISOString();
+}
+
+const HOUR_MS = 60 * 60 * 1000;
 
 test.describe('Player games', () => {
   test('create a game via the UI dialog', async ({ playerPage, adminUser }) => {
@@ -51,5 +77,86 @@ test.describe('Player games', () => {
     expect(res.ok()).toBeTruthy();
     const body = await res.json();
     expect(Array.isArray(body.games ?? body)).toBe(true);
+  });
+});
+
+test.describe('Game page before the start', () => {
+  const banner = (page: Page) => page.getByRole('region', { name: 'Game start' });
+  const buy = (page: Page) => page.getByRole('button', { name: 'BUY', exact: true });
+  const sell = (page: Page) => page.getByRole('button', { name: 'SELL', exact: true });
+
+  test('shows when the game starts, with a running countdown', async ({
+    playerPage,
+    makeGame,
+    apiClient,
+    playerUser,
+  }) => {
+    const game = await makeGame({ startDate: inFromNow(HOUR_MS), endDate: inFromNow(2 * HOUR_MS) });
+    await openArenaOnAapl(playerPage, apiClient, playerUser.accessToken, game.id);
+
+    await expect(banner(playerPage)).toContainText(/\d{2}:\d{2}:\d{2}/);
+    const first = await banner(playerPage).textContent();
+    await expect.poll(() => banner(playerPage).textContent()).not.toBe(first);
+  });
+
+  test('disables BUY and SELL', async ({ playerPage, makeGame, apiClient, playerUser }) => {
+    const game = await makeGame({ startDate: inFromNow(HOUR_MS), endDate: inFromNow(2 * HOUR_MS) });
+    await openArenaOnAapl(playerPage, apiClient, playerUser.accessToken, game.id);
+
+    await expect(buy(playerPage)).toBeDisabled();
+    await expect(sell(playerPage)).toBeDisabled();
+  });
+
+  test('keeps the quote window open for research, without its Trade button', async ({
+    playerPage,
+    makeGame,
+    apiClient,
+    playerUser,
+  }) => {
+    const game = await makeGame({ startDate: inFromNow(HOUR_MS), endDate: inFromNow(2 * HOUR_MS) });
+    await openArenaOnAapl(playerPage, apiClient, playerUser.accessToken, game.id);
+
+    await playerPage.getByRole('button', { name: 'AAPL details' }).click();
+    const dialog = playerPage.getByRole('dialog');
+    await expect(dialog.getByRole('link', { name: /View AAPL on TradingView/ })).toBeVisible();
+    await expect(dialog.getByRole('button', { name: /^Trade AAPL/ })).toHaveCount(0);
+  });
+
+  test('unlocks by itself when the start time passes', async ({
+    playerPage,
+    makeGame,
+    apiClient,
+    playerUser,
+  }) => {
+    test.setTimeout(45_000);
+    const game = await makeGame({ startDate: inFromNow(10_000), endDate: inFromNow(HOUR_MS) });
+    await openArenaOnAapl(playerPage, apiClient, playerUser.accessToken, game.id);
+
+    await expect(buy(playerPage)).toBeDisabled();
+    await expect(buy(playerPage)).toBeEnabled({ timeout: 25_000 });
+    await expect(banner(playerPage)).toHaveCount(0);
+
+    await buy(playerPage).click();
+    await playerPage.getByRole('dialog').getByRole('button', { name: 'Buy 1 AAPL' }).click();
+    await expect(playerPage.getByText('Bought 1 AAPL')).toBeVisible();
+  });
+
+  test('a running game has no banner and can trade', async ({
+    playerPage,
+    makeGame,
+    apiClient,
+    playerUser,
+  }) => {
+    const game = await makeGame();
+    await openArenaOnAapl(playerPage, apiClient, playerUser.accessToken, game.id);
+
+    await expect(buy(playerPage)).toBeEnabled();
+    await expect(sell(playerPage)).toBeEnabled();
+    await expect(banner(playerPage)).toHaveCount(0);
+
+    await playerPage.getByRole('button', { name: 'AAPL details' }).click();
+    await expect(
+      playerPage.getByRole('dialog').getByRole('button', { name: /^Trade AAPL/ }),
+    ).toBeVisible();
   });
 });

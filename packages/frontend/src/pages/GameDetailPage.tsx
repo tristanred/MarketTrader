@@ -24,6 +24,7 @@ import {
   DiscoverPanel,
   ActivityPanel,
   SymbolSearchPanel,
+  GameStartBanner,
 } from '@/components/game/arena';
 import { JoinGameCard } from '@/components/game/arena/JoinGameCard';
 import { OpenOrdersList } from '@/components/OpenOrdersList';
@@ -300,6 +301,9 @@ function ArenaBody({
     // otherwise push the track out and scroll the whole document sideways
     // rather than being constrained by its column.
     <main className="mx-auto grid w-full max-w-[1600px] grid-cols-1 gap-2 p-3 lg:grid-cols-[300px_1fr_300px]">
+      {gameData.status === 'pending' ? (
+        <GameStartBanner startDate={gameData.startDate} className="min-w-0 lg:col-span-3" />
+      ) : null}
       <aside className="flex min-w-0 flex-col gap-2">
         <PortfolioPanel value={myPortfolioValue} pnlPct={myPnlPct} cash={myCash} dayPnl={myDayPnl} />
         {/* Totals first, then the positions they're made of. The pair stays in
@@ -324,10 +328,10 @@ function ArenaBody({
         <QuoteHeader
           symbol={selectedSymbol}
           {...quoteData}
-          {...(selectedSymbol
+          {...(selectedSymbol ? { onOpenQuote: () => openQuote(selectedSymbol) } : {})}
+          {...(selectedSymbol && gameData.status !== 'pending'
             ? {
                 onTrade: (direction: TradeDirection) => openTradeOrder(selectedSymbol, direction),
-                onOpenQuote: () => openQuote(selectedSymbol),
               }
             : {})}
         />

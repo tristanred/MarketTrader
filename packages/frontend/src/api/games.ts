@@ -27,11 +27,37 @@ export function useGames() {
   });
 }
 
+const PENDING_GAME_POLL_MS = 60_000;
+const STARTING_GAME_POLL_MS = 5_000;
+
+/**
+ * `refetchInterval` for {@link useGame}: `false` unless the game is `pending`,
+ * then faster in the last minute and past the start. Polled rather than timed
+ * from `startDate` because the server decides when a game is active, so a
+ * wrong browser clock can't unlock the page or strand it.
+ */
+export function pollMsUntilStarted(
+  game: Pick<GameWithLeaderboard, 'status' | 'startDate'> | undefined,
+  now: number = Date.now(),
+): number | false {
+  if (game?.status !== 'pending') return false;
+  const untilStart = Date.parse(game.startDate) - now;
+  return untilStart > PENDING_GAME_POLL_MS ? PENDING_GAME_POLL_MS : STARTING_GAME_POLL_MS;
+}
+
+/**
+ * Game detail with its leaderboard. While `pending` it polls, and re-reads on
+ * tab focus, so the page unlocks at the start: hidden tabs skip their polls.
+ */
 export function useGame(gameId: string) {
   return useQuery({
     queryKey: gameKeys.detail(gameId),
     queryFn: () => apiFetch<GameWithLeaderboard>(`/games/${gameId}`),
     enabled: !!gameId,
+    refetchInterval: (query) => pollMsUntilStarted(query.state.data),
+    // 'always', not true: `staleTime` would otherwise hold back a player who
+    // returns moments after the last read, leaving the page locked until the next poll.
+    refetchOnWindowFocus: (query) => (query.state.data?.status === 'pending' ? 'always' : false),
   });
 }
 

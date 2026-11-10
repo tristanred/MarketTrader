@@ -8,3 +8,4 @@ export { SymbolSearchPanel, type SymbolSearchPanelProps } from './SymbolSearchPa
 export { WatchlistPanel, type WatchlistRow, type WatchlistPanelProps } from './WatchlistPanel';
 export { ActivityPanel, type ActivityEvent, type ActivityPanelProps } from './ActivityPanel';
 export { DiscoverPanel, type DiscoverPanelProps } from './DiscoverPanel';
+export { GameStartBanner, type GameStartBannerProps } from './GameStartBanner';

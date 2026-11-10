@@ -8,26 +8,28 @@ import { AboutGameModal } from './AboutGameModal';
 import { useMarketStatus } from '@/api/market-status';
 import { useSetSelectedSymbol } from '@/contexts/SelectedSymbolContext';
 import { selectConnectionStatus, useConnectionStore } from '@/stores/connectionStore';
-import type { IndexQuote } from '@markettrader/shared';
+import type { GameStatus, IndexQuote } from '@markettrader/shared';
 import { cn } from '@/lib/utils';
 
 export interface StatusStripGameContext {
   gameId: string;
   name: string;
+  /** Selects the marker: `pending` shows NOT STARTED rather than a day count. */
+  status: GameStatus;
   dayCurrent: number;
   dayTotal: number;
 }
 
 export interface StatusStripProps {
-  /** When provided, the right cluster shows DAY n/N + name + info button. */
+  /** When provided, the right cluster shows the game marker + name + info button. */
   gameContext?: StatusStripGameContext;
 }
 
 /**
  * Second row of global chrome. Left: market-open pulse dot, ticking ET clock,
  * a {@link ConnectionPill} reflecting live-socket health, three major index
- * quotes. Right (only inside a game): the DAY n/N marker and an info button
- * that opens {@link AboutGameModal}.
+ * quotes. Right (only inside a game): the DAY n/N marker, or NOT STARTED
+ * before the start, and an info button that opens {@link AboutGameModal}.
  */
 export function StatusStrip({ gameContext }: StatusStripProps) {
   const clock = useLiveClock();
@@ -105,7 +107,10 @@ export function StatusStrip({ gameContext }: StatusStripProps) {
       {gameContext ? (
         <div className="flex shrink-0 items-center gap-2 whitespace-nowrap">
           <span>
-            DAY {gameContext.dayCurrent} / {gameContext.dayTotal} · {gameContext.name}
+            {gameContext.status === 'pending'
+              ? 'NOT STARTED'
+              : `DAY ${gameContext.dayCurrent} / ${gameContext.dayTotal}`}{' '}
+            · {gameContext.name}
           </span>
           <button
             type="button"

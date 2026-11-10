@@ -71,6 +71,15 @@ If a library version is outdated or a better alternative emerges, open an ADR en
 
 ---
 
+## Git Workflow
+
+- **Commit as you go, in incremental steps.** Each commit is one coherent, reviewable step
+  (a helper and its tests, then the component that uses it, then docs) — not one commit at
+  the end of the task. Every commit should typecheck and pass its own tests.
+- Work on a feature branch, never directly on `main`.
+
+---
+
 ## Documentation Conventions
 
 Every exported function, class, and interface must have a JSDoc comment unless the name already makes the purpose completely unambiguous (a trivial getter, a re-export, etc.).

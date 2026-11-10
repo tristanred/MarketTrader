@@ -105,6 +105,50 @@ describe('GamesListPage', () => {
     expect(screen.queryByRole('menu')).not.toBeInTheDocument();
   });
 
+  it('offers joining with an invite code from the menu', async () => {
+    gamesData.length = 0;
+    const user = userEvent.setup();
+    render(wrap(<GamesListPage />));
+    await user.click(screen.getByRole('button', { name: /games menu/i }));
+    await user.click(await screen.findByRole('menuitem', { name: /join with code/i }));
+    expect(await screen.findByLabelText(/invite code/i)).toHaveFocus();
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+  });
+
+  it('moves between menu items with the arrow keys, wrapping at the ends', async () => {
+    gamesData.length = 0;
+    const user = userEvent.setup();
+    render(wrap(<GamesListPage />));
+    await user.click(screen.getByRole('button', { name: /games menu/i }));
+    const create = await screen.findByRole('menuitem', { name: /new game/i });
+    const join = screen.getByRole('menuitem', { name: /join with code/i });
+    expect(create).toHaveFocus();
+    await user.keyboard('{ArrowDown}');
+    expect(join).toHaveFocus();
+    await user.keyboard('{ArrowDown}');
+    expect(create).toHaveFocus();
+    await user.keyboard('{ArrowUp}');
+    expect(join).toHaveFocus();
+    await user.keyboard('{Home}');
+    expect(create).toHaveFocus();
+    await user.keyboard('{End}');
+    expect(join).toHaveFocus();
+  });
+
+  it('keeps only the focused menu item in the tab order', async () => {
+    gamesData.length = 0;
+    const user = userEvent.setup();
+    render(wrap(<GamesListPage />));
+    await user.click(screen.getByRole('button', { name: /games menu/i }));
+    const create = await screen.findByRole('menuitem', { name: /new game/i });
+    const join = screen.getByRole('menuitem', { name: /join with code/i });
+    expect(create).toHaveAttribute('tabindex', '0');
+    expect(join).toHaveAttribute('tabindex', '-1');
+    await user.keyboard('{ArrowDown}');
+    expect(create).toHaveAttribute('tabindex', '-1');
+    expect(join).toHaveAttribute('tabindex', '0');
+  });
+
   it('points a viewer with no games at the menu rather than a button', () => {
     gamesData.length = 0;
     render(wrap(<GamesListPage />));

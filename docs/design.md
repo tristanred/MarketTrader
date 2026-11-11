@@ -26,6 +26,7 @@ User picks a username and password. JWT token returned. No email required (MVP).
 
 ### 3. Join a game
 - Public games are listed for every signed-in user under "Open games" and can be joined with one click
+- Anyone with an invite code can enter it under "Join with code" in the games-list menu instead of following the link. The dialog takes a bare code (case, spaces and dashes don't matter) or a pasted `/join/:code` link, then opens the same `/join/:code` page so the game is shown before the viewer joins. Nothing is joined from the dialog itself
 - Public games can also be joined directly by raw ID; private games require the current invite code (validated server-side on join, not just at lookup) — a public listing seen before the game went private does not grant access
 - Balance starts fresh even if the game has been running
 - Joining is rejected once the game has ended

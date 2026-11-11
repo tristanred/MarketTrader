@@ -55,7 +55,7 @@ export function GamesListPage() {
         <Panel>
           <PanelBody>
             <p className="py-8 text-center font-mono text-xs text-muted">
-              No games yet — use the menu to create one, or join an open game below.
+              No games yet — use the menu to create one or enter an invite code, or join an open game below.
             </p>
           </PanelBody>
         </Panel>

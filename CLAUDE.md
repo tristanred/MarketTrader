@@ -71,6 +71,14 @@ If a library version is outdated or a better alternative emerges, open an ADR en
 
 ---
 
+## Git Workflow
+
+- **Commit as you go, in incremental steps.** Each commit is one coherent, reviewable step
+  (a helper and its tests, then the component that uses it, then docs) — not one commit at
+  the end of the task.
+
+---
+
 ## Documentation Conventions
 
 Every exported function, class, and interface must have a JSDoc comment unless the name already makes the purpose completely unambiguous (a trivial getter, a re-export, etc.).
@@ -253,7 +261,7 @@ Abuse controls live in `packages/server/src/limits/` (ADR-018, `docs/design.md` 
 
 All price fetching goes through the `StockProvider` interface in `packages/server/src/providers/`. Do not call Yahoo Finance / Alpaca / Polygon directly from route handlers or services.
 
-Default provider: Yahoo Finance (no key required).  
+Default provider: Yahoo Finance (no key required).
 Switch via `STOCK_PROVIDER=alpaca` env var.
 
 ---

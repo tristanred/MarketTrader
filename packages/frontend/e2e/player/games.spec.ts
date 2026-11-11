@@ -46,6 +46,42 @@ test.describe('Player games', () => {
     await expect(playerPage.getByRole('link', { name: new RegExp(name) })).toBeVisible();
   });
 
+  test('joins a private game by pasting its invite code', async ({
+    playerPage,
+    apiClient,
+    adminUser,
+  }) => {
+    const adminHeaders = { Authorization: `Bearer ${adminUser.accessToken}` };
+    const name = `private_${Date.now()}`;
+    const created = await apiClient.post('/games', {
+      headers: adminHeaders,
+      data: {
+        name,
+        startDate: inFromNow(-HOUR_MS),
+        endDate: inFromNow(HOUR_MS),
+        startingBalance: 100_000,
+        visibility: 'private',
+      },
+    });
+    expect(created.ok(), `create: ${await created.text()}`).toBeTruthy();
+    const game = (await created.json()) as { id: string };
+    const invite = await apiClient.post(`/games/${game.id}/invite-code`, { headers: adminHeaders });
+    const { inviteCode } = (await invite.json()) as { inviteCode: string };
+
+    await playerPage.goto('/games');
+    await playerPage.getByRole('button', { name: /games menu/i }).click();
+    await playerPage.getByRole('menuitem', { name: /join with code/i }).click();
+    // Lowercase with a space, the way it gets read out or retyped.
+    const quoted = `${inviteCode.slice(0, 4)} ${inviteCode.slice(4)}`.toLowerCase();
+    await playerPage.getByLabel(/invite code/i).fill(quoted);
+    await playerPage.getByRole('button', { name: /^next$/i }).click();
+
+    await expect(playerPage).toHaveURL(new RegExp(`/join/${inviteCode}$`));
+    await expect(playerPage.getByRole('heading', { name })).toBeVisible();
+    await playerPage.getByRole('button', { name: /^join game$/i }).click();
+    await expect(playerPage).toHaveURL(new RegExp(`/games/${game.id}$`));
+  });
+
   test('opens game detail page from the deep link', async ({ playerPage, makeGame, apiClient, playerUser }) => {
     const game = await makeGame();
     await apiClient.post(`/games/${game.id}/join`, {

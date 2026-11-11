@@ -96,7 +96,8 @@ export class OpenRouterClient implements LlmClient {
     const signal = req.signal ? AbortSignal.any([timeout, req.signal]) : timeout;
     let answer: Answer;
     try {
-      const result = await this.sdk.chat.send({ chatRequest: chatRequest(req) }, { signal });
+      const sources = req.signal ? [timeout, req.signal] : [timeout];
+      const result = await untilAborted(this.sdk.chat.send({ chatRequest: chatRequest(req) }, { signal }), sources);
       answer = 'choices' in result ? answerFromResult(result) : {};
     } catch (err) {
       if (timeout.aborted) {
@@ -107,6 +108,27 @@ export class OpenRouterClient implements LlmClient {
     }
     return parseAnswer(answer);
   }
+}
+
+/**
+ * Settles with `work`, or rejects as soon as one of `signals` aborts. The SDK forwards
+ * an abort through `Request` signals that undici links by WeakRef only, so a GC mid-call
+ * can drop the link and leave the transport waiting past the deadline. Listening on the
+ * source signals directly keeps them reachable: Node holds a timeout signal while it has
+ * a listener, and the caller holds its own.
+ */
+function untilAborted<T>(work: Promise<T>, signals: readonly AbortSignal[]): Promise<T> {
+  let onAbort = (): void => {};
+  const aborted = new Promise<never>((_, reject) => {
+    onAbort = () => reject(new Error('aborted'));
+    for (const s of signals) {
+      if (s.aborted) onAbort();
+      else s.addEventListener('abort', onAbort, { once: true });
+    }
+  });
+  return Promise.race([work, aborted]).finally(() => {
+    for (const s of signals) s.removeEventListener('abort', onAbort);
+  });
 }
 
 function chatRequest(req: LlmRequest): ChatRequest {

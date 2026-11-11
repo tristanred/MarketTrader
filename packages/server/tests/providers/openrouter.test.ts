@@ -298,6 +298,23 @@ describe('OpenRouterClient transport failures', () => {
     expect((err as LlmError).reachedModel).toBe(true);
   });
 
+  // undici links each Request's signal to its parent only by WeakRef, so a GC during the
+  // call can sever the path from the deadline to the transport; this fetcher is that case.
+  it('keeps its deadline when the transport never hears the abort', async () => {
+    const err = await clientWith(() => new Promise<Response>(() => {}))
+      .complete({ ...request, timeoutMs: 20 })
+      .catch((e: unknown) => e);
+    expect((err as LlmError).code).toBe('TIMEOUT');
+  });
+
+  it('honours a caller abort when the transport never hears it', async () => {
+    const controller = new AbortController();
+    const pending = clientWith(() => new Promise<Response>(() => {})).complete({ ...request, signal: controller.signal });
+    controller.abort();
+    const err = await pending.catch((e: unknown) => e);
+    expect((err as LlmError).code).toBe('ABORTED');
+  });
+
   it('maps a caller abort to ABORTED', async () => {
     const controller = new AbortController();
     const pending = clientWith(hangingFetcher).complete({ ...request, signal: controller.signal });
